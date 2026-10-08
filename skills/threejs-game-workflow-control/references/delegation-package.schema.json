@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "threejs-delegation-package.schema.json",
+  "title": "委派包",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workItemId",
+    "stageId",
+    "owner",
+    "assignedAgent",
+    "ownership",
+    "allowedActions",
+    "forbiddenActions",
+    "actionLevel",
+    "allowedPaths",
+    "forbiddenPaths",
+    "acceptanceCommands",
+    "completionBoundary",
+    "outOfScopeReturn",
+    "preserveOthersChanges"
+  ],
+  "properties": {
+    "workItemId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stageId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "assignedAgent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "executionUnitIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "parallelGroup": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "ownership": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "allowedActions": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "threejs-inspect",
+          "threejs-spec-candidate",
+          "threejs-prototype",
+          "threejs-code-change",
+          "threejs-asset-change",
+          "threejs-ui-change",
+          "threejs-audio-change",
+          "threejs-balance-change",
+          "threejs-qa-build"
+        ]
+      }
+    },
+    "forbiddenActions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "threejs-inspect",
+          "threejs-spec-candidate",
+          "threejs-prototype",
+          "threejs-code-change",
+          "threejs-asset-change",
+          "threejs-ui-change",
+          "threejs-audio-change",
+          "threejs-balance-change",
+          "threejs-qa-build"
+        ]
+      }
+    },
+    "actionLevel": {
+      "enum": [
+        "A0",
+        "A1",
+        "A2",
+        "A3"
+      ]
+    },
+    "allowedPaths": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "forbiddenPaths": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "acceptanceCommands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "completionBoundary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "outOfScopeReturn": {
+      "type": "string",
+      "minLength": 1
+    },
+    "preserveOthersChanges": {
+      "const": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "actionLevel": {
+            "const": "A0"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "allowedActions": {
+            "items": {
+              "enum": [
+                "threejs-inspect"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "actionLevel": {
+            "const": "A1"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "allowedActions": {
+            "items": {
+              "enum": [
+                "threejs-spec-candidate"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "actionLevel": {
+            "const": "A2"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "allowedActions": {
+            "items": {
+              "enum": [
+                "threejs-prototype"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "actionLevel": {
+            "const": "A3"
+          }
+        }
+      },
+      "then": {
+        "required": ["executionUnitIds", "parallelGroup"],
+        "properties": {
+          "allowedActions": {
+            "items": {
+              "enum": [
+                "threejs-code-change",
+                "threejs-asset-change",
+                "threejs-ui-change",
+                "threejs-audio-change",
+                "threejs-balance-change",
+                "threejs-qa-build"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"actionLevel": {"enum": ["A0", "A1", "A2"]}}},
+      "then": {
+        "not": {"anyOf": [{"required": ["executionUnitIds"]}, {"required": ["parallelGroup"]}]}
+      }
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "world-viewport/1.0",
+  "renderSpace": "world-3d",
+  "renderer": "webgl2",
+  "cssLogicalRect": {
+    "coordinateSpace": "css-pixel",
+    "origin": "top-left",
+    "source": "canvas.getBoundingClientRect",
+    "fill": "viewport"
+  },
+  "canvasBackingPolicy": {
+    "method": "threejs-renderer-setSize",
+    "rounding": "floor",
+    "updateStyle": false,
+    "pixelRatioSource": "effectiveDevicePixelRatio"
+  },
+  "runtimeDprPolicy": {
+    "source": "window.devicePixelRatio",
+    "dynamic": true,
+    "invalidFallback": 1,
+    "maximum": 2,
+    "updatesOn": [
+      "resize",
+      "display-density-change"
+    ]
+  },
+  "cameraPolicy": {
+    "type": "perspective",
+    "near": 0.1,
+    "far": 500,
+    "projectionUpdate": "updateProjectionMatrix-on-resize",
+    "perspective": {
+      "fovDegrees": 60,
+      "aspectSource": "cssLogicalRect"
+    }
+  },
+  "inputCoordinatePolicy": {
+    "from": "css-client-pixel",
+    "to": "ndc",
+    "raycaster": "THREE.Raycaster",
+    "mapping": "canvas-local-to-ndc"
+  },
+  "orientation": {
+    "allowed": [
+      "portrait",
+      "landscape"
+    ]
+  },
+  "representativeViewports": [
+    {
+      "id": "phone",
+      "cssLogicalRect": {
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "id": "desktop",
+      "cssLogicalRect": {
+        "width": 1280,
+        "height": 720
+      }
+    }
+  ],
+  "performanceBudget": {
+    "maxDrawCalls": 500,
+    "maxTriangles": 250000,
+    "maxGeometries": 400,
+    "maxTextures": 256,
+    "maxFrameTimeMs": 16.7
+  },
+  "requiredRuntimeEvidence": [
+    "capturedAt",
+    "measurementSource",
+    "viewportId",
+    "canvasCssRect",
+    "canvasBackingSize",
+    "rawDevicePixelRatio",
+    "effectiveDevicePixelRatio",
+    "camera",
+    "inputHitResults",
+    "resizeTrajectory",
+    "rendererMetrics",
+    "screenshot",
+    "sceneId",
+    "stateId",
+    "candidateSha256",
+    "pageReloaded"
+  ],
+  "validationScope": "machine-contract-only"
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "three.js 通用帧动画"
+  short_description: "编写视频提示词并将视频抽帧为 ThreeJS 图集"
+  default_prompt: "使用 $threejs-frame-animation 根据动作要求编写视频生成提示词，等待视频文件，再抽帧生成图集和网页预览。"

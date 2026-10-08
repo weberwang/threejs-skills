@@ -1,0 +1,4 @@
+interface:
+  display_name: "three.js 广告接入"
+  short_description: "通过 AppLovin MAX 接入 Banner 与全屏视频广告并统一管理加载、重试和失败提示"
+  default_prompt: "在 $threejs-game-workflow-control 范围内使用 $threejs-game-ad-integration 接入 AppLovin MAX 广告。"

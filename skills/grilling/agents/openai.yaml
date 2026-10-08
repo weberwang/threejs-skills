@@ -1,0 +1,4 @@
+interface:
+  display_name: "拷问"
+  short_description: "仅澄清现有证据无法解决的实质用户取舍；不因阶段或模块变化自动提问"
+  default_prompt: "使用 $grilling 澄清模块门或实质取舍，并把精确决定提交给 $threejs-game-workflow-control。"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "three.js Spine 生成式换皮"
+  short_description: "逐 Cell 生图并重建可恢复验证的 Spine Atlas 新纹理"
+  default_prompt: "在 $threejs-game-workflow-control 批准范围内，使用 $threejs-spine-generative-reskin 生成可选 2D HUD/billboard Spine 素材，并通过目标项目专用适配器验证。"

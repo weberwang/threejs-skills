@@ -1,0 +1,4 @@
+interface:
+  display_name: "three.js 游戏插件"
+  short_description: "为 Web 三维游戏提供可验证的工程工作流、生命周期与交付边界"
+  default_prompt: "使用 $threejs-game-plugins 完成本游戏项目对应领域的实现与验证。"

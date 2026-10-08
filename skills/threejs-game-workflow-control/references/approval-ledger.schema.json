@@ -1,0 +1,263 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "threejs-approval-ledger.schema.json",
+  "title": "操作审批账本",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "approvals"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "approvals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "approvalId",
+          "promptContextId",
+          "pendingState",
+          "pendingContext",
+          "workItemId",
+          "userOriginalText",
+          "approvedAt",
+          "explicitObject",
+          "stageId",
+          "moduleIds",
+          "baselineVersion",
+          "baselineHash",
+          "actionType",
+          "actionLevel",
+          "impactSummary",
+          "fileScope",
+          "services",
+          "allowServiceStart",
+          "allowDelete",
+          "externalWrite",
+          "destructive",
+          "physicalDevice",
+          "release",
+          "gate",
+          "invalidatedWhen"
+        ],
+        "properties": {
+          "approvalId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "promptContextId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pendingState": {
+            "enum": [
+              "INTAKE",
+              "BASELINE",
+              "PROPOSAL",
+              "REVIEW",
+              "IMPLEMENTING",
+              "VALIDATING",
+              "PASSED",
+              "INTEGRATING",
+              "RELEASE_APPROVAL_REQUIRED",
+              "RELEASING",
+              "COMPLETE",
+              "RETURN",
+              "BLOCKED"
+            ]
+          },
+          "pendingContext": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workItemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "userOriginalText": {
+            "type": "string",
+            "minLength": 1
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "explicitObject": {
+            "type": "string",
+            "minLength": 1
+          },
+          "stageId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "moduleIds": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "baselineVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "baselineHash": {
+            "type": "string",
+          "pattern": "^(?:sha256:[a-f0-9]{64}|[a-f0-9]{40}(?:[a-f0-9]{24})?)$"
+          },
+          "actionType": {
+            "enum": [
+              "threejs-integration",
+              "threejs-build-upload",
+              "threejs-backend-config",
+              "threejs-channel-config",
+              "threejs-device-test",
+              "threejs-store-submit",
+              "threejs-release",
+              "threejs-game-rollback"
+            ]
+          },
+          "actionLevel": {
+            "enum": [
+              "A4",
+              "A5",
+              "A6"
+            ]
+          },
+          "impactSummary": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "fileScope": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowServiceStart": {
+            "type": "boolean"
+          },
+          "allowDelete": {
+            "type": "boolean"
+          },
+          "externalWrite": {
+            "type": "boolean"
+          },
+          "destructive": {
+            "type": "boolean"
+          },
+          "physicalDevice": {
+            "type": "boolean"
+          },
+          "release": {
+            "type": "boolean"
+          },
+          "gate": {
+            "enum": [
+              "F0",
+              "F1",
+              "F2",
+              "F3",
+              "F4"
+            ]
+          },
+          "invalidatedWhen": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "externalTargets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "invalidatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "legacyReadOnly": {
+            "type": "boolean"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "actionType": {
+                  "enum": [
+                    "threejs-integration"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "actionLevel": {
+                  "const": "A4"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "actionType": {
+                  "enum": [
+                    "threejs-build-upload",
+                    "threejs-backend-config",
+                    "threejs-channel-config"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "actionLevel": {
+                  "const": "A5"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "actionType": {
+                  "enum": [
+                    "threejs-device-test",
+                    "threejs-store-submit",
+                    "threejs-release",
+                    "threejs-game-rollback"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "actionLevel": {
+                  "const": "A6"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

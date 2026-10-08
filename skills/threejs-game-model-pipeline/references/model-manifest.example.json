@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "asset": {
+    "assetId": "guard-character",
+    "file": "public/models/guard-character.glb",
+    "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "source": "art-source/guard-character.blend（示例，替换为实际来源）",
+    "license": "项目自有（示例，替换为实际许可）",
+    "sceneId": "GuardCharacter",
+    "coordinateSystem": {
+      "units": "meters",
+      "upAxis": "Y"
+    },
+    "budgets": {
+      "maxBytes": 5242880,
+      "maxTriangles": 50000,
+      "maxMaterials": 16,
+      "maxTexturePixels": 16777216
+    },
+    "allowAnimations": true,
+    "allowSkins": true,
+    "externalUriPolicy": "reject"
+  }
+}

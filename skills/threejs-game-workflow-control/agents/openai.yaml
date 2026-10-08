@@ -1,0 +1,4 @@
+interface:
+  display_name: "three.js 全局工作流控制"
+  short_description: "以精确审批、风险、状态、路径和证据门控游戏全流程"
+  default_prompt: "使用 $threejs-game-workflow-control 建立工作项，轮换并交接精确审批点，再在任何写入、委派、验证、集成或发布前执行统一门禁。"

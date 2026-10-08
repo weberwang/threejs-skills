@@ -1,0 +1,4 @@
+interface:
+  display_name: "three.js 测试性能"
+  short_description: "验证功能还原、逐状态视觉、兼容性能及发布候选证据"
+  default_prompt: "在 $threejs-game-workflow-control 当前工作项内使用 $threejs-game-qa-performance 生成可复现工程证据。"

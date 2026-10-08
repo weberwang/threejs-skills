@@ -1,0 +1,1240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "threejs-implementation-package.schema.json",
+  "title": "实施包",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["packageId", "workItemId", "baselineVersion", "baselineHash", "approvedRequirements", "approvedArchitecture", "fileOwnership", "executionUnits", "allowedPaths", "forbiddenPaths", "expectedAddedFiles", "expectedDeletedFiles", "testScope", "compatibilityStrategy", "definitionOfDone"],
+  "properties": {
+    "packageId": {"type": "string", "minLength": 1},
+    "workItemId": {"type": "string", "minLength": 1},
+    "baselineVersion": {"type": "string", "minLength": 1},
+    "baselineHash": {"type": "string", "pattern": "^(?:sha256:[a-f0-9]{64}|[a-f0-9]{40}(?:[a-f0-9]{24})?)$"},
+    "approvedRequirements": {"$ref": "#/$defs/nonEmptyStrings"},
+    "approvedArchitecture": {"type": "string", "minLength": 1},
+    "fileOwnership": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"type": "string", "minLength": 1}
+    },
+    "executionUnits": {
+      "type": "array",
+      "minItems": 1,
+      "description": "数组顺序由计划制定者预设并作为唯一执行顺序；串行单元各占一个位置，同一并行组必须连续出现。若全部单元仅为 SHARED/MODULE，则该包属于 foundation-only：无视觉产物或行为的纯工程包只需 Work Item 范围、工程基线、冻结实施包和工程证据即可在全局选图前实施；声明 visualProductionUnits、visualManifestFile、visualContractVersion 等视觉合同或资产生产依赖的基础包，必须完整复核 globalVisualBaselineSelectionRef（三张同条件 generated 候选、唯一 SINGLE_HUMAN/CONFIRMED 决定、冻结正文真实 SHA）且 globalStaticBaselineState=global-static-baseline-frozen；声明正式入口或可见资源消费等视觉行为时，仍受正式 V2/V3/V4/V5 门约束。混入 SCENE/DISPLAY_LAYER/INTEGRATION 时仍受正式 V2/V3/V4/V5 门约束。",
+      "items": {"$ref": "#/$defs/executionUnit"}
+    },
+    "allowedPaths": {"$ref": "#/$defs/nonEmptyStrings"},
+    "forbiddenPaths": {"$ref": "#/$defs/strings"},
+    "expectedAddedFiles": {"$ref": "#/$defs/strings"},
+    "expectedDeletedFiles": {"$ref": "#/$defs/strings"},
+    "testScope": {"$ref": "#/$defs/nonEmptyStrings"},
+    "outOfScope": {"$ref": "#/$defs/strings"},
+    "compatibilityStrategy": {"type": "string", "minLength": 1},
+    "definitionOfDone": {"$ref": "#/$defs/nonEmptyStrings"},
+    "stopConditions": {"$ref": "#/$defs/strings"},
+    "visualContractVersion": {"type": "string", "minLength": 1},
+    "candidateVersion": {"type": "string", "minLength": 1},
+    "visualManifestFile": {"type": "string", "minLength": 1},
+    "visualManifestSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "pageSketchFile": {"type": "string", "minLength": 1, "description": "V5 正式实施消费的已确认 V4 草图文件，必须等于当前 Work Item 的 V4 引用路径。"},
+    "pageSketchSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$", "description": "已确认草图文件字节 SHA，必须等于当前 V4 引用 SHA。"},
+    "visualDecompositionConfirmations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/visualDecompositionConfirmationGroup"}},
+    "current_stage": {"enum": ["V1", "V2", "V3", "V4", "V5"]},
+    "currentStage": {"enum": ["V1", "V2", "V3", "V4", "V5"]},
+    "scene_reconstruction_contract": {"$ref": "#/$defs/sceneReconstructionContract"},
+    "sceneReconstructionContract": {"$ref": "#/$defs/sceneReconstructionContract"},
+    "visualProductionUnits": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/visualProductionUnit"}
+    },
+    "responsiveContractVersion": {"type": "string", "minLength": 1}, "layoutContractVersion": {"type": "string", "minLength": 1}, "visualBaselineVersion": {"type": "string", "minLength": 1}, "logicalViewportSpace": {"$ref": "#/$defs/responsiveContractFact"}, "designResolutionPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "canvasBackingPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "runtimeDprPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "maxRuntimeDpr": {"$ref": "#/$defs/responsiveContractFact"}, "scaleMode": {"$ref": "#/$defs/responsiveContractFact"}, "cameraViewportPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "cameraZoomPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "cameraOriginPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "inputCoordinatePolicy": {"$ref": "#/$defs/responsiveContractFact"}, "safeAreaPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "resizePolicy": {"$ref": "#/$defs/responsiveContractFact"}, "orientationPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "textResolutionPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "assetResolutionPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "performanceBudget": {"$ref": "#/$defs/responsiveContractFact"}, "representativeViewports": {"$ref": "#/$defs/responsiveContractFact"}, "requiredRuntimeEvidence": {"$ref": "#/$defs/responsiveContractFact"}, "responsiveViewportContract": {"$ref": "#/$defs/responsiveViewportContract"}, "responsiveContract": {"$ref": "#/$defs/responsiveViewportContract"}
+  },
+  "allOf": [
+    {"if": {"anyOf": [{"required": ["current_stage"], "properties": {"current_stage": {"const": "V5"}}}, {"required": ["currentStage"], "properties": {"currentStage": {"const": "V5"}}}]}, "then": {"required": ["pageSketchFile", "pageSketchSha256"]}},
+    {"if":{"anyOf":[{"required":["responsiveViewportContract"],"properties":{"responsiveViewportContract":{"required":["renderSpace"],"properties":{"renderSpace":{"const":"world-3d"}}}}},{"required":["responsiveContract"],"properties":{"responsiveContract":{"required":["renderSpace"],"properties":{"renderSpace":{"const":"world-3d"}}}}}]},"then":{"required":["responsiveContractVersion","layoutContractVersion","visualBaselineVersion"]},"else":{"if":{"anyOf":[{"required":["current_stage"]},{"required":["currentStage"]},{"required":["responsiveViewportContract"]},{"required":["responsiveContract"]}]},"then":{"required":["responsiveContractVersion","layoutContractVersion","visualBaselineVersion","logicalViewportSpace","designResolutionPolicy","canvasBackingPolicy","runtimeDprPolicy","maxRuntimeDpr","scaleMode","cameraViewportPolicy","cameraZoomPolicy","cameraOriginPolicy","inputCoordinatePolicy","safeAreaPolicy","resizePolicy","orientationPolicy","textResolutionPolicy","assetResolutionPolicy","performanceBudget","representativeViewports","requiredRuntimeEvidence"]}}},
+    {
+      "if": {"anyOf": [{"required": ["visualContractVersion"]}, {"required": ["candidateVersion"]}, {"required": ["visualManifestFile"]}, {"required": ["visualManifestSha256"]}, {"required": ["visualProductionUnits"]}]},
+      "then": {"required": ["visualContractVersion", "candidateVersion", "visualManifestFile", "visualManifestSha256", "visualProductionUnits"]}
+    },
+    {
+      "if": {"required": ["visualProductionUnits"], "properties": {"visualProductionUnits": {"minItems": 1}}},
+      "then": {"required": ["visualDecompositionConfirmations"]}
+    },
+    {"if": {"anyOf": [{"required": ["current_stage"], "properties": {"current_stage": {"const": "V5"}}}, {"required": ["currentStage"], "properties": {"currentStage": {"const": "V5"}}}]}, "then": {"allOf": [{"anyOf": [{"required": ["scene_reconstruction_contract"], "properties": {"scene_reconstruction_contract": {"required": ["combination_preacceptance"]}}}, {"required": ["sceneReconstructionContract"], "properties": {"sceneReconstructionContract": {"required": ["combination_preacceptance"]}}}]}, {"properties": {"visualProductionUnits": {"items": {"required": ["scene_asset_usage"]}}}}]}}
+  ],
+  "$defs": {
+    "responsiveContractFact": {"oneOf": [{"type": "object", "minProperties": 1}, {"type": "array", "minItems": 1}, {"type": "string", "minLength": 1}, {"type": "number", "exclusiveMinimum": 0}]},
+    "hudResponsiveViewportContract": {"type":"object","required":["logicalViewportSpace","designResolutionPolicy","canvasBackingPolicy","runtimeDprPolicy","maxRuntimeDpr","scaleMode","cameraViewportPolicy","cameraZoomPolicy","cameraOriginPolicy","inputCoordinatePolicy","safeAreaPolicy","resizePolicy","orientationPolicy","textResolutionPolicy","assetResolutionPolicy","performanceBudget","representativeViewports","requiredRuntimeEvidence"],"properties":{"logicalViewportSpace":{"$ref":"#/$defs/responsiveContractFact"},"designResolutionPolicy":{"$ref":"#/$defs/responsiveContractFact"},"canvasBackingPolicy":{"$ref":"#/$defs/responsiveContractFact"},"runtimeDprPolicy":{"$ref":"#/$defs/responsiveContractFact"},"maxRuntimeDpr":{"$ref":"#/$defs/responsiveContractFact"},"scaleMode":{"$ref":"#/$defs/responsiveContractFact"},"cameraViewportPolicy":{"$ref":"#/$defs/responsiveContractFact"},"cameraZoomPolicy":{"$ref":"#/$defs/responsiveContractFact"},"cameraOriginPolicy":{"$ref":"#/$defs/responsiveContractFact"},"inputCoordinatePolicy":{"$ref":"#/$defs/responsiveContractFact"},"safeAreaPolicy":{"$ref":"#/$defs/responsiveContractFact"},"resizePolicy":{"$ref":"#/$defs/responsiveContractFact"},"orientationPolicy":{"$ref":"#/$defs/responsiveContractFact"},"textResolutionPolicy":{"$ref":"#/$defs/responsiveContractFact"},"assetResolutionPolicy":{"$ref":"#/$defs/responsiveContractFact"},"performanceBudget":{"$ref":"#/$defs/responsiveContractFact"},"representativeViewports":{"$ref":"#/$defs/responsiveContractFact"},"requiredRuntimeEvidence":{"$ref":"#/$defs/responsiveContractFact"}},"additionalProperties":false},
+    "worldViewportContract": {"type":"object","required":["schemaVersion","renderSpace","renderer","cssLogicalRect","canvasBackingPolicy","runtimeDprPolicy","cameraPolicy","inputCoordinatePolicy","orientation","representativeViewports","performanceBudget","requiredRuntimeEvidence","validationScope"],"properties":{"schemaVersion":{"const":"world-viewport/1.0"},"renderSpace":{"const":"world-3d"},"renderer":{"enum":["webgl2","webgpu"]},"cssLogicalRect":{"type":"object","required":["coordinateSpace","origin","source","fill"],"properties":{"coordinateSpace":{"const":"css-pixel"},"origin":{"const":"top-left"},"source":{"const":"canvas.getBoundingClientRect"},"fill":{"const":"viewport"}},"additionalProperties":false},"canvasBackingPolicy":{"type":"object","required":["method","rounding","updateStyle","pixelRatioSource"],"properties":{"method":{"const":"threejs-renderer-setSize"},"rounding":{"const":"floor"},"updateStyle":{"const":false},"pixelRatioSource":{"const":"effectiveDevicePixelRatio"}},"additionalProperties":false},"runtimeDprPolicy":{"type":"object","required":["source","dynamic","invalidFallback","maximum","updatesOn"],"properties":{"source":{"const":"window.devicePixelRatio"},"dynamic":{"const":true},"invalidFallback":{"const":1},"maximum":{"const":2},"updatesOn":{"type":"array","minItems":2,"uniqueItems":true,"items":{"enum":["resize","orientation-change","display-density-change"]},"allOf":[{"contains":{"const":"resize"}},{"contains":{"const":"display-density-change"}}]}},"additionalProperties":false},"cameraPolicy":{"type":"object","required":["type","near","far","projectionUpdate"],"properties":{"type":{"enum":["perspective","orthographic"]},"near":{"type":"number","minimum":0},"far":{"type":"number","exclusiveMinimum":0},"projectionUpdate":{"const":"updateProjectionMatrix-on-resize"},"perspective":{"type":"object","required":["fovDegrees","aspectSource"],"properties":{"fovDegrees":{"type":"number","exclusiveMinimum":0,"exclusiveMaximum":180},"aspectSource":{"const":"cssLogicalRect"}},"additionalProperties":false},"orthographic":{"type":"object","required":["verticalSpan","horizontalSpan"],"properties":{"verticalSpan":{"type":"number","exclusiveMinimum":0},"horizontalSpan":{"const":"derive-from-css-aspect"}},"additionalProperties":false}},"allOf":[{"if":{"properties":{"type":{"const":"perspective"}}},"then":{"required":["perspective"],"not":{"required":["orthographic"]}}},{"if":{"properties":{"type":{"const":"orthographic"}}},"then":{"required":["orthographic"],"not":{"required":["perspective"]}}},{"if":{"properties":{"type":{"const":"perspective"}}},"then":{"properties":{"near":{"exclusiveMinimum":0}}}},{"if":{"properties":{"type":{"const":"orthographic"}}},"then":{"properties":{"near":{"minimum":0}}}}],"additionalProperties":false},"inputCoordinatePolicy":{"type":"object","required":["from","to","raycaster","mapping"],"properties":{"from":{"const":"css-client-pixel"},"to":{"const":"ndc"},"raycaster":{"const":"THREE.Raycaster"},"mapping":{"const":"canvas-local-to-ndc"}},"additionalProperties":false},"orientation":{"type":"object","required":["allowed"],"properties":{"allowed":{"type":"array","minItems":1,"uniqueItems":true,"items":{"enum":["portrait","landscape"]}}},"additionalProperties":false},"representativeViewports":{"type":"array","minItems":1,"items":{"type":"object","required":["id","cssLogicalRect"],"properties":{"id":{"type":"string","minLength":1},"cssLogicalRect":{"type":"object","required":["width","height"],"properties":{"width":{"type":"number","exclusiveMinimum":0},"height":{"type":"number","exclusiveMinimum":0}},"additionalProperties":false}},"additionalProperties":false}},"performanceBudget":{"type":"object","required":["maxDrawCalls","maxTriangles","maxGeometries","maxTextures","maxFrameTimeMs"],"properties":{"maxDrawCalls":{"type":"number","minimum":0},"maxTriangles":{"type":"number","minimum":0},"maxGeometries":{"type":"number","minimum":0},"maxTextures":{"type":"number","minimum":0},"maxFrameTimeMs":{"type":"number","minimum":0}},"additionalProperties":false},"requiredRuntimeEvidence":{"type":"array","minItems":16,"uniqueItems":true,"items":{"enum":["capturedAt","measurementSource","viewportId","canvasCssRect","canvasBackingSize","rawDevicePixelRatio","effectiveDevicePixelRatio","camera","inputHitResults","resizeTrajectory","rendererMetrics","screenshot","sceneId","stateId","candidateSha256","pageReloaded"]},"allOf":[{"contains":{"const":"capturedAt"}},{"contains":{"const":"measurementSource"}},{"contains":{"const":"viewportId"}},{"contains":{"const":"canvasCssRect"}},{"contains":{"const":"canvasBackingSize"}},{"contains":{"const":"rawDevicePixelRatio"}},{"contains":{"const":"effectiveDevicePixelRatio"}},{"contains":{"const":"camera"}},{"contains":{"const":"inputHitResults"}},{"contains":{"const":"resizeTrajectory"}},{"contains":{"const":"rendererMetrics"}},{"contains":{"const":"screenshot"}},{"contains":{"const":"sceneId"}},{"contains":{"const":"stateId"}},{"contains":{"const":"candidateSha256"}},{"contains":{"const":"pageReloaded"}}]},"validationScope":{"const":"machine-contract-only"}},"allOf":[{"if":{"properties":{"cameraPolicy":{"properties":{"type":{"const":"perspective"}}}}},"then":{"properties":{"cameraPolicy":{"properties":{"far":{"exclusiveMinimum":0}}}}}}],"additionalProperties":false},
+    "responsiveViewportContract": {"oneOf":[{"$ref":"#/$defs/hudResponsiveViewportContract"},{"$ref":"#/$defs/worldViewportContract"}]},
+    "executionUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unitId", "unitType", "scopeId", "moduleId", "sceneId", "displayLayerId", "hostSceneId", "owner", "parallelMode", "parallelGroup", "ownedPaths", "stateOwnership", "acceptanceCommands", "serializationReason", "highFidelityPrerequisite"],
+      "properties": {
+        "unitId": {"type": "string", "minLength": 1},
+        "unitType": {"enum": ["MODULE", "SCENE", "DISPLAY_LAYER", "SHARED", "INTEGRATION"]},
+        "scopeId": {"type": "string", "minLength": 1},
+        "moduleId": {"type": "string", "minLength": 1},
+        "sceneId": {"type": ["string", "null"], "minLength": 1},
+        "displayLayerId": {"type": ["string", "null"], "minLength": 1},
+        "hostSceneId": {"type": ["string", "null"], "minLength": 1},
+        "owner": {"type": "string", "minLength": 1},
+        "parallelMode": {"enum": ["PARALLEL", "SERIAL"]},
+        "parallelGroup": {"type": ["string", "null"], "minLength": 1},
+        "ownedPaths": {"$ref": "#/$defs/nonEmptyStrings"},
+        "stateOwnership": {"$ref": "#/$defs/nonEmptyStrings"},
+        "acceptanceCommands": {"$ref": "#/$defs/nonEmptyStrings"},
+        "serializationReason": {"type": ["string", "null"], "minLength": 1},
+        "highFidelityPrerequisite": {"type": ["object", "null"]},
+        "responsiveContract": {"$ref": "#/$defs/responsiveViewportContract"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"unitType": {"const": "SCENE"}}},
+          "then": {"properties": {"sceneId": {"type": "string", "minLength": 1}, "displayLayerId": {"type": "null"}, "hostSceneId": {"type": "null"}}},
+          "else": {"properties": {"sceneId": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"unitType": {"const": "DISPLAY_LAYER"}}},
+          "then": {"properties": {"sceneId": {"type": "null"}, "displayLayerId": {"type": "string", "minLength": 1}, "hostSceneId": {"type": "string", "minLength": 1}}},
+          "else": {"properties": {"displayLayerId": {"type": "null"}, "hostSceneId": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"unitType": {"enum": ["SCENE", "DISPLAY_LAYER"]}}},
+          "then": {"properties": {"highFidelityPrerequisite": {"$ref": "#/$defs/highFidelityPrerequisite"}}},
+          "else": {"properties": {"highFidelityPrerequisite": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"unitType": {"const": "SCENE"}}},
+          "then": {"properties": {"highFidelityPrerequisite": {"properties": {"sceneId": {"type": "string", "minLength": 1}, "displayLayerId": {"type": "null"}, "hostSceneId": {"type": "null"}}}}}
+        },
+        {
+          "if": {"properties": {"unitType": {"const": "DISPLAY_LAYER"}}},
+          "then": {"properties": {"highFidelityPrerequisite": {"properties": {"sceneId": {"type": "string", "minLength": 1}, "displayLayerId": {"type": "string", "minLength": 1}, "hostSceneId": {"type": "string", "minLength": 1}}}}}
+        },
+        {
+          "if": {"properties": {"unitType": {"enum": ["SHARED", "INTEGRATION"]}}},
+          "then": {"properties": {"parallelMode": {"const": "SERIAL"}, "parallelGroup": {"type": "null"}, "serializationReason": {"type": "string", "minLength": 1}}}
+        },
+        {
+          "if": {"properties": {"parallelMode": {"const": "PARALLEL"}}},
+          "then": {"properties": {"parallelGroup": {"type": "string", "minLength": 1}, "serializationReason": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"parallelMode": {"const": "SERIAL"}}},
+          "then": {"properties": {"parallelGroup": {"type": "null"}, "serializationReason": {"type": "string", "minLength": 1}}}
+        }
+      ]
+    },
+    "highFidelityPrerequisite": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "当前 SCENE 或独立 DISPLAY_LAYER Work Item 的 V2 拆解还原方案引用；DISPLAY_LAYER 从自身证据的 displayLayerContexts 查找唯一宿主上下文。",
+      "required": ["workItemId", "status", "stage", "frozen", "sceneId", "displayLayerId", "hostSceneId", "targetSha256", "candidateSha256", "diffFingerprint", "evidenceFile", "evidenceSha256"],
+      "properties": {
+        "workItemId": {"type": "string", "minLength": 1},
+        "status": {"const": "COMPLETE"},
+        "stage": {"const": "V2"},
+        "frozen": {"const": true},
+        "sceneId": {"type": "string", "minLength": 1},
+        "displayLayerId": {"type": ["string", "null"], "minLength": 1},
+        "hostSceneId": {"type": ["string", "null"], "minLength": 1},
+        "targetSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "candidateSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "diffFingerprint": {"type": "string", "minLength": 1},
+        "evidenceFile": {"type": "string", "minLength": 1},
+        "evidenceSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+      }
+    },
+    "strings": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "nonEmptyStrings": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "visualOutputPaths": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"oneOf": [
+        {"type": "string", "minLength": 1},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "file": {"type": "string", "minLength": 1},
+            "path": {"type": "string", "minLength": 1},
+            "share_id": {"type": "string", "minLength": 1},
+            "shareId": {"type": "string", "minLength": 1}
+          },
+          "allOf": [
+            {"oneOf": [{"required": ["file"], "not": {"required": ["path"]}}, {"required": ["path"], "not": {"required": ["file"]}}]},
+            {"not": {"required": ["share_id", "shareId"]}}
+          ]
+        }
+      ]}
+    },
+    "visualProductionUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unitId", "annotation_number", "region_id", "scene_id", "state_id", "owner_type", "production_origin", "production_method", "production_label", "delivery_kind", "image_generation_required", "generation_record_required", "substitution_policy", "decomposition_confirmation_id", "decomposition_confirmation_sha256", "owner", "ownedPaths", "outputPaths"],
+      "properties": {
+        "unitId": {"type": "string", "minLength": 1},
+        "annotation_number": {"type": "integer", "minimum": 1},
+      "region_id": {"type": "string", "minLength": 1},
+      "scene_id": {"type": "string", "minLength": 1},
+      "state_id": {"type": "string", "minLength": 1},
+      "owner_type": {"enum": ["fixed-production-visual", "runtime-data", "runtime-rendered"]},
+        "production_origin": {"enum": ["bitmap-decomposition", "independent-production"]},
+        "production_method": {"enum": ["image-generation", "authored-raster", "authored-svg", "threejs-graphics", "runtime-program", "reuse", "authored-model"]},
+        "production_label": {"type": "string", "minLength": 1},
+        "delivery_kind": {"enum": ["raster-image", "vector-image", "runtime-drawing", "runtime-program", "existing-asset", "gltf-model"]},
+        "image_generation_required": {"type": "boolean"},
+        "generation_record_required": {"type": "boolean"},
+         "substitution_policy": {"enum": ["forbid", "user-change-request-only"]},
+         "implementation_plan": {"$ref": "#/$defs/implementationPlan"},
+         "reuse_snapshot": {"$ref": "#/$defs/reuseSnapshot"},
+         "decomposition_confirmation_id": {"type": "string", "minLength": 1},
+        "decomposition_confirmation_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "asset_id": {"type": "string", "minLength": 1},
+        "asset_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "state_analysis": {"$ref": "#/$defs/stateAnalysis"},
+        "component_inventory": {"$ref": "#/$defs/componentInventory"},
+        "owner": {"type": "string", "minLength": 1},
+        "ownedPaths": {"$ref": "#/$defs/nonEmptyStrings"},
+        "outputPaths": {"$ref": "#/$defs/visualOutputPaths"},
+        "expected_assets": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/visualExpectedAsset"}},
+        "atomic_image_requirements": {"type": "array", "items": {"$ref": "#/$defs/atomicImageRequirement"}},
+        "interaction_hotspots": {"type": "array", "items": {"$ref": "#/$defs/interactionHotspot"}},
+        "runtime_implementation": {"$ref": "#/$defs/runtimeImplementation"},
+        "scene_asset_usage": {"$ref": "#/$defs/sceneAssetUsage"},
+        "sceneAssetUsage": {"$ref": "#/$defs/sceneAssetUsage"},
+        "format": {"type": "string", "minLength": 1},
+        "output_sharing": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {"required": ["owner_type"], "properties": {"owner_type": {"const": "fixed-production-visual"}}},
+          "then": {
+            "required": ["state_analysis", "component_inventory", "expected_assets", "atomic_image_requirements", "interaction_hotspots"],
+            "properties": {
+              "production_method": {"enum": ["image-generation", "authored-raster", "reuse"]},
+              "delivery_kind": {"enum": ["raster-image", "existing-asset"]},
+              "expected_assets": {"minItems": 1, "items": {"properties": {"source_file": {"pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "runtime_file": {"pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "mime_type": {"enum": ["image/png", "image/jpeg"]}}}},
+              "atomic_image_requirements": {"items": {"properties": {"production_method": {"enum": ["image-generation", "authored-raster", "reuse"]}, "delivery_kind": {"enum": ["raster-image", "existing-asset"]}}}}
+            }
+          }
+        },
+        {
+          "if": {"required": ["owner_type"], "properties": {"owner_type": {"enum": ["runtime-data", "runtime-rendered"]}}},
+          "then": {
+            "required": ["runtime_implementation"],
+            "not": {"anyOf": [
+              {"required": ["component_inventory"]},
+              {"required": ["asset_id"]},
+              {"required": ["asset_ids"]},
+              {"required": ["expected_assets"]},
+              {"required": ["actual_assets"]},
+              {"required": ["atomic_image_requirements"]},
+              {"required": ["interaction_hotspots"]}
+            ]},
+            "properties": {
+              "production_method": {"enum": ["threejs-graphics", "runtime-program"]},
+              "delivery_kind": {"enum": ["runtime-drawing", "runtime-program"]},
+              "image_generation_required": {"const": false},
+              "generation_record_required": {"const": false},
+              "runtime_implementation": {"required": ["kind", "integration_files"]}
+            }
+          }
+        },
+        {
+          "if": {"required": ["image_generation_required"], "properties": {"image_generation_required": {"const": true}}},
+          "then": {
+            "required": ["production_method", "delivery_kind", "generation_record_required", "substitution_policy", "component_inventory", "scene_asset_usage"],
+            "properties": {
+              "production_method": {"const": "image-generation"},
+              "delivery_kind": {"const": "raster-image"},
+              "generation_record_required": {"const": true},
+              "substitution_policy": {"const": "user-change-request-only"},
+              "component_inventory": {"required": ["delivery_mode", "atlas_allowed"], "properties": {"delivery_mode": {"const": "individual"}, "atlas_allowed": {"const": false}}},
+              "expected_assets": {"items": {"$ref": "#/$defs/imageGenerationExpectedAsset"}},
+              "scene_asset_usage": {"required": ["target_display_size", "intended_scale_range", "max_dpr", "padding_policy"], "properties": {"max_dpr": {"const": 2, "description": "图片生产基线 DPR 固定为 2；运行时实际 DPR 仍动态取值并封顶为 2。"}, "padding_policy": {"const": "none"}}}
+            }
+          }
+        },
+        {
+          "if": {"required": ["production_method"], "properties": {"production_method": {"const": "image-generation"}}},
+          "then": {
+            "required": ["component_inventory", "scene_asset_usage"],
+            "not": {"required": ["runtime_implementation"]},
+            "properties": {
+              "delivery_kind": {"const": "raster-image"},
+              "image_generation_required": {"const": true},
+              "generation_record_required": {"const": true},
+              "substitution_policy": {"const": "user-change-request-only"},
+              "component_inventory": {"required": ["delivery_mode", "atlas_allowed"], "properties": {"delivery_mode": {"const": "individual"}, "atlas_allowed": {"const": false}}},
+              "expected_assets": {"items": {"$ref": "#/$defs/imageGenerationExpectedAsset"}},
+              "scene_asset_usage": {"required": ["target_display_size", "intended_scale_range", "max_dpr", "padding_policy"], "properties": {"max_dpr": {"const": 2, "description": "图片生产基线 DPR 固定为 2；运行时实际 DPR 仍动态取值并封顶为 2。"}, "padding_policy": {"const": "none"}}}
+            }
+          }
+        },
+        {
+          "if": {"required": ["production_method"], "properties": {"production_method": {"const": "authored-raster"}}},
+          "then": {"not": {"required": ["runtime_implementation"]}, "properties": {"delivery_kind": {"const": "raster-image"}, "image_generation_required": {"const": false}, "expected_assets": {"items": {"required": ["source_file", "runtime_file"]}}}}
+        },
+        {
+          "if": {"required": ["production_method"], "properties": {"production_method": {"const": "authored-svg"}}},
+          "then": {"not": {"required": ["runtime_implementation"]}, "properties": {"delivery_kind": {"const": "vector-image"}, "image_generation_required": {"const": false}, "expected_assets": {"items": {"required": ["source_file", "runtime_file"]}}}}
+        },
+         {
+           "if": {"required": ["production_method"], "properties": {"production_method": {"const": "reuse"}}},
+           "then": {"required": ["implementation_plan", "reuse_snapshot"], "not": {"required": ["runtime_implementation"]}, "properties": {"delivery_kind": {"const": "existing-asset"}, "image_generation_required": {"const": false}, "expected_assets": {"items": {"required": ["source_file", "runtime_file"]}}, "implementation_plan": {"properties": {"mode": {"const": "reuse-existing"}}}}}
+        },
+        {
+          "if": {"required": ["production_method"], "properties": {"production_method": {"const": "threejs-graphics"}}},
+          "then": {
+            "required": ["runtime_implementation"],
+            "properties": {
+              "delivery_kind": {"const": "runtime-drawing"},
+              "image_generation_required": {"const": false},
+              "runtime_implementation": {"required": ["kind", "integration_files"], "properties": {"kind": {"const": "threejs-graphics"}}},
+              "expected_assets": {"items": {"not": {"anyOf": [{"required": ["source_file"]}, {"required": ["runtime_file"]}]}}}
+            }
+          }
+        },
+        {
+          "if": {"required": ["production_method"], "properties": {"production_method": {"const": "runtime-program"}}},
+          "then": {
+            "required": ["runtime_implementation"],
+            "properties": {
+              "delivery_kind": {"const": "runtime-program"},
+              "image_generation_required": {"const": false},
+              "runtime_implementation": {"required": ["kind", "integration_files"], "properties": {"kind": {"const": "runtime-program"}}},
+              "expected_assets": {"items": {"not": {"anyOf": [{"required": ["source_file"]}, {"required": ["runtime_file"]}]}}}
+            }
+          }
+        },
+        {
+          "if": {"required": ["delivery_kind"], "properties": {"delivery_kind": {"enum": ["raster-image", "vector-image", "existing-asset"]}}},
+          "then": {"properties": {"expected_assets": {"items": {"required": ["source_file", "runtime_file"]}}}}
+        },
+        {
+          "if": {"required": ["production_origin"], "properties": {"production_origin": {"const": "bitmap-decomposition"}}},
+          "then": {
+            "required": ["decomposition_confirmation_id", "decomposition_confirmation_sha256"],
+            "properties": {
+              "production_method": {"enum": ["image-generation", "authored-raster", "reuse"]},
+              "delivery_kind": {"enum": ["raster-image", "existing-asset"]}
+            }
+          }
+        }
+      ]
+    },
+    "sceneReconstructionContract": {
+      "type": "object",
+      "description": "effect-image V1-V5 场景还原合同；V1 必须显式记录冲突，V2 通过拆解图、技术 JSON 与生产方案确认后才能进入 V3。",
+      "required": ["contract_version", "reference_technical_conflicts", "decomposition_annotation", "technical_decomposition", "visual_decomposition_confirmation", "visual_production_contract", "visual_production_units", "coverage_audit", "target_conditions", "text_decomposition", "coverage_regions", "composition", "responsive_contract", "predeclared_tolerances", "implementation_plan", "display_layer_planning", "layout_decomposition"],
+      "properties": {
+        "contract_version": {"type": "string", "minLength": 1},
+        "reference_technical_conflicts": {"$ref": "#/$defs/referenceTechnicalConflicts"},
+        "reference_target": {"$ref": "#/$defs/referenceTarget"},
+        "decomposition_annotation": {"$ref": "#/$defs/evidenceValue"},
+        "technical_decomposition": {"$ref": "#/$defs/evidenceValue"},
+        "visual_decomposition_confirmation": {"type": "object", "minProperties": 1},
+        "visual_production_contract": {"type": "object", "minProperties": 1},
+        "visual_production_units": {"type": "array", "minItems": 1},
+        "coverage_audit": {"type": "object", "minProperties": 1},
+        "target_conditions": {"type": "object"},
+        "all_native_justification": {"$ref": "#/$defs/allNativeJustification"},
+        "text_decomposition": {"$ref": "#/$defs/sceneTextDecomposition"},
+        "coverage_regions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/sceneCoverageRegion"}},
+        "composition": {"type": "object", "minProperties": 1},
+        "responsive_contract": {"type": "object", "minProperties": 1},
+        "predeclared_tolerances": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "rules"]}},
+        "implementation_plan": {"type": "object", "minProperties": 1},
+        "display_layer_planning": {"$ref": "#/$defs/displayLayerPlanning"},
+        "layout_decomposition": {"$ref": "#/$defs/layoutDecomposition"},
+        "combination_preacceptance": {"$ref": "#/$defs/combinationPreacceptance"}
+      },
+      "not": {"anyOf": [{"required": ["v2_scene_candidate"]}, {"required": ["v2_dynamic_sample"]}, {"required": ["v2_structured_review"]}, {"required": ["visual_human_approval"]}]},
+      "additionalProperties": true
+    },
+    "layoutDecomposition": {"type": "object", "required": ["layout_nodes", "layout_annotation", "layout_annotation_confirmation"], "properties": {"layout_nodes": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["layout_node_id", "parent_layout_node_id", "target_bounds"]}}, "layout_annotation": {"$ref": "#/$defs/layoutAnnotation"}, "layout_annotation_confirmation": {"$ref": "#/$defs/layoutAnnotationConfirmation"}}, "additionalProperties": true},
+    "layoutAnnotation": {"type": "object", "required": ["layout_decision_file", "layout_decision_sha256", "layout_decision_id", "layout_annotation_file", "layout_annotation_sha256", "layout_annotation_width", "layout_annotation_height", "layout_annotation_schema", "layout_annotation_layout", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "layout_review_file", "layout_review_sha256", "layout_review_identity_sha256", "layout_nodes_file", "layout_nodes_sha256", "decomposition_confirmation_id", "decomposition_confirmation_sha256", "proposal_sha256", "target_sha256", "scene_id", "state_id"], "properties": {"layout_decision_file": {"type": "string", "minLength": 1}, "layout_decision_sha256": {"$ref": "#/$defs/sha256"}, "layout_decision_id": {"type": "string", "minLength": 1}, "layout_annotation_file": {"type": "string", "minLength": 1}, "layout_annotation_sha256": {"$ref": "#/$defs/sha256"}, "layout_annotation_width": {"type": "integer", "minimum": 1}, "layout_annotation_height": {"type": "integer", "minimum": 1}, "layout_annotation_schema": {"const": "layout-annotation/png/1"}, "layout_annotation_layout": {"const": "image-plus-right-panel"}, "layout_annotation_metadata_sha256": {"$ref": "#/$defs/sha256"}, "layout_annotation_identity_sha256": {"$ref": "#/$defs/sha256"}, "layout_review_file": {"type": "string", "minLength": 1}, "layout_review_sha256": {"$ref": "#/$defs/sha256"}, "layout_review_identity_sha256": {"$ref": "#/$defs/sha256"}, "layout_nodes_file": {"type": "string", "minLength": 1}, "layout_nodes_sha256": {"$ref": "#/$defs/sha256"}, "decomposition_confirmation_id": {"type": "string", "minLength": 1}, "decomposition_confirmation_sha256": {"$ref": "#/$defs/sha256"}, "proposal_sha256": {"$ref": "#/$defs/sha256"}, "target_sha256": {"$ref": "#/$defs/sha256"}, "scene_id": {"type": "string", "minLength": 1}, "state_id": {"type": "string", "minLength": 1}, "layout_node_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}}, "additionalProperties": true},
+    "layoutAnnotationConfirmation": {"type": "object", "required": ["layout_decision_file", "layout_decision_sha256", "layout_decision_id", "confirmation_schema", "confirmation_id", "confirmation_sha256", "status", "confirmation_mode", "layout_annotation_file", "layout_annotation_sha256", "layout_annotation_width", "layout_annotation_height", "layout_annotation_schema", "layout_annotation_layout", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "layout_review_file", "layout_review_sha256", "layout_review_identity_sha256", "layout_nodes_file", "layout_nodes_sha256", "decomposition_confirmation_id", "decomposition_confirmation_sha256", "proposal_sha256", "target_sha256", "scene_id", "state_id", "user_original_text", "user_message_sha256", "decision_record_file", "decision_record_sha256", "user_decision_receipt_file", "user_decision_receipt_sha256", "accepted_at"], "properties": {"confirmation_schema": {"const": "layout-annotation-confirmation/1.0"}, "confirmation_id": {"type": "string", "minLength": 1}, "confirmation_sha256": {"$ref": "#/$defs/sha256"}, "status": {"const": "accepted"}, "confirmation_mode": {"const": "manual"}, "layout_annotation_file": {"type": "string", "minLength": 1}, "layout_annotation_sha256": {"$ref": "#/$defs/sha256"}, "layout_annotation_width": {"type": "integer", "minimum": 1}, "layout_annotation_height": {"type": "integer", "minimum": 1}, "layout_annotation_schema": {"const": "layout-annotation/png/1"}, "layout_annotation_layout": {"type": "string", "minLength": 1}, "layout_annotation_metadata_sha256": {"$ref": "#/$defs/sha256"}, "layout_annotation_identity_sha256": {"$ref": "#/$defs/sha256"}, "layout_review_file": {"type": "string", "minLength": 1}, "layout_review_sha256": {"$ref": "#/$defs/sha256"}, "layout_review_identity_sha256": {"$ref": "#/$defs/sha256"}, "layout_nodes_file": {"type": "string", "minLength": 1}, "layout_nodes_sha256": {"$ref": "#/$defs/sha256"}, "decomposition_confirmation_id": {"type": "string", "minLength": 1}, "decomposition_confirmation_sha256": {"$ref": "#/$defs/sha256"}, "proposal_sha256": {"$ref": "#/$defs/sha256"}, "target_sha256": {"$ref": "#/$defs/sha256"}, "scene_id": {"type": "string", "minLength": 1}, "state_id": {"type": "string", "minLength": 1}, "user_original_text": {"type": "string", "minLength": 1}, "user_message_sha256": {"$ref": "#/$defs/sha256"}, "decision_record_file": {"type": "string", "minLength": 1}, "decision_record_sha256": {"$ref": "#/$defs/sha256"}, "user_decision_receipt_file": {"type": "string", "minLength": 1}, "user_decision_receipt_sha256": {"$ref": "#/$defs/sha256"}, "accepted_at": {"type": "string", "format": "date-time"}}, "additionalProperties": true},
+    "sceneTextDecomposition": {
+      "type": "object",
+      "description": "效果图中的独立文本拆解；has-text 必须逐节点冻结字体/字形事实，not-applicable 必须解释没有可见文本。",
+      "required": ["applicability"],
+      "properties": {
+        "applicability": {"enum": ["has-text", "not-applicable"]},
+        "reason": {"type": "string", "minLength": 1},
+        "text_nodes": {"type": "array", "items": {"$ref": "#/$defs/sceneTextNode"}, "uniqueItems": true}
+      },
+      "allOf": [
+        {"if": {"properties": {"applicability": {"const": "has-text"}}}, "then": {"required": ["text_nodes"], "properties": {"text_nodes": {"minItems": 1}}}},
+        {"if": {"properties": {"applicability": {"const": "not-applicable"}}}, "then": {"required": ["reason"], "properties": {"text_nodes": {"maxItems": 0}}}}
+      ],
+      "additionalProperties": true
+    },
+    "sceneTextNode": {
+      "type": "object",
+      "description": "稳定文本节点；text_node_id 是语义身份，不得直接复用运行时显示文案。",
+      "required": ["text_node_id", "region_id", "layout_node_id", "semantic_role", "dynamic", "localizable", "target_bounds", "typography_target", "planned_test_id", "implementation_route", "route_reason", "ownership", "required_resources"],
+      "properties": {
+        "text_node_id": {"type": "string", "minLength": 1},
+        "region_id": {"type": "string", "minLength": 1},
+        "layout_node_id": {"type": "string", "minLength": 1},
+        "parent_layout_node_id": {"type": "string", "minLength": 1},
+        "semantic_role": {"type": "string", "minLength": 1},
+        "dynamic": {"type": "boolean"},
+        "localizable": {"type": "boolean"},
+        "content": {"type": "string", "minLength": 1},
+        "content_source": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "target_bounds": {"$ref": "#/$defs/textBounds"},
+        "typography_target": {"$ref": "#/$defs/textTypographyTarget"},
+        "implementation_route": {"enum": ["threejs-text", "bitmap-text", "image-text", "hybrid"]},
+        "route_reason": {"type": "string", "minLength": 1},
+        "ownership": {"$ref": "#/$defs/textOwnership"},
+        "required_resources": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/textResource"}},
+        "font_resolution": {"type": "object", "minProperties": 1},
+        "accessible_semantic": {"$ref": "#/$defs/evidenceValue"},
+        "tolerance_reference": {"type": "string", "minLength": 1},
+        "approved_exception_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "runtime_verification": {"$ref": "#/$defs/textRuntimeVerification"}
+      },
+      "anyOf": [{"required": ["content"]}, {"required": ["content_source"]}],
+      "allOf": [
+        {"if": {"required": ["implementation_route"], "properties": {"implementation_route": {"const": "image-text"}}}, "then": {"required": ["accessible_semantic"]}},
+        {"if": {"required": ["dynamic", "implementation_route"], "properties": {"dynamic": {"const": true}, "implementation_route": {"const": "image-text"}}}, "then": {"properties": {"implementation_route": {"enum": ["threejs-text", "bitmap-text", "hybrid"]}}}},
+        {"if": {"required": ["localizable", "implementation_route"], "properties": {"localizable": {"const": true}, "implementation_route": {"const": "image-text"}}}, "then": {"properties": {"implementation_route": {"enum": ["threejs-text", "bitmap-text", "hybrid"]}}}},
+        {"if": {"required": ["implementation_route"]}, "then": {"required": ["route_reason", "ownership", "required_resources"]}},
+        {"if": {"required": ["implementation_route"], "properties": {"implementation_route": {"const": "threejs-text"}}}, "then": {"properties": {"required_resources": {"contains": {"type": "object", "required": ["kind", "path", "sha256"], "properties": {"kind": {"enum": ["font", "font-file"]}}}}}}},
+        {"if": {"required": ["implementation_route"], "properties": {"implementation_route": {"const": "bitmap-text"}}}, "then": {"properties": {"required_resources": {"allOf": [{"contains": {"properties": {"kind": {"enum": ["bitmap-font-descriptor", "bitmap_descriptor"]}}}}, {"contains": {"properties": {"kind": {"enum": ["bitmap-font-texture", "bitmap_texture"]}}}}]}}}},
+        {"if": {"required": ["implementation_route"], "properties": {"implementation_route": {"const": "image-text"}}}, "then": {"properties": {"required_resources": {"contains": {"properties": {"kind": {"enum": ["image", "image-text", "raster-image"]}}}}}}}
+      ],
+      "additionalProperties": true
+    },
+    "textBounds": {"type": "object", "required": ["x", "y", "width", "height"], "properties": {"x": {"type": "number"}, "y": {"type": "number"}, "width": {"type": "number", "exclusiveMinimum": 0}, "height": {"type": "number", "exclusiveMinimum": 0}}, "additionalProperties": true},
+    "textTypographyTarget": {
+      "type": "object",
+      "required": ["font_identity", "font_size", "font_size_unit", "font_weight", "font_style", "line_height", "letter_spacing", "alignment", "baseline", "fill", "stroke", "shadow", "wrap", "expected_line_count", "reference_pixel_bounds", "target_glyph_bounds", "reference_dpr", "logical_coordinate_space"],
+      "properties": {
+        "font_identity": {"$ref": "#/$defs/textFontIdentity"},
+        "font_size": {"oneOf": [{"type": "number", "exclusiveMinimum": 0}, {"type": "object", "required": ["value"], "properties": {"value": {"type": "number", "exclusiveMinimum": 0}, "unit": {"type": "string", "minLength": 1}}, "additionalProperties": true}]},
+        "font_size_unit": {"enum": ["logical-px", "logical", "game-px"]},
+        "font_weight": {"type": ["number", "string"], "minLength": 1},
+        "font_style": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "line_height": {"oneOf": [{"type": "number", "exclusiveMinimum": 0}, {"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "letter_spacing": {"oneOf": [{"type": "number"}, {"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "alignment": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "baseline": {"oneOf": [{"type": "number"}, {"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "fill": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "stroke": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "shadow": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "wrap": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "expected_line_count": {"type": "integer", "minimum": 1},
+        "reference_pixel_bounds": {"$ref": "#/$defs/textBounds"},
+        "target_glyph_bounds": {"$ref": "#/$defs/textBounds"},
+        "reference_dpr": {"$ref": "#/$defs/workflowDpr"},
+        "logical_coordinate_space": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "textFontIdentity": {
+      "type": "object",
+      "required": ["status", "confidence"],
+      "properties": {"status": {"enum": ["resolved", "unresolved"]}, "confidence": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "number"}]}, "family": {"type": "string", "minLength": 1}, "observable_facts": {"type": "object", "minProperties": 1}},
+      "allOf": [
+        {"if": {"properties": {"status": {"const": "resolved"}}}, "then": {"required": ["family"]}},
+        {"if": {"properties": {"status": {"const": "unresolved"}}}, "then": {"required": ["observable_facts"], "not": {"anyOf": [{"required": ["family"]}, {"required": ["font_family"]}, {"required": ["font_name"]}]}}}
+      ],
+      "additionalProperties": true
+    },
+    "textOwnership": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+    "textResource": {"type": "object", "required": ["kind", "path", "sha256"], "properties": {"kind": {"type": "string", "minLength": 1}, "path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}, "additionalProperties": true},
+    "textRuntimeVerification": {
+      "type": "object",
+      "required": ["renderer", "actual_bounds", "glyph_bounds", "baseline", "actual_test_id", "evidence", "passed"],
+      "properties": {
+        "renderer": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "array", "minItems": 1}, {"type": "object", "minProperties": 1}]},
+        "font_loaded": {"type": "boolean"},
+        "fallback_detected": {"type": "boolean"},
+        "actual_bounds": {"$ref": "#/$defs/textBounds"},
+        "glyph_bounds": {"$ref": "#/$defs/textBounds"},
+        "baseline": {"oneOf": [{"type": "number"}, {"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "actual_test_id": {"type": "string", "minLength": 1},
+        "evidence": {"$ref": "#/$defs/evidenceValue"},
+        "passed": {"const": true},
+        "asset_consumed": {"type": "boolean"},
+        "semantic_evidence": {"$ref": "#/$defs/evidenceValue"},
+        "target_bounds": {"$ref": "#/$defs/textBounds"},
+        "candidate_bounds": {"$ref": "#/$defs/textBounds"},
+        "delta": {"type": ["number", "object", "array"]},
+        "tolerance_reference": {"type": "string", "minLength": 1},
+        "exception_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "target_glyph_bounds": {"$ref": "#/$defs/textBounds"},
+        "candidate_glyph_bounds": {"$ref": "#/$defs/textBounds"},
+        "target_baseline": {"type": ["number", "string", "object"]},
+        "candidate_baseline": {"type": ["number", "string", "object"]},
+        "measurement": {"type": "object", "minProperties": 1},
+        "comparison": {"type": "object", "minProperties": 1}
+      },
+      "additionalProperties": true
+    },
+    "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "imageNormalizationRecord": {
+      "type": "object",
+      "required": ["schema", "status", "operation", "source_file", "source_sha256", "source_width", "source_height", "target_width", "target_height", "output_file", "output_sha256", "output_width", "output_height", "preserve_alpha", "tool", "tool_version", "completed_at"],
+      "properties": {
+        "schema": {"const": "image-normalization/1"},
+        "status": {"const": "passed"},
+        "operation": {"enum": ["resize-to-contract", "not-required", "crop-and-resize-to-contract"]},
+        "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "source_width": {"type": "integer", "minimum": 1},
+        "source_height": {"type": "integer", "minimum": 1},
+        "target_width": {"type": "integer", "minimum": 1},
+        "target_height": {"type": "integer", "minimum": 1},
+        "output_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+        "output_sha256": {"$ref": "#/$defs/sha256"},
+        "output_width": {"type": "integer", "minimum": 1},
+        "output_height": {"type": "integer", "minimum": 1},
+        "preserve_alpha": {"type": "boolean"},
+        "tool": {"const": "sharp"},
+        "tool_version": {"type": "string", "minLength": 1},
+        "aspect_ratio_correction": {"$ref": "#/$defs/aspectRatioCorrection"},
+        "completed_at": {"type": "string", "format": "date-time"}
+      },
+      "allOf": [
+        {"if": {"properties": {"operation": {"const": "crop-and-resize-to-contract"}}}, "then": {"required": ["aspect_ratio_correction"]}},
+        {"if": {"not": {"properties": {"operation": {"const": "crop-and-resize-to-contract"}}}}, "then": {"not": {"required": ["aspect_ratio_correction"]}}}
+      ],
+      "additionalProperties": true
+    },
+    "aspectRatioCorrection": {
+      "type": "object",
+      "required": ["schema", "status", "trigger", "strategy", "attempts", "focus", "crop_rect"],
+      "properties": {
+        "schema": {"const": "aspect-ratio-correction/1"},
+        "status": {"const": "passed"},
+        "trigger": {"const": "two-generation-attempts-mismatched"},
+        "strategy": {"const": "controlled-crop"},
+        "attempts": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "object", "required": ["attempt_id", "generation_record_id", "generated_at", "file", "sha256", "width", "height"], "properties": {"attempt_id": {"type": "string", "minLength": 1}, "generation_record_id": {"type": "string", "minLength": 1}, "generated_at": {"type": "string", "format": "date-time"}, "file": {"type": "string", "minLength": 1, "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "sha256": {"$ref": "#/$defs/sha256"}, "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1}}, "additionalProperties": false}},
+        "focus": {"type": "object", "required": ["x", "y"], "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1}, "y": {"type": "number", "minimum": 0, "maximum": 1}}, "additionalProperties": true},
+        "crop_rect": {"type": "object", "required": ["left", "top", "width", "height"], "properties": {"left": {"type": "integer", "minimum": 0}, "top": {"type": "integer", "minimum": 0}, "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1}}, "additionalProperties": true}
+      },
+      "additionalProperties": true
+    },
+    "referenceTechnicalConflicts": {
+      "type": "array",
+      "items": {"type": "object", "minProperties": 1}
+    },
+    "referenceTarget": {"type": "object", "required": ["candidate_id", "original_file", "target_sha256", "frozen_at", "status", "scene_ids", "state_ids", "origin"], "properties": {"candidate_id": {"type": "string", "minLength": 1}, "original_file": {"type": "string", "minLength": 1}, "target_sha256": {"$ref": "#/$defs/sha256"}, "frozen_at": {"type": "string", "format": "date-time"}, "status": {"const": "reference-target-frozen"}, "scene_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "state_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "origin": {"enum": ["provided", "generated"]}, "generation_record": {"$ref": "#/$defs/globalVisualGenerationRecord"}}, "allOf": [{"if": {"properties": {"origin": {"const": "generated"}}}, "then": {"required": ["generation_record"]}}, {"if": {"properties": {"origin": {"const": "provided"}}}, "then": {"not": {"required": ["generation_record"]}}}], "additionalProperties": false},
+    "artifactIdentity": {
+      "type": "object",
+      "required": ["diff_fingerprint"],
+      "properties": {
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "code_sha256": {"$ref": "#/$defs/sha256"},
+        "build_sha256": {"$ref": "#/$defs/sha256"},
+        "candidate_sha256": {"$ref": "#/$defs/sha256"},
+        "diff_fingerprint": {"type": "string", "minLength": 1},
+        "diff_identity": {"type": "string", "minLength": 1}
+      },
+      "anyOf": [{"required": ["sha256"]}, {"required": ["code_sha256"]}, {"required": ["build_sha256"]}, {"required": ["candidate_sha256"]}]
+    },
+    "evidenceValue": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {"type": "array", "minItems": 1, "items": {"type": ["string", "object"]}},
+        {"type": "object", "minProperties": 1}
+      ]
+    },
+    "globalVisualGenerationRecord": {
+      "type": "object",
+      "required": ["origin", "visual_baseline_id", "visual_baseline_version", "style_fingerprint", "baseline_document", "style_reference_inputs", "global_visual_consistency_prompt", "style_drift_policy", "full_prompt", "prompt_sent", "target_sha256", "output_sha256", "consistency_status", "consistency_evidence"],
+      "properties": {
+        "origin": {"const": "generated"},
+        "visual_baseline_id": {"type": "string", "minLength": 1},
+        "visual_baseline_version": {"type": "string", "minLength": 1},
+        "style_fingerprint": {"$ref": "#/$defs/sha256"},
+        "baseline_document": {"const": "docs/visual-baseline.md"},
+        "style_reference_inputs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/globalStyleReferenceInput"}},
+        "global_visual_consistency_prompt": {"type": "string", "minLength": 1},
+        "style_drift_policy": {"const": "forbid"},
+        "full_prompt": {"type": "string", "minLength": 1},
+        "prompt_sent": {"const": true},
+        "target_sha256": {"$ref": "#/$defs/sha256"},
+        "output_sha256": {"$ref": "#/$defs/sha256"},
+        "consistency_status": {"const": "passed"},
+        "consistency_evidence": {"$ref": "#/$defs/globalConsistencyEvidence"}
+      },
+      "additionalProperties": true
+    },
+    "imageGenerationRecord": {
+      "allOf": [
+        {"$ref": "#/$defs/globalVisualGenerationRecord"},
+        {"type": "object", "properties": {"normalization_record": {"$ref": "#/$defs/imageNormalizationRecord"}}},
+        {"if": {"required": ["transparency_strategy"]}, "then": {"$ref": "#/$defs/transparentBackgroundProductionRecord"}}
+      ]
+    },
+    "transparentBackgroundRemovalAttempt": {
+      "type": "object",
+      "required": ["operation", "status", "source_file", "output_file", "source_has_alpha", "output_has_alpha", "completed_at", "evidence"],
+      "properties": {
+        "operation": {"const": "background-removal"}, "status": {"enum": ["failed", "completed"]},
+        "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+        "output_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+        "source_has_alpha": {"type": "boolean"}, "output_has_alpha": {"type": "boolean"},
+        "completed_at": {"type": "string", "format": "date-time"}, "evidence": {"$ref": "#/$defs/evidenceValue"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "completed"}}},
+          "then": {
+            "properties": {
+              "output_has_alpha": {"const": true},
+              "evidence": {
+                "type": "object",
+                "required": ["solid_background_check"],
+                "properties": {
+                  "solid_background_check": {
+                    "type": "object",
+                    "required": ["status", "background_color", "opaque", "boundary_pixels", "matched_boundary_pixels"],
+                    "properties": {
+                      "status": {"const": "passed"},
+                      "background_color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+                      "opaque": {"const": true},
+                      "boundary_pixels": {"type": "integer", "minimum": 1},
+                      "matched_boundary_pixels": {"type": "integer", "minimum": 0}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": true
+    },
+    "transparentBackgroundProductionRecord": {
+      "type": "object",
+      "required": ["source_background_mode", "source_background_color", "final_background_mode", "transparency_strategy", "raw_source_file", "raw_source_has_alpha", "source_file", "source_has_alpha", "background_removal_attempts"],
+      "properties": {
+        "source_background_mode": {"const": "opaque"}, "source_background_color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"}, "final_background_mode": {"const": "transparent"}, "transparency_strategy": {"const": "background-removal"},
+        "raw_source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "raw_source_has_alpha": {"type": "boolean"},
+        "source_file": {"type": "string", "pattern": "\\.[Pp][Nn][Gg]$"}, "source_has_alpha": {"const": true},
+        "background_removal_max_attempts": {"type": "integer", "minimum": 1}, "background_removal_attempts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/transparentBackgroundRemovalAttempt"}}
+      },
+      "not": {"anyOf": [{"required": ["background_mode"]}, {"required": ["direct_generation_attempt"]}, {"required": ["directGenerationAttempt"]}]},
+      "additionalProperties": true
+    },
+    "globalStyleReferenceInput": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}},
+    "globalConsistencyEvidence": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}},
+    "v2Artifact": {
+      "type": "object",
+      "required": ["identity", "evidence"],
+      "properties": {
+        "identity": {"$ref": "#/$defs/artifactIdentity"},
+        "evidence": {"$ref": "#/$defs/evidenceValue"},
+        "origin": {"enum": ["provided", "generated"]},
+        "generation_record": {"$ref": "#/$defs/globalVisualGenerationRecord"}
+      },
+      "allOf": [{"if": {"required": ["origin"], "properties": {"origin": {"const": "generated"}}}, "then": {"required": ["generation_record"]}}, {"if": {"required": ["origin"], "properties": {"origin": {"const": "provided"}}}, "then": {"not": {"required": ["generation_record"]}}}],
+      "not": {"anyOf": [{"required": ["reviewer"]}, {"required": ["reviewer_type"]}, {"required": ["reviewerType"]}, {"required": ["reviewer_id"]}, {"required": ["reviewerId"]}, {"required": ["review_id"]}, {"required": ["reviewId"]}, {"required": ["reviewed_at"]}, {"required": ["reviewedAt"]}, {"required": ["human_review"]}, {"required": ["humanReview"]}, {"required": ["f2_review"]}, {"required": ["f2_reviews"]}, {"required": ["f2Review"]}, {"required": ["f2Reviews"]}, {"required": ["visual_fidelity_review"]}, {"required": ["visualFidelityReview"]}, {"required": ["production_contract_review"]}, {"required": ["productionContractReview"]}, {"required": ["component_reviews"]}, {"required": ["componentReviews"]}]},
+      "additionalProperties": true
+    },
+    "v2StructuredReview": {
+      "type": "object",
+      "required": ["validationMode", "evidence", "status", "reviewed_target_identity", "reviewed_candidate_identity", "full_viewport_comparison", "per_region_review", "composition_review", "geometry_review", "color_material_review", "typography_review", "decoration_density_review", "responsive_review"],
+      "properties": {
+        "validationMode": {"const": "MACHINE"},
+        "evidence": {"$ref": "#/$defs/evidenceValue"},
+        "status": {"enum": ["passed", "PASS", "failed", "FAIL"]},
+        "reviewed_target_identity": {"type": "object", "minProperties": 1},
+        "reviewed_candidate_identity": {"type": "object", "minProperties": 1},
+        "full_viewport_comparison": {"$ref": "#/$defs/evidenceValue"},
+        "per_region_review": {"type": "array", "minItems": 1},
+        "composition_review": {"type": "object", "minProperties": 1},
+        "geometry_review": {"type": "object", "minProperties": 1},
+        "color_material_review": {"type": "object", "minProperties": 1},
+        "typography_review": {"type": "object", "minProperties": 1},
+        "decoration_density_review": {"type": "object", "minProperties": 1},
+        "responsive_review": {"type": "object", "minProperties": 1}
+      },
+      "not": {"anyOf": [{"required": ["reviewer"]}, {"required": ["reviewer_type"]}, {"required": ["reviewer_id"]}, {"required": ["review_id"]}, {"required": ["reviewed_at"]}, {"required": ["human_review"]}, {"required": ["humanReview"]}, {"required": ["f2_review"]}, {"required": ["f2_reviews"]}, {"required": ["f2Review"]}, {"required": ["f2Reviews"]}, {"required": ["visual_fidelity_review"]}, {"required": ["visualFidelityReview"]}, {"required": ["production_contract_review"]}, {"required": ["productionContractReview"]}, {"required": ["component_reviews"]}, {"required": ["componentReviews"]}]}
+    },
+    "sceneCoverageRegion": {
+      "type": "object",
+      "required": ["annotation_number", "region_id", "target_bounds", "coordinate_space", "anchor_reference", "relative_alignment", "z_order", "target_visibility", "size_strategy", "spacing", "typography_facts", "color_facts", "material_texture_facts", "lighting_shadow_facts", "decorative_density_facts", "clipping_cropping_facts", "responsive_behavior", "implementation_owner", "implementation_plan", "assembly_analysis", "visual_route_analysis", "applicable_states", "evidence", "tolerance_reference", "approved_exception_ids"],
+      "properties": {
+        "annotation_number": {"type": "integer", "minimum": 1},
+        "region_id": {"type": "string", "minLength": 1},
+        "scene_id": {"type": "string", "minLength": 1},
+        "state_id": {"type": "string", "minLength": 1},
+        "target_bounds": {"type": "object", "required": ["x", "y", "width", "height"]},
+        "coordinate_space": {"type": "string", "minLength": 1},
+        "anchor_reference": {"type": "string", "minLength": 1},
+        "relative_alignment": {"type": "object", "minProperties": 1},
+        "z_order": {"type": ["string", "number"], "minLength": 1},
+        "target_visibility": {"type": ["string", "boolean"], "minLength": 1},
+        "size_strategy": {"type": "object", "minProperties": 1},
+        "spacing": {"type": "object", "minProperties": 1},
+        "typography_facts": {"type": "object", "minProperties": 1},
+        "color_facts": {"type": "object", "minProperties": 1},
+        "material_texture_facts": {"type": "object", "minProperties": 1},
+        "lighting_shadow_facts": {"type": "object", "minProperties": 1},
+        "decorative_density_facts": {"type": "object", "minProperties": 1},
+        "clipping_cropping_facts": {"type": "object", "minProperties": 1},
+        "responsive_behavior": {"type": "object", "minProperties": 1},
+        "implementation_owner": {"type": "string", "minLength": 1},
+        "implementation_plan": {"type": "object", "minProperties": 1},
+        "assembly_analysis": {"$ref": "#/$defs/assemblyAnalysis"},
+        "visual_route_analysis": {"$ref": "#/$defs/sceneVisualRouteAnalysis"},
+        "applicable_states": {"type": "array", "minItems": 1},
+        "evidence": {"$ref": "#/$defs/evidenceValue"},
+        "tolerance_reference": {"type": "string", "minLength": 1},
+        "approved_exception_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "fidelity_obligations": {"type": ["object", "array", "string"]},
+        "scene_asset_usage": {"$ref": "#/$defs/sceneAssetUsage"}
+      },
+      "additionalProperties": true
+    },
+    "assemblyAnalysis": {"type": "object", "description": "只描述场景装配方式；原子图片资产与程序视觉均可被结构化装配。", "required": ["strategy", "uses_full_screen_capture", "allows_atomic_image_assets", "evidence"], "properties": {"strategy": {"const": "atomic-scene-composition"}, "uses_full_screen_capture": {"const": false}, "allows_atomic_image_assets": {"const": true}, "evidence": {"$ref": "#/$defs/evidenceValue"}}, "additionalProperties": false},
+    "allNativeJustification": {"type": "object", "description": "仅当全部 coverage region 均为 threejs-native 时使用、并绑定独立分析工件的视觉复核。", "required": ["analysis_method", "analysis_id", "producer_role", "target_sha256", "analysis_artifact_file", "analysis_artifact_sha256", "reviewed_region_ids", "conclusion", "reason", "evidence"], "properties": {"analysis_method": {"const": "independent-visual-analysis"}, "analysis_id": {"type": "string", "minLength": 1}, "producer_role": {"const": "independent-visual-reviewer"}, "target_sha256": {"$ref": "#/$defs/sha256"}, "analysis_artifact_file": {"type": "string", "minLength": 1}, "analysis_artifact_sha256": {"$ref": "#/$defs/sha256"}, "reviewed_region_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "conclusion": {"const": "all-native-eligible"}, "reason": {"type": "string", "minLength": 1}, "evidence": {"$ref": "#/$defs/evidenceValue"}}, "additionalProperties": false},
+    "sceneVisualRouteAnalysis": {
+      "type": "object",
+      "description": "effect-image 每个 coverage region 的视觉来源路线；必须先冻结美术事实，再决定 ThreeJS 装配方式。",
+      "required": ["element_type", "visual_complexity", "distinctive_visual", "observed_features", "asset_first_decision", "selected_route", "route_reason", "dynamic_requirements", "native_suitability", "reuse_suitability", "final_owner", "implementation_plan_mode", "production_method", "delivery_kind"],
+      "properties": {
+        "element_type": {"enum": ["button", "button-skin", "panel", "panel-frame", "background-frame", "icon", "decorative-frame", "decoration", "illustration", "character", "prop", "object", "environment", "background", "portrait", "avatar", "logo", "artwork", "game-piece", "item", "sprite", "nine-slice", "simple-geometry", "dynamic-data", "progress-fill", "mask", "layout", "interaction", "program-effect", "particle", "shader", "text", "text-node", "label", "caption", "other"]},
+        "visual_complexity": {"enum": ["simple", "distinctive", "mixed"]},
+        "distinctive_visual": {"type": "boolean"},
+        "observed_features": {"type": "array", "minItems": 1, "items": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]}},
+        "asset_first_decision": {"enum": ["asset-first", "native-allowed"]},
+        "selected_route": {"enum": ["image-asset", "threejs-native"]},
+        "route_reason": {"type": "string", "minLength": 1},
+        "dynamic_requirements": {"type": "object", "required": ["is_dynamic", "description"], "properties": {"is_dynamic": {"type": "boolean"}, "description": {"type": "string", "minLength": 1}, "state_variants": {"type": "array", "items": {"type": "string", "minLength": 1}}}, "additionalProperties": true},
+        "native_suitability": {"type": "object", "required": ["eligible", "primitive_basis", "evidence"], "properties": {"eligible": {"type": "boolean"}, "primitive_basis": {"type": "array", "minItems": 1, "items": {"enum": ["pure-color", "basic-geometry", "regular-line", "regular-gradient", "mask", "progress-fill", "layout-structure", "dynamic-data", "program-effect", "text", "not-applicable"]}}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "equivalence_evidence": {"$ref": "#/$defs/evidenceValue"}, "tolerance_reference": {"type": "string", "minLength": 1}, "approved_exception_id": {"type": "string", "minLength": 1}}, "additionalProperties": true},
+        "reuse_suitability": {"type": "object", "required": ["eligible", "exact_asset_identity", "evidence"], "properties": {"eligible": {"type": "boolean"}, "exact_asset_identity": {"oneOf": [{"const": "not-applicable"}, {"type": "object", "minProperties": 1, "properties": {"asset_id": {"type": "string", "minLength": 1}, "source_asset_id": {"type": "string", "minLength": 1}, "source_sha256": {"type": "string", "minLength": 1}, "source_manifest_sha256": {"type": "string", "minLength": 1}, "target_sha256": {"type": "string", "minLength": 1}, "candidate_sha256": {"type": "string", "minLength": 1}, "comparison_id": {"type": "string", "minLength": 1}}, "anyOf": [{"required": ["asset_id"]}, {"required": ["source_asset_id"]}, {"required": ["source_sha256"]}, {"required": ["source_manifest_sha256"]}, {"required": ["target_sha256"]}, {"required": ["candidate_sha256"]}, {"required": ["comparison_id"]}], "additionalProperties": true}]}, "evidence": {"$ref": "#/$defs/evidenceValue"}}, "additionalProperties": true},
+        "final_owner": {"enum": ["fixed-production-visual", "runtime-data", "runtime-rendered", "runtime-program"]},
+        "implementation_plan_mode": {"enum": ["generate-now", "reuse-existing", "runtime-program"]},
+        "production_method": {"enum": ["image-generation", "authored-raster", "reuse", "threejs-graphics", "runtime-program"]},
+        "delivery_kind": {"enum": ["raster-image", "existing-asset", "runtime-drawing", "runtime-program"]},
+        "text_decomposition_ref": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+         {"if": {"properties": {"selected_route": {"const": "image-asset"}}}, "then": {"properties": {"asset_first_decision": {"const": "asset-first"}, "final_owner": {"const": "fixed-production-visual"}, "production_method": {"enum": ["image-generation", "authored-raster", "reuse"]}, "delivery_kind": {"enum": ["raster-image", "existing-asset"]}}}},
+        {"if": {"properties": {"selected_route": {"const": "threejs-native"}}}, "then": {"properties": {"asset_first_decision": {"const": "native-allowed"}, "final_owner": {"enum": ["runtime-data", "runtime-rendered", "runtime-program"]}, "production_method": {"enum": ["threejs-graphics", "runtime-program"]}, "delivery_kind": {"enum": ["runtime-drawing", "runtime-program"]}, "native_suitability": {"properties": {"eligible": {"const": true}}}}}},
+        {"not": {"required": ["composite_parts"]}},
+        {"if": {"properties": {"production_method": {"const": "reuse"}}}, "then": {"properties": {"implementation_plan_mode": {"const": "reuse-existing"}, "reuse_suitability": {"properties": {"eligible": {"const": true}}}}}},
+        {"if": {"properties": {"element_type": {"enum": ["text", "text-node", "label", "caption"]}}}, "then": {"required": ["text_decomposition_ref"]}}
+      ],
+      "additionalProperties": true
+    },
+    "combinationPreacceptance": {
+      "type": "object",
+      "required": ["status", "formal_scene_structure", "layout_calculation_identity", "evidence", "target_sha256", "candidate_sha256", "diff_fingerprint"],
+      "properties": {
+        "status": {"enum": ["passed", "PASS"]},
+        "formal_scene_structure": {"type": "string", "minLength": 1},
+        "layout_calculation_identity": {"type": "string", "minLength": 1},
+        "evidence": {"$ref": "#/$defs/evidenceValue"},
+        "target_sha256": {"$ref": "#/$defs/sha256"},
+        "candidate_sha256": {"$ref": "#/$defs/sha256"},
+        "diff_fingerprint": {"type": "string", "minLength": 1}
+      }
+    },
+    "displayLayerPlanning": {
+      "type": "object",
+      "required": ["version", "scene_master", "inventory"],
+      "properties": {
+        "version": {"type": "string", "minLength": 1},
+        "scene_master": {"$ref": "#/$defs/displaySceneMaster"},
+        "inventory": {"type": "array", "items": {"$ref": "#/$defs/displayLayer"}}
+      },
+      "additionalProperties": false
+    },
+    "displaySceneMaster": {
+      "type": "object",
+      "required": ["scene_id", "state_id", "target_sha256", "origin", "viewport", "persistent_layer_ids"],
+      "properties": {
+        "scene_id": {"type": "string", "minLength": 1},
+        "state_id": {"type": "string", "minLength": 1},
+        "target_sha256": {"$ref": "#/$defs/sha256"},
+        "origin": {"enum": ["provided", "generated"]},
+        "generation_record": {"$ref": "#/$defs/globalVisualGenerationRecord"},
+        "viewport": {"type": "object", "required": ["width", "height"], "properties": {"width": {"type": "number", "exclusiveMinimum": 0}, "height": {"type": "number", "exclusiveMinimum": 0}}},
+        "persistent_layer_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      },
+      "allOf": [{"if": {"properties": {"origin": {"const": "generated"}}}, "then": {"required": ["generation_record"]}}, {"if": {"properties": {"origin": {"const": "provided"}}}, "then": {"not": {"required": ["generation_record"]}}}],
+      "additionalProperties": false
+    },
+    "displayLayer": {
+      "type": "object",
+      "required": ["layer_id", "type", "host_scene_id", "target_sha256", "persistence", "states", "in_scene_master", "trigger", "dismiss", "input_blocking", "z_order", "backdrop", "focus_restore", "responsive", "relations"],
+      "properties": {
+        "layer_id": {"type": "string", "minLength": 1},
+        "type": {"enum": ["hud", "modal", "popup", "drawer", "toast"]},
+        "host_scene_id": {"type": "string", "minLength": 1},
+        "target_sha256": {"$ref": "#/$defs/sha256"},
+        "persistence": {"enum": ["persistent", "transient"]},
+        "states": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/displayLayerState"}},
+        "in_scene_master": {"type": "boolean"},
+        "trigger": {"$ref": "#/$defs/evidenceValue"},
+        "dismiss": {"$ref": "#/$defs/evidenceValue"},
+        "input_blocking": {"oneOf": [{"type": "boolean"}, {"$ref": "#/$defs/evidenceValue"}]},
+        "z_order": {"type": ["string", "number"]},
+        "backdrop": {"$ref": "#/$defs/evidenceValue"},
+        "focus_restore": {"$ref": "#/$defs/evidenceValue"},
+        "responsive": {"$ref": "#/$defs/evidenceValue"},
+        "relations": {"$ref": "#/$defs/displayLayerRelations"},
+        "runtime_replay": {"$ref": "#/$defs/displayLayerRuntimeReplay"}
+      },
+      "additionalProperties": false
+    },
+    "displayLayerState": {
+      "type": "object",
+      "required": ["state_id", "required"],
+      "properties": {
+        "state_id": {"type": "string", "minLength": 1},
+        "required": {"type": "boolean"},
+        "contextual_effect_image": {"$ref": "#/$defs/contextualEffectImage"}
+      },
+      "additionalProperties": false
+    },
+    "contextualEffectImage": {
+      "type": "object",
+      "required": ["evidence", "sha256", "origin", "host_scene_id", "host_target_sha256", "layer_target_sha256", "viewport", "kind", "isolated_only"],
+      "properties": {
+        "evidence": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "origin": {"enum": ["provided", "generated"]},
+        "generation_record": {"$ref": "#/$defs/globalVisualGenerationRecord"},
+        "host_scene_id": {"type": "string", "minLength": 1},
+        "host_target_sha256": {"$ref": "#/$defs/sha256"},
+        "layer_target_sha256": {"$ref": "#/$defs/sha256"},
+        "viewport": {"type": "object", "required": ["width", "height"]},
+        "kind": {"const": "host-scene-context"},
+        "isolated_only": {"const": false}
+      },
+      "allOf": [{"if": {"properties": {"origin": {"const": "generated"}}}, "then": {"required": ["generation_record"]}}, {"if": {"properties": {"origin": {"const": "provided"}}}, "then": {"not": {"required": ["generation_record"]}}}],
+      "additionalProperties": false
+    },
+    "displayLayerRelations": {
+      "type": "object",
+      "required": ["mutually_exclusive_layer_ids", "coexists_with_layer_ids"],
+      "properties": {
+        "mutually_exclusive_layer_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "coexists_with_layer_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      },
+      "additionalProperties": false
+    },
+    "displayLayerRuntimeReplay": {
+      "type": "object",
+      "required": ["status", "host_scene_id", "same_screen_combination", "steps"],
+      "properties": {
+        "status": {"enum": ["passed", "PASS"]},
+        "host_scene_id": {"type": "string", "minLength": 1},
+        "same_screen_combination": {"const": true},
+        "steps": {"type": "array", "minItems": 4, "items": {"type": "object", "required": ["phase", "evidence"], "properties": {"phase": {"enum": ["open", "interact", "close", "restore"]}, "evidence": {"type": "string", "minLength": 1}}}}
+      }
+    },
+    "normalizationProof": {
+      "type": "object",
+      "required": ["target", "candidate", "equivalent"],
+      "properties": {
+        "target": {},
+        "candidate": {},
+        "equivalent": {"const": true}
+      }
+    },
+    "workflowDprNormalizationProof": {
+      "type": "object",
+      "required": ["target", "candidate", "equivalent"],
+      "properties": {
+        "target": {"$ref": "#/$defs/workflowDpr"},
+        "candidate": {"$ref": "#/$defs/workflowDpr"},
+        "equivalent": {"const": true}
+      }
+    },
+    "workflowDpr": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 2,
+      "description": "运行时实际 DPR，允许 (0,2]；设备原始值由运行时动态封顶为 2。"
+    },
+    "normalizationEquivalence": {
+      "type": "object",
+      "required": ["viewport", "dpr", "logical_coordinates"],
+      "properties": {
+        "viewport": {"$ref": "#/$defs/normalizationProof"},
+        "dpr": {"$ref": "#/$defs/workflowDprNormalizationProof"},
+        "logical_coordinates": {"$ref": "#/$defs/normalizationProof"}
+      }
+    },
+    "differenceEvidence": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {"type": "array", "minItems": 1, "items": {"type": ["string", "object"]}},
+        {"type": "object", "required": ["status", "reason"], "properties": {"status": {"enum": ["not-applicable", "na", "n/a"]}, "reason": {"type": "string", "minLength": 1}}},
+        {"type": "object", "not": {"required": ["status"]}, "anyOf": [{"required": ["path"]}, {"required": ["file"]}, {"required": ["evidence"]}, {"required": ["evidence_path"]}, {"required": ["evidence_sha256"]}, {"required": ["sha256"]}, {"required": ["paths"]}], "properties": {"path": {"type": "string", "minLength": 1}, "file": {"type": "string", "minLength": 1}, "evidence": {"type": "string", "minLength": 1}, "evidence_path": {"type": "string", "minLength": 1}, "evidence_sha256": {"$ref": "#/$defs/sha256"}, "sha256": {"$ref": "#/$defs/sha256"}, "paths": {"type": "array", "minItems": 1}}}
+      ]
+    },
+    "fidelityRegionResult": {
+      "type": "object",
+      "required": ["region_id", "target_measurement", "candidate_measurement", "delta", "tolerance_reference", "result", "evidence", "exception_ids"],
+      "properties": {
+        "region_id": {"type": "string", "minLength": 1},
+        "target_measurement": {"type": ["number", "string", "boolean", "object", "array"], "minItems": 1},
+        "candidate_measurement": {"type": ["number", "string", "boolean", "object", "array"], "minItems": 1},
+        "delta": {"type": ["number", "object", "array", "string"]},
+        "tolerance_reference": {"type": "string", "minLength": 1},
+        "result": {"enum": ["passed", "PASS", "failed", "FAIL"]},
+        "evidence": {"$ref": "#/$defs/evidenceValue"},
+        "exception_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      }
+    },
+    "structuredFidelityCase": {
+      "type": "object",
+      "required": ["target_identity", "candidate_identity", "scene_id", "state_id", "viewport", "dpr", "locale", "random_seed", "input_trace", "animation_sample", "original_target_size", "original_candidate_size", "normalization_transform", "normalization_equivalence", "normalized_comparison_canvas", "full_viewport_reference", "full_viewport_candidate", "side_by_side_evidence", "overlay_evidence", "difference_evidence", "tolerance_set", "per_region_results", "conclusion"],
+      "properties": {
+        "target_identity": {"type": "object", "required": ["sha256"], "properties": {"sha256": {"$ref": "#/$defs/sha256"}}},
+        "candidate_identity": {"$ref": "#/$defs/artifactIdentity"},
+        "scene_id": {"type": "string", "minLength": 1},
+        "state_id": {"type": "string", "minLength": 1},
+        "viewport": {"type": "object", "required": ["width", "height"]},
+        "dpr": {"$ref": "#/$defs/workflowDpr"},
+        "locale": {"type": "string", "minLength": 1},
+        "random_seed": {"type": ["integer", "string"], "minLength": 1},
+        "input_trace": {"type": "string", "minLength": 1},
+        "animation_sample": {"type": "string", "minLength": 1},
+        "original_target_size": {"type": "object", "required": ["width", "height"]},
+        "original_candidate_size": {"type": "object", "required": ["width", "height"]},
+        "normalization_transform": {"type": "object", "minProperties": 1},
+        "normalization_equivalence": {"$ref": "#/$defs/normalizationEquivalence"},
+        "normalized_comparison_canvas": {"type": "object", "required": ["width", "height"]},
+        "full_viewport_reference": {"$ref": "#/$defs/evidenceValue"},
+        "full_viewport_candidate": {"$ref": "#/$defs/evidenceValue"},
+        "side_by_side_evidence": {"$ref": "#/$defs/evidenceValue"},
+        "overlay_evidence": {"$ref": "#/$defs/evidenceValue"},
+        "difference_evidence": {"$ref": "#/$defs/differenceEvidence"},
+        "tolerance_set": {"type": ["object", "array"], "minItems": 1},
+        "per_region_results": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/fidelityRegionResult"}},
+        "conclusion": {"enum": ["passed", "PASS", "failed", "FAIL"]}
+      }
+    },
+    "sceneAssetUsage": {
+      "type": "object",
+      "description": "V5 资源放入正式 Scene 后的目标显示和组合条件；不能只用独立图片尺寸替代。",
+      "required": ["target_display_size", "intended_scale_range", "origin", "anchor", "nine_slice", "material", "composition_region", "required_neighbors", "typography_ownership", "runtime_foreground_ownership"],
+      "properties": {
+        "target_display_size": {"type": "object", "required": ["width", "height"], "properties": {"width": {"type": "number", "exclusiveMinimum": 0}, "height": {"type": "number", "exclusiveMinimum": 0}}},
+        "intended_scale_range": {"type": "object", "required": ["min", "max"], "properties": {"min": {"type": "number", "exclusiveMinimum": 0}, "max": {"type": "number", "exclusiveMinimum": 0}}},
+         "max_dpr": {"const": 2, "description": "图片生产基线 DPR 固定为 2；图像生成单图尺寸计算使用图片生产基线 2，运行时实际 DPR 仍动态封顶为 2。"},
+         "padding_policy": {"type": "string", "description": "图像生成 individual 必须为 none；非图像生成可不声明该字段。"},
+        "origin": {"type": "object", "required": ["x", "y"], "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1}, "y": {"type": "number", "minimum": 0, "maximum": 1}}},
+        "origin_exception_reason": {"type": "string", "pattern": "\\S"},
+        "origin_coordinate_conversion": {"type": "string", "pattern": "\\S"},
+        "anchor": {"type": ["string", "object"], "minLength": 1},
+        "nine_slice": {"type": ["string", "object"]},
+        "material": {"type": ["string", "object"]},
+        "composition_region": {"type": ["string", "object"], "minLength": 1},
+        "required_neighbors": {"type": "array"},
+        "typography_ownership": {"type": ["string", "object"], "minLength": 1},
+        "runtime_foreground_ownership": {"type": ["string", "object"], "minLength": 1}
+      },
+      "allOf": [{"if": {"properties": {"origin": {"properties": {"x": {"const": 0.5}, "y": {"const": 0.5}}, "required": ["x", "y"]}}}, "else": {"required": ["origin_exception_reason", "origin_coordinate_conversion"]}}],
+      "additionalProperties": true
+    },
+    "stateAnalysisState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state_id", "requirement", "reason"],
+      "properties": {
+        "state_id": {"type": "string", "minLength": 1},
+        "requirement": {"enum": ["required", "not-applicable"]},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "stateAnalysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "phase", "evidence", "evidence_sha256", "reference_target_sha256", "analysis_id", "completed_at", "states"],
+      "properties": {
+        "status": {"const": "complete"},
+        "phase": {"const": "before-component-splitting"},
+        "evidence": {"type": "string", "minLength": 1},
+        "evidence_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "reference_target_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "analysis_id": {"type": "string", "minLength": 1},
+        "completed_at": {"type": "string", "format": "date-time"},
+        "states": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/stateAnalysisState"}}
+      }
+    },
+    "componentStateCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state_id", "requirement", "reason"],
+      "properties": {
+        "state_id": {"type": "string", "minLength": 1},
+        "requirement": {"enum": ["required", "not-applicable"]},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "componentInventoryItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component_id", "atomic_visual_key", "role", "reusable", "state_coverage", "placements"],
+      "properties": {
+        "component_id": {"type": "string", "minLength": 1},
+        "atomic_visual_key": {"type": "string", "minLength": 1},
+        "role": {"type": "string", "minLength": 1},
+        "reusable": {"type": "boolean"},
+        "state_coverage": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/componentStateCoverage"}},
+        "placements": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/visualPlacement"}}
+      }
+    },
+    "componentInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["granularity", "component_count", "visible_instance_count", "delivery_mode", "atlas_allowed", "created_at", "components"],
+      "properties": {
+        "granularity": {"enum": ["reusable-component", "single-component"]},
+        "component_count": {"type": "integer", "minimum": 1},
+        "visible_instance_count": {"type": "integer", "minimum": 1},
+        "delivery_mode": {"enum": ["individual", "atlas"]},
+        "atlas_allowed": {"type": "boolean"},
+        "created_at": {"type": "string", "format": "date-time"},
+        "components": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/componentInventoryItem"}}
+      }
+    },
+    "atlasSlice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["atlas_asset_id", "slice_id", "atlas_size", "rect"],
+      "properties": {
+        "atlas_asset_id": {"type": "string", "minLength": 1},
+        "slice_id": {"type": "string", "minLength": 1},
+        "atlas_size": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["width", "height"],
+          "properties": {
+            "width": {"type": "number", "exclusiveMinimum": 0},
+            "height": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        "rect": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": {"type": "number", "minimum": 0},
+            "y": {"type": "number", "minimum": 0},
+            "width": {"type": "number", "exclusiveMinimum": 0},
+            "height": {"type": "number", "exclusiveMinimum": 0}
+          }
+        }
+      }
+    },
+    "visualExpectedAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset_id", "asset_scope", "atomic_visual_key", "component_id", "state_id"],
+      "properties": {
+        "asset_id": {"type": "string", "minLength": 1},
+        "asset_scope": {"const": "atomic-component"},
+        "atomic_visual_key": {"type": "string", "minLength": 1},
+        "component_id": {"type": "string", "minLength": 1},
+        "state_id": {"type": "string", "minLength": 1},
+        "origin": {"enum": ["provided", "generated"]},
+        "generation_record": {"$ref": "#/$defs/globalVisualGenerationRecord"},
+        "asset_kind": {"type": "string", "minLength": 1},
+        "source_file": {"type": "string", "minLength": 1},
+        "runtime_file": {"type": "string", "minLength": 1},
+        "mime_type": {"type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$"},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1},
+        "alpha": {"type": "boolean"},
+        "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "share_id": {"type": "string", "minLength": 1},
+        "atlas_slice": {"$ref": "#/$defs/atlasSlice"}
+      },
+      "allOf": [{"if": {"required": ["origin"], "properties": {"origin": {"const": "generated"}}}, "then": {"required": ["generation_record"]}}, {"if": {"required": ["origin"], "properties": {"origin": {"const": "provided"}}}, "then": {"not": {"required": ["generation_record"]}}}]
+    },
+    "imageGenerationExpectedAsset": {
+      "allOf": [
+        {"$ref": "#/$defs/visualExpectedAsset"},
+        {
+          "type": "object",
+          "required": ["source_file", "runtime_file", "mime_type", "width", "height"],
+          "properties": {
+            "mime_type": {"enum": ["image/png", "image/jpeg"]},
+            "source_file": {"pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+            "runtime_file": {"pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+            "normalization_record": {"$ref": "#/$defs/imageNormalizationRecord"},
+            "generation_record": {"$ref": "#/$defs/imageGenerationRecord"}
+          },
+          "not": {"required": ["atlas_slice"]}
+        },
+        {
+          "if": {"required": ["alpha"], "properties": {"alpha": {"const": true}}},
+          "then": {"properties": {"mime_type": {"const": "image/png"}, "source_file": {"pattern": "\\.[Pp][Nn][Gg]$"}, "runtime_file": {"pattern": "\\.[Pp][Nn][Gg]$"}, "generation_record": {"$ref": "#/$defs/transparentBackgroundProductionRecord"}}}
+        }
+      ]
+    },
+    "interactionHotspot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hotspot_id", "component_id", "placement_id", "bounds"],
+      "properties": {
+        "hotspot_id": {"type": "string", "minLength": 1},
+        "component_id": {"type": "string", "minLength": 1},
+        "placement_id": {"type": "string", "minLength": 1},
+        "bounds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": {"type": "number", "minimum": 0},
+            "y": {"type": "number", "minimum": 0},
+            "width": {"type": "number", "exclusiveMinimum": 0},
+            "height": {"type": "number", "exclusiveMinimum": 0}
+          }
+        }
+      }
+    },
+    "visualPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["placement_id", "bounds", "interaction_required"],
+      "properties": {
+        "placement_id": {"type": "string", "minLength": 1},
+        "interaction_required": {"type": "boolean"},
+        "bounds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": {"type": "number", "minimum": 0},
+            "y": {"type": "number", "minimum": 0},
+            "width": {"type": "number", "exclusiveMinimum": 0},
+            "height": {"type": "number", "exclusiveMinimum": 0}
+          }
+        }
+      }
+    },
+    "atomicImageRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement_id", "annotation_number", "region_id", "atomic_visual_key", "component_id", "state_id", "production_method", "delivery_kind", "asset_id", "placement_ids"],
+      "properties": {
+        "requirement_id": {"type": "string", "minLength": 1},
+        "annotation_number": {"type": "integer", "minimum": 1},
+        "region_id": {"type": "string", "minLength": 1},
+        "atomic_visual_key": {"type": "string", "minLength": 1},
+        "component_id": {"type": "string", "minLength": 1},
+        "state_id": {"type": "string", "minLength": 1},
+        "production_method": {"enum": ["image-generation", "authored-raster", "authored-svg", "threejs-graphics", "runtime-program", "reuse"]},
+        "delivery_kind": {"enum": ["raster-image", "vector-image", "runtime-drawing", "runtime-program", "existing-asset"]},
+        "asset_id": {"type": "string", "minLength": 1},
+        "source_file": {"type": "string", "minLength": 1},
+        "runtime_file": {"type": "string", "minLength": 1},
+        "placement_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      }
+    },
+    "runtimeImplementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "integration_files"],
+      "properties": {
+        "kind": {"enum": ["threejs-graphics", "runtime-program"]},
+        "integration_files": {"$ref": "#/$defs/nonEmptyStrings"},
+        "description": {"type": "string", "minLength": 1}
+      }
+    },
+    "implementationPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {"enum": ["generate-now", "reuse-existing", "runtime-program"]},
+        "reuse_source": {"$ref": "#/$defs/reuseSnapshot"}
+      }
+    },
+    "reuseSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "source_file", "source_manifest_file", "source_manifest_sha256", "source_sha256", "compatibility_evidence_file", "compatibility_evidence_sha256", "accepted_at", "source_status"],
+      "properties": {
+        "schema": {"const": "asset-reuse-snapshot/1.0"},
+        "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+        "source_manifest_file": {"type": "string", "minLength": 1},
+        "source_manifest_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "source_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "compatibility_evidence_file": {"type": "string", "minLength": 1},
+        "compatibility_evidence_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "accepted_at": {"type": "string", "format": "date-time"},
+        "source_status": {"const": "accepted"}
+      }
+    },
+    "visualDecompositionConfirmationGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scene_id", "state_id", "ledger_file", "receipt_id", "receipt_sha256", "confirmation_id", "confirmation_sha256", "proposal_id", "proposal_sha256", "proposal_file", "annotation_file", "annotation_sha256", "annotation_width", "annotation_height", "annotation_schema", "annotation_layout", "annotation_metadata_sha256", "annotation_identity_sha256", "decision_record_file", "decision_record_sha256", "user_decision_receipt_file", "user_decision_receipt_sha256", "target_sha256", "work_item_id", "candidate_version", "candidate_sha256", "regions"],
+      "properties": {
+        "scene_id": {"type": "string", "minLength": 1},
+        "state_id": {"type": "string", "minLength": 1},
+        "ledger_file": {"type": "string", "pattern": "^\\.threejs-workflow/user-resolutions/[^/]+\\.json$"},
+        "receipt_id": {"type": "string", "minLength": 1},
+        "receipt_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "confirmation_id": {"type": "string", "minLength": 1},
+        "confirmation_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "proposal_id": {"type": "string", "minLength": 1},
+        "proposal_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "proposal_file": {"type": "string", "minLength": 1},
+        "annotation_file": {"type": "string", "pattern": "\\.(?:png)$"},
+        "annotation_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "annotation_width": {"type": "integer", "minimum": 1},
+        "annotation_height": {"type": "integer", "minimum": 1},
+        "annotation_schema": {"const": "effect-image-annotation/png/1"},
+        "annotation_layout": {"const": "image-plus-right-panel"},
+        "annotation_metadata_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "annotation_identity_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "decision_record_file": {"type": "string", "minLength": 1},
+        "decision_record_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "user_decision_receipt_file": {"type": "string", "minLength": 1},
+        "user_decision_receipt_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "target_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "work_item_id": {"type": "string", "minLength": 1},
+        "candidate_version": {"type": "string", "minLength": 1},
+        "candidate_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "regions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["annotation_number", "region_id", "scene_id", "state_id", "region_definition_sha256", "production_origin", "production_method", "delivery_kind", "production_label", "component_ids", "state_ids", "asset_requirement_ids", "asset_ids", "confirmation_id", "confirmation_sha256"],
+            "properties": {
+              "annotation_number": {"type": "integer", "minimum": 1},
+              "region_id": {"type": "string", "minLength": 1},
+              "scene_id": {"type": "string", "minLength": 1},
+              "state_id": {"type": "string", "minLength": 1},
+              "region_definition_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+              "production_origin": {"type": ["string", "null"]},
+              "production_method": {"type": "string", "minLength": 1},
+              "delivery_kind": {"type": "string", "minLength": 1},
+              "production_label": {"type": "string", "minLength": 1},
+              "component_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+              "state_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+              "asset_requirement_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+              "asset_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+              "confirmation_id": {"type": "string", "minLength": 1},
+              "confirmation_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

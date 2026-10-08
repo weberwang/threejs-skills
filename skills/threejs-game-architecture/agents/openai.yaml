@@ -1,0 +1,4 @@
+interface:
+  display_name: "three.js 技术架构"
+  short_description: "划分并确认模块边界，建立可测试、可构建的 Web 3D 技术基线"
+  default_prompt: "在 $threejs-game-workflow-control 下使用 $threejs-game-architecture 提议并审查模块边界和技术基线。"

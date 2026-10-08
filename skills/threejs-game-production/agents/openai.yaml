@@ -1,0 +1,4 @@
+interface:
+  display_name: "three.js 制作策划"
+  short_description: "将游戏构想或参考行为转化为可验收范围与功能契约"
+  default_prompt: "在 $threejs-game-workflow-control 下使用 $threejs-game-production 建立可审批需求、范围和制作计划。"

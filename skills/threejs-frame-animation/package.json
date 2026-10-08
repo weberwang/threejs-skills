@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "dependencies": {
+    "sharp": "^0.35.3"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "name": "threejs-frame-animation",
+  "private": true
+}
