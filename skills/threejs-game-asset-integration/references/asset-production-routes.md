@@ -9,7 +9,7 @@ V3 为每个资源选择一条主路线，并在机器清单记录场景或 shar
 | UI/图标与字体 `ui-icon-font` | Figma/SVG/矢量源、字体工程、九宫格源图 | SVG 或 PNG/WebP、字体子集、九宫格与布局配置 | 像素密度、透明边缘、图标语法、字体授权、文本安全区、停靠关系 | 纹理尺寸、九宫格数量、Draw Call |
 | 像素美术 `pixel-art` | Aseprite/PSD 分层源、调色板 | PNG/WebP、图集与帧数据 | 整数缩放、最近邻采样、调色板、帧边界、像素抖动 | 图集、帧数、纹理内存、采样模式 |
 | 逐帧动画 [`frame-animation`](../../threejs-frame-animation/SKILL.md) | 视频生成提示词、实际视频文件、抽帧设置 | PNG 图集、JSON 报告、网页预览、three.js TextureLoader、水平 UV 与 Sprite.center 合同 | V2 写提示词并等待视频；V3 按目标 FPS、尺寸及是否移除背景抽帧并审阅；V5 接入 ThreeJS。视频仅作动作流程草图；抽帧后动作与外观问题均修对应图片并更新图集与证据，最终动画按游戏动作要求验收 | 采样率、帧数、图集尺寸、纹理内存 |
-| 三维模型与骨骼动画 [`gltf-model`](../../threejs-game-model-pipeline/SKILL.md) | DCC 模型/材质/骨骼工程 | GLB、纹理、AnimationClip、碰撞代理与 LOD | 单位/轴向/pivot、PBR、独立骨骼实例、许可与模型验收 | triangles、draw calls、材质、纹理、骨骼与动画成本 |
+| 三维模型与骨骼动画 [`gltf-model`](../../threejs-game-model-pipeline/SKILL.md) | 参考图、一致多视图、Blender/DCC 模型与材质/骨骼工程、AI 贴图源素材 | GLB、纹理/法线、AnimationClip、碰撞代理与 LOD | 新模型按参考图→多视图→Blender MCP 控面数建模与 AI 贴图→人工审查；另验单位/轴向/pivot、PBR、独立骨骼实例及许可 | triangles、draw calls、材质、纹理、骨骼与动画成本 |
 | 场景/Tilemap `scene-tilemap` | Tiled/LDtk 工程、tileset 源图 | 地图 JSON、tileset、碰撞/对象层数据 | 接缝、碰撞语义、对象层、坐标系、分块加载 | 图块/图集、地图数据、可见层、Draw Call |
 | VFX/粒子/Shader `vfx-particle-shader` | 粒子配置、shader 源码、噪声/遮罩源图 | 配置、GLSL、纹理 | 动态时序、混合模式、降级、遮挡、色觉差异、设备兼容 | 粒子峰值、过绘、纹理、Draw Call、GPU 时间 |
 | 装饰满幅背景 `decorative-full-bleed` | 分层绘图/3D 工程或可重现生成记录 | PNG/WebP/AVIF 与 `cover-v1` 适配配置 | 屏幕空间、无交互、统一等比 cover、焦点安全区、裁切/延展、方向资源切换 | 最大纹理、内存、解码峰值 |
@@ -17,6 +17,8 @@ V3 为每个资源选择一条主路线，并在机器清单记录场景或 shar
 | AI 合成栅格拆分 `ai-composite-raster` | 分层重绘文件，或固定全局提示前缀、资产段、状态段、负向段、实际生成器/版本、参数、种子、参考输入与后处理记录 | 独立透明位图及清单（生成式位图按 `individual` 交付；其他路线图集须另有显式切片合同） | 基线绑定、锚点、框选编号、边缘补绘、透明度、尺度、可复现性、跨资源一致性与授权 | 生成批次、输出数量、纹理内存、图集 |
 
 帧动画的视频提示词、等待视频、抽帧设置、`asset.frame_animation` 合同和失败回退见[帧动画工作流接入合同](../../threejs-frame-animation/references/workflow-integration.md)。预览审阅只覆盖当前动画候选，不构成 A4-A6 的外部操作授权。
+
+三维模型的参考图、多视图、Blender MCP 建模、AI 纹理/有效法线及人工审查按[Blender 模型生产合同](../../threejs-game-model-pipeline/references/blender-model-production.md)执行；复用当前 Work Item 和 V1/V2/V3，模型静态检查通过后仍等待当前候选人工审查，不自动截图或真机验收。
 
 ## 路线选择规则
 

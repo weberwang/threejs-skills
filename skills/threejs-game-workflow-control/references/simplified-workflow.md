@@ -41,6 +41,10 @@ V4 草图页面读取一份草图数据和 V3 正式资源，以冻结效果图�
 
 帧动画不新增全局状态机。全局 V2 根据主体、动作、镜头、时长、画幅和背景要求生成视频提示词，并等待真实视频文件；全局 V3 接收视频后按目标 FPS、尺寸和是否去背景抽帧，输出图集、报告与网页预览；全局 V5 完成 ThreeJS 运行接入。重新生成视频或调整抽帧参数后，须重做图集与预览。详见[帧动画工作流接入合同](../../threejs-frame-animation/references/workflow-integration.md)。
 
+### Blender 模型路线映射
+
+生成三维模型在当前 Work Item 内执行：V1 生成或复用参考图 → V2 拆解一致多视图 → V3 使用 Blender MCP 控面数建模并制作 AI 纹理与有效法线贴图 → V3 人工审查模型。图像工作交给 `image_generator`，实际模型和材质制作使用 Blender MCP。人工确认绑定当前模型与贴图文件身份后，才作为正式资源进入适用的 V4 场景组合/草图与 V5 ThreeJS 接入；静态验收通过不表示人工模型审查完成。详见[Blender 模型生产合同](../../threejs-game-model-pipeline/references/blender-model-production.md)。该路线不新增状态机或聊天，不自动执行截图与真机验收。
+
 例如，V2 完成后可在同一 Work Item 上执行：
 
 ```powershell

@@ -47,7 +47,7 @@ node .agents/skills/threejs-game-workflow-control/scripts/workflow-control.mjs s
 ## 游戏项目支持
 
 - [运行基础](skills/threejs-game-runtime/SKILL.md)：固定步模拟、插值、有限追赶、暂停恢复、输入坐标和资源生命周期。
-- [模型与关卡](skills/threejs-game-model-pipeline/SKILL.md)：glTF/GLB、PBR、AnimationMixer、碰撞代理、LOD 与三维预算。
+- [模型与关卡](skills/threejs-game-model-pipeline/SKILL.md)：参考图 → 多视图拆解 → Blender MCP 控面数建模与 AI 纹理/法线 → 人工模型审查，再接入 glTF/GLB、PBR、AnimationMixer、碰撞代理与 LOD。
 - [插件方案](skills/threejs-game-plugins/SKILL.md)：按实际需求选择 Rapier、three-mesh-bvh、Recast Navigation、模型解码器与后处理。
 - [架构](skills/threejs-game-architecture/SKILL.md)：WebGL 2 默认，WebGPU 显式采用；渲染 Scene 与游戏状态分离。
 - [HUD 布局](skills/threejs-game-ui-layout/SKILL.md)：CSS/DPR、DOM 或正交 HUD，世界空间与屏幕空间分开验证。
