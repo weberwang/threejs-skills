@@ -37,4 +37,4 @@ description: three.js 游戏领域编排角色；在全局控制面已建立 Wor
 
 三维项目基础采用 [运行基础](../threejs-game-runtime/SKILL.md)；正式三维资源交给 [模型管线](../threejs-game-model-pipeline/SKILL.md)，按实际玩法采用 [插件方案](../threejs-game-plugins/SKILL.md)。固定视角效果图与 HUD 二维布局不能代替世界模型、相机和碰撞数据。
 
-新模型在当前场景或资源 Work Item 内按[Blender 模型生产合同](../threejs-game-model-pipeline/references/blender-model-production.md)编排：V1 生成参考图，V2 拆解一致多视图，V3 调用 Blender MCP 控面数建模、制作 AI 纹理/有效法线并等待人工审查；确认当前候选后进入后续接入。图像任务委派 `image_generator`，几何制作使用 Blender MCP，预算、文件所有权和审查证据纳入现有实施包。不得为该路线另建聊天、用参考图宣称模型完成，或自动发起截图/真机视觉验收。
+新模型在当前场景或资源 Work Item 内按[Blender 模型生产合同](../threejs-game-model-pipeline/references/blender-model-production.md)编排：V1 生成参考图，V2 拆解一致多视图，V3 调用 Blender MCP 控面数建模、制作 AI 纹理/有效法线并等待人工审查；确认当前候选后进入后续接入。图像任务委派 `image_generator`；模型制作必须委派 `gpt-6.1-sol`、`max` 推理强度的建模子代理，按合同指定的创建参数调用 Blender MCP；预算、文件所有权和审查证据纳入现有实施包。不得为该路线另建聊天、用参考图宣称模型完成，或自动发起截图/真机视觉验收。

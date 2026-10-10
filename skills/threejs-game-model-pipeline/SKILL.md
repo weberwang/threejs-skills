@@ -9,7 +9,7 @@ description: 使用 Blender MCP 从参考图和多视图制作控面数模型与
 
 ## Blender 模型生成
 
-用户要求生成新模型时，在当前资源或场景 Work Item 内按 **参考图 → 多视图拆解 → Blender MCP 建模与 AI 贴图 → 人工模型审查** 执行。读取 [Blender 模型生产合同](references/blender-model-production.md)，将题材、风格、面数和贴图预算写入当前实施包；图像生成与编辑交给 `image_generator`，实际几何与材质制作调用 Blender MCP。已提供有效参考或多视图时复用，不重复生成。
+用户要求生成新模型时，在当前资源或场景 Work Item 内按 **参考图 → 多视图拆解 → Blender MCP 建模与 AI 贴图 → 人工模型审查** 执行。读取 [Blender 模型生产合同](references/blender-model-production.md)，将题材、风格、面数和贴图预算写入当前实施包；图像生成与编辑交给 `image_generator`，实际几何与材质制作必须委派给 `gpt-6.1-sol`、`max` 推理强度的建模子代理调用 Blender MCP 执行。已提供有效参考或多视图时复用，不重复生成。
 
 该路线复用 V1 参考、V2 拆解、V3 正式资源生产与验收，不创建独立聊天或第二套阶段。人工确认当前模型与贴图候选后才可作为已验收资源进入接入环节；自动静态检查不替代人工审查。截图、渲染及真机验收按用户当前明确授权执行。
 
