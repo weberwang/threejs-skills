@@ -42,6 +42,13 @@ export function hashText(value) {
   return hashBytes(value);
 }
 
+/** 计算无 Git diff 工件集合的追踪摘要；该值不参与验收放行。 */
+export function artifactFingerprint(artifacts) {
+  const hash = createHash('sha256');
+  for (const item of [...artifacts].sort((a, b) => a.file.localeCompare(b.file))) hash.update(`${item.file}\0${item.hash}\n`);
+  return `sha256:${hash.digest('hex')}`;
+}
+
 /** 规范化仓库内路径；仓库外路径不进入输入快照。 */
 function relativePath(repo, path) {
   const candidate = relative(repo, resolve(repo, String(path))).split(sep).join('/');

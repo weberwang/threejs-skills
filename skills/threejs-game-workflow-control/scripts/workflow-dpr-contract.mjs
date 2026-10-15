@@ -7,7 +7,8 @@
  * 各自实现不同的封顶或生产校验逻辑。
  */
 export const RUNTIME_MAX_DPR = 2;
-export const IMAGE_PRODUCTION_DPR = 2;
+/** 图片按逻辑显示尺寸 1:1 生产，运行时高分屏密度不再额外放大资源。 */
+export const IMAGE_PRODUCTION_DPR = 1;
 export const DEFAULT_DPR = 1;
 export const DPR_POLICY = "dynamic-capped-2";
 
@@ -45,7 +46,7 @@ export function workflowDprError(label = "dpr", actual) {
   return `${label} 必须是正有限数字且不超过 ${RUNTIME_MAX_DPR}（实际=${observed}）`;
 }
 
-/** 生成图片生产基线错误；运行时 DPR 可变化，但 max_dpr 只能是数字 2。 */
+/** 生成图片生产基线错误；运行时 DPR 可变化，但 max_dpr 只能是数字 1。 */
 export function imageProductionDprError(label = "max_dpr", actual) {
   const observed = actual === undefined ? "missing" : JSON.stringify(actual);
   return `${label} 必须严格为图片生产基线 ${IMAGE_PRODUCTION_DPR}（实际=${observed}）`;

@@ -13,11 +13,12 @@
 | 文件 | 领域权威内容 |
 | --- | --- |
 | `docs/project-profile.yaml` | 项目身份、渠道和约束 |
-| `docs/GDD.md` | 已批准需求、完整功能/场景清单、范围、玩法、验收与端到端追踪 |
+| `docs/GDD.md` | 已批准需求、完整功能/场景清单、范围、玩法、验收与端到端追踪；分开内部规则与[玩家可见表达](../../threejs-game-ui-layout/references/game-copy.md#工作流接入)，供生成与界面实现共用 |
 | `docs/visual-baseline.md` | 不可变冻结全局视觉规则正文；完整文件 SHA-256 形成风格指纹 |
-| `docs/visual-design.md` | 可追加的方向探索、基线索引与 V2/V3/V4/V5 阶段证据，不参与风格指纹 |
+| `docs/visual-design.md` | 可追加的方向探索、基线索引与 V2/V3/V4 阶段证据，不参与风格指纹 |
 | `docs/TDD.md` | 模块、公共基础、场景依赖/实施序列、分项完成事实、能力、平台和服务边界 |
 | `docs/balance.md` | 数值模型与验证 |
+| `docs/game-feel.md`（按需） | 当前任务需要独立记录动态反馈意图、事件语义或组合规则时使用；也可复用 GDD/视觉设计文档，不是默认工件或机器必需字段，参考[汁水感设计指南](../../threejs-game-juice/references/design-guide.md) |
 | `docs/asset-license-register.md` | 资源/音频来源、授权与发布资格 |
 | `docs/visual-assets.json` | 含场景或 shared 归属的视觉资源机器清单，不驱动全局状态 |
 | 场景 V2 布局候选目录 | 同批 `layout.png`、`layout-nodes.json`、`layout-decision.json`、离线 `review.html`、`generation-result.json` 及真实 SHA；审阅页规则见[离线布局审阅产物](../../threejs-game-ui-layout/references/layout-review-artifacts.md) |

@@ -9,7 +9,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { validateVisualDecompositionConfirmations, buildVisualConfirmationAuthorityByRegion } from "./visual-decomposition-confirmation.mjs";
-import { isPlainObject as isObject, isSha256, nonEmptyString, sha256Bytes, VISUAL_PRODUCTION_METHODS as PRODUCTION_METHODS } from "./visual-contract-core.mjs";
+import { isPlainObject as isObject, nonEmptyString, VISUAL_PRODUCTION_METHODS as PRODUCTION_METHODS } from "./visual-contract-core.mjs";
 
 const REUSE_SCHEMA = "asset-reuse-snapshot/1.0";
 
@@ -52,14 +52,11 @@ function safeReusePath(projectRoot, value) {
   return candidate;
 }
 
-/** 计算文件 SHA，并拒绝目录、缺失文件和越界路径。 */
-function readReuseFile(projectRoot, value, expectedSha, field, context, errors) {
+/** 读取根目录内的真实来源文件；路径和内容结构负责验收，不复算摘要。 */
+function readReuseFile(projectRoot, value, field, context, errors) {
   const path = safeReusePath(projectRoot, value);
   if (!path || !existsSync(path) || !statSync(path).isFile()) { errors.push(gateError(context, `复用快照 ${field} 文件不存在或路径越界`, { missing: field })); return null; }
-  if (!isSha256(expectedSha)) { errors.push(gateError(context, `复用快照 ${field} 缺少合法 SHA-256`, { missing: `${field}_sha256` })); return null; }
-  const bytes = readFileSync(path); const actual = sha256Bytes(bytes);
-  if (actual !== expectedSha) errors.push(gateError(context, `复用快照 ${field} SHA-256 不一致`, { missing: `${field}_sha256` }));
-  return { path, bytes, sha256: actual };
+  return { path, bytes: readFileSync(path) };
 }
 
 /**
@@ -76,15 +73,14 @@ export function validateReuseProductionGate(contract = {}, context = {}, options
   if (!reuseMethod && !reuseMode) return errors;
   if (!isObject(snapshot)) { errors.push(gateError(context, "reuse-existing 必须携带 asset-reuse-snapshot/1.0", { missing: "reuse_snapshot" })); return errors; }
   if (snapshot.schema !== REUSE_SCHEMA) errors.push(gateError(context, "复用快照 schema 必须为 asset-reuse-snapshot/1.0", { missing: REUSE_SCHEMA }));
-  for (const field of ["source_file", "source_manifest_file", "source_manifest_sha256", "source_sha256", "compatibility_evidence_file", "compatibility_evidence_sha256", "accepted_at", "source_status"]) if (!Object.hasOwn(snapshot, field)) errors.push(gateError(context, "复用快照缺少不可变来源字段", { missing: `reuse_snapshot.${field}` }));
+  for (const field of ["source_file", "source_manifest_file", "compatibility_evidence_file", "accepted_at", "source_status"]) if (!Object.hasOwn(snapshot, field)) errors.push(gateError(context, "复用快照缺少不可变来源字段", { missing: `reuse_snapshot.${field}` }));
   if (snapshot.source_status !== "accepted") errors.push(gateError(context, "复用快照来源必须是 accepted 资源", { missing: "reuse_snapshot.source_status=accepted" }));
   if (!nonEmptyString(snapshot.source_file) || !/\.(?:png|jpe?g)$/i.test(snapshot.source_file)) errors.push(gateError(context, "复用源文件必须是 PNG/JPG 位图", { missing: "reuse_snapshot.source_file" }));
   if (!nonEmptyString(snapshot.accepted_at) || Number.isNaN(Date.parse(snapshot.accepted_at))) errors.push(gateError(context, "复用快照 accepted_at 无效", { missing: "reuse_snapshot.accepted_at" }));
-  if (!isSha256(snapshot.source_manifest_sha256) || !isSha256(snapshot.source_sha256) || !isSha256(snapshot.compatibility_evidence_sha256)) errors.push(gateError(context, "复用快照必须登记来源清单、源文件和兼容证据 SHA", { missing: "reuse_snapshot.*_sha256" }));
   if (options.checkFiles !== true || !nonEmptyString(options.projectRoot)) { errors.push(gateError(context, "reuse 后续阶段必须使用 check-files/project-root 复算快照", { missing: "checkFiles=true,projectRoot" })); return errors; }
-  const source = readReuseFile(options.projectRoot, snapshot.source_file, snapshot.source_sha256, "source_file", context, errors);
-  const manifest = readReuseFile(options.projectRoot, snapshot.source_manifest_file, snapshot.source_manifest_sha256, "source_manifest_file", context, errors);
-  const evidence = readReuseFile(options.projectRoot, snapshot.compatibility_evidence_file, snapshot.compatibility_evidence_sha256, "compatibility_evidence_file", context, errors);
+  const source = readReuseFile(options.projectRoot, snapshot.source_file, "source_file", context, errors);
+  const manifest = readReuseFile(options.projectRoot, snapshot.source_manifest_file, "source_manifest_file", context, errors);
+  const evidence = readReuseFile(options.projectRoot, snapshot.compatibility_evidence_file, "compatibility_evidence_file", context, errors);
   let manifestData; let evidenceData;
   try { if (manifest) manifestData = JSON.parse(manifest.bytes.toString("utf8")); } catch (caught) { errors.push(gateError(context, `复用 source_manifest_file 不是合法 JSON：${caught.message}`, { missing: "source_manifest_file" })); }
   try { if (evidence) evidenceData = JSON.parse(evidence.bytes.toString("utf8")); } catch (caught) { errors.push(gateError(context, `复用 compatibility_evidence_file 不是合法 JSON：${caught.message}`, { missing: "compatibility_evidence_file" })); }
@@ -92,9 +88,13 @@ export function validateReuseProductionGate(contract = {}, context = {}, options
     if (manifestData.status !== "accepted") errors.push(gateError(context, "复用 source manifest 必须处于 accepted 状态", { missing: "source_manifest.status=accepted" }));
     const registered = manifestData.source_file ?? manifestData.runtime_file ?? manifestData.file;
     if (registered && registered !== snapshot.source_file) errors.push(gateError(context, "复用快照 source_file 与 source manifest 不一致"));
-    if (manifestData.source_sha256 && manifestData.source_sha256 !== snapshot.source_sha256) errors.push(gateError(context, "复用快照 source_sha256 与 source manifest 不一致"));
+    const snapshotAssetId = snapshot.source_asset_id ?? snapshot.sourceAssetId;
+    const manifestAssetId = manifestData.asset_id ?? manifestData.assetId ?? manifestData.id;
+    if (nonEmptyString(snapshotAssetId) && nonEmptyString(manifestAssetId) && snapshotAssetId !== manifestAssetId) errors.push(gateError(context, "复用快照 source_asset_id 与 source manifest 不一致"));
   }
   if (evidenceData && !["passed", "accepted", "verified"].includes(String(evidenceData.status ?? "").toLowerCase())) errors.push(gateError(context, "复用 compatibility evidence 必须是 passed/accepted/verified", { missing: "compatibility_evidence.status" }));
+  const evidenceSource = evidenceData?.source_file ?? evidenceData?.sourceFile;
+  if (nonEmptyString(evidenceSource) && evidenceSource !== snapshot.source_file) errors.push(gateError(context, "复用兼容证据未指向当前 source_file"));
   if (source && !source.bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) && !source.bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]))) errors.push(gateError(context, "复用 source_file 必须是真实 PNG/JPEG 文件", { missing: "source_file.magic" }));
   return errors;
 }
@@ -109,15 +109,11 @@ export function validateProductionMethodChangeRequest(change, context = {}) {
     if (context.annotation_number !== undefined || context.region_id !== undefined || context.previousMethod !== undefined || context.proposedMethod !== undefined) errors.push(gateError(prefix, "Change Request 缺少逐区域 production_method_changes", { missing: "production_method_changes" }));
     return errors;
   }
-  const requestWorkItem = change.workItemId; const requestCandidateVersion = change.candidateVersion; const requestCandidateSha = change.candidate_sha256 ?? change.candidateSha256; const requestTargetSha = change.target_sha256 ?? change.targetSha256;
+  const requestWorkItem = change.workItemId; const requestCandidateVersion = change.candidateVersion;
   const requestContext = changeContext({ annotation_number: context.annotation_number, id: context.region_id }, context.proposedMethod ?? "production-method", context.previousMethod ?? "missing");
   const requestError = (message) => errors.push(gateError(requestContext, message));
   if (context.workItemId && requestWorkItem !== context.workItemId) requestError("workItemId 与当前工作项不一致");
   if (context.candidateVersion && requestCandidateVersion !== context.candidateVersion) requestError("candidateVersion 与当前候选版本不一致");
-  if (context.candidateSha256 && requestCandidateSha !== context.candidateSha256) requestError("candidate_sha256 与当前候选 SHA 不一致");
-  if (context.targetSha256 && requestTargetSha !== context.targetSha256) requestError("target_sha256 与冻结目标不一致");
-  if (context.baselineSha256 && change.baseline_sha256 !== context.baselineSha256) requestError("baseline_sha256 与当前基线不一致");
-  if (context.diffFingerprint && change.diff_fingerprint !== context.diffFingerprint) requestError("diff_fingerprint 与当前候选不一致");
   for (const [index, item] of changes.entries()) {
     const local = changeContext({ annotation_number: item?.annotation_number, id: item?.region_id }, item?.proposed_method ?? "proposed-method", item?.previous_method ?? "previous-method");
     const error = (message, missing = "") => errors.push(gateError(local, `production method 变更[${index}] ${message}`, { missing }));
@@ -127,10 +123,6 @@ export function validateProductionMethodChangeRequest(change, context = {}) {
     if (Object.hasOwn(change, "work_item_id")) error("禁止使用旧 work_item_id，必须使用 workItemId", "workItemId");
     if (Object.hasOwn(change, "candidate_version")) error("禁止使用旧 candidate_version，必须使用 candidateVersion", "candidateVersion");
     if (!nonEmptyString(requestCandidateVersion)) error("缺少候选版本绑定", "candidateVersion");
-    if (!isSha256(requestCandidateSha)) error("缺少合法候选 SHA 绑定", "candidate_sha256");
-    if (!isSha256(requestTargetSha)) error("缺少合法冻结目标 SHA 绑定", "target_sha256");
-    if (!isSha256(change.baseline_sha256)) error("缺少合法基线 SHA 绑定", "baseline_sha256");
-    if (!nonEmptyString(change.diff_fingerprint)) error("缺少当前候选 diff_fingerprint", "diff_fingerprint");
     if (!nonEmptyString(change.user_original_text ?? change.userOriginalText ?? change.user_original_request ?? change.userOriginalRequest ?? change.original_user_text ?? change.originalUserText)) error("缺少用户原文绑定", "user_original_text");
     const decidedAt = change.accepted_at ?? change.acceptedAt ?? change.decided_at ?? change.decidedAt;
     if (!nonEmptyString(decidedAt) || Number.isNaN(Date.parse(decidedAt))) error("缺少有效决定时间", "accepted_at");

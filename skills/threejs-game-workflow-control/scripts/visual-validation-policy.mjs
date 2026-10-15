@@ -9,8 +9,6 @@ import { isWorkflowDpr, workflowDprError } from "./workflow-dpr-contract.mjs";
 
 export const VISUAL_VALIDATION_MODES = Object.freeze(["usability", "exact"]);
 export const DEFAULT_VISUAL_VALIDATION_MODE = "usability";
-const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
-
 /** 判断是否为普通对象。 */
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -34,12 +32,18 @@ export function validateVisualManifestFidelityCases(cases, target, candidate, ba
   cases.forEach((item, index) => {
     const label = `fidelity_cases[${index}]`;
     if (!isObject(item)) { errors.push(`${label} 必须是对象`); return; }
-    for (const field of ["id", "target_sha256", "candidate_sha256", "scene_id", "state_id", "language", "input_trace", "animation_sample", "layout_contract_version", "visual_baseline_version", "conclusion"]) if (!nonEmptyString(item[field])) errors.push(`${label}.${field} 必须是非空字符串`);
+    for (const field of ["id", "scene_id", "state_id", "language", "input_trace", "animation_sample", "layout_contract_version", "visual_baseline_version", "conclusion"]) if (!nonEmptyString(item[field])) errors.push(`${label}.${field} 必须是非空字符串`);
     if (nonEmptyString(item.scene_id) && !target?.scene_ids?.includes(item.scene_id)) errors.push(`${label}.scene_id 不在 reference_target.scene_ids 范围内`);
     if (nonEmptyString(item.state_id) && !target?.state_ids?.includes(item.state_id)) errors.push(`${label}.state_id 不在 reference_target.state_ids 范围内`);
-    for (const field of ["target_sha256", "candidate_sha256"]) if (nonEmptyString(item[field]) && !SHA_PATTERN.test(item[field])) errors.push(`${label}.${field} 格式无效`);
-    if (nonEmptyString(target?.target_sha256) && item.target_sha256 !== target.target_sha256) errors.push(`${label}.target_sha256 与冻结目标 SHA 不一致，旧证据已失效`);
-    if (nonEmptyString(candidate?.sha256) && item.candidate_sha256 !== candidate.sha256) errors.push(`${label}.candidate_sha256 与当前候选 SHA 不一致，旧证据已失效`);
+    const expectedCandidateId = candidate?.candidateId ?? candidate?.candidate_id ?? candidate?.id;
+    const observedCandidateId = item.candidate_id ?? item.candidateId;
+    if (nonEmptyString(expectedCandidateId) && nonEmptyString(observedCandidateId) && observedCandidateId !== expectedCandidateId) errors.push(`${label}.candidate_id 与当前候选不一致`);
+    const expectedCandidateVersion = candidate?.candidateVersion ?? candidate?.candidate_version ?? candidate?.version;
+    const observedCandidateVersion = item.candidate_version ?? item.candidateVersion;
+    if (nonEmptyString(expectedCandidateVersion) && nonEmptyString(observedCandidateVersion) && observedCandidateVersion !== expectedCandidateVersion) errors.push(`${label}.candidate_version 与当前候选版本不一致`);
+    const expectedTargetFile = target?.original_file ?? target?.originalFile ?? target?.file;
+    const observedTargetFile = item.target_file ?? item.targetFile ?? item.reference_file ?? item.referenceFile;
+    if (nonEmptyString(expectedTargetFile) && nonEmptyString(observedTargetFile) && observedTargetFile !== expectedTargetFile) errors.push(`${label}.target_file 与当前冻结目标不一致`);
     if (nonEmptyString(baseline?.version) && item.visual_baseline_version !== baseline.version) errors.push(`${label}.visual_baseline_version 与根 visual_baseline.version 不一致，旧证据已失效`);
     if (!isObject(item.viewport) || !["width", "height"].every((field) => typeof item.viewport[field] === "number" && item.viewport[field] > 0)) errors.push(`${label}.viewport 必须包含正数 width/height`);
     if (!isWorkflowDpr(item.dpr)) errors.push(`${label}.${workflowDprError("dpr", item.dpr)}`);

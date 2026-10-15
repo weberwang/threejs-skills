@@ -6,7 +6,7 @@
 
 - 容器的 `getBoundingClientRect()` 是唯一 CSS 逻辑视口来源，单位为 CSS 像素。宿主 CSS 负责让 Canvas 填满容器；渲染器不得反过来改写布局尺寸。
 - 有效 DPR 从 `window.devicePixelRatio` 读取，非正数或非有限数回退为 1，并封顶为 2。设备 DPR、浏览器缩放或容器尺寸变化时，重算同一套画布、Camera 和输入映射。
-- 更新渲染器时先 `renderer.setPixelRatio(effectiveDpr)`，再 `renderer.setSize(cssWidth, cssHeight, false)`。最后一个参数为 `false`，所以 CSS 尺寸由宿主样式控制；记录实际 backing 尺寸时读取渲染器/Canvas 的实际结果，不把它当作布局坐标。
+- 更新渲染器时先 `renderer.setPixelRatio(effectiveDpr)`，再 `renderer.setSize(cssWidth, cssHeight, false)`。最后一个参数为 `false`，所以 CSS 尺寸由宿主样式控制；backing 宽高按 CSS 尺寸乘有效 DPR 向下取整。记录实际 backing 尺寸时读取渲染器/Canvas 的实际结果，不把它当作布局坐标。
 - WebGL 2 `WebGLRenderer` 是默认选择。`WebGPURenderer` 需要项目明确采用，并验证异步初始化、目标浏览器、材质/后处理兼容性及回退路径。
 - 对透视世界 Camera，按 CSS rect 设置 `PerspectiveCamera.aspect = cssWidth / cssHeight`，随后调用 `updateProjectionMatrix()`。若为不同 viewport 或 Camera 设置了 viewport/scissor，合同还须记录其 CSS 到 backing 映射。
 

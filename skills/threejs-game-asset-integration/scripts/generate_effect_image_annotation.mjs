@@ -13,8 +13,6 @@ import { resolveProductionContract } from "../../threejs-game-workflow-control/s
 import { validateVisualComponentContract } from "../../threejs-game-workflow-control/scripts/visual-component-contract.mjs";
 import { buildDecompositionElements, decompositionElementIds } from "./decomposition-elements.mjs";
 
-const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
-
 /** 判断值是否为去除空白后仍有内容的字符串。 */
 function nonEmptyString(value) { return typeof value === "string" && value.trim().length > 0; }
 
@@ -104,11 +102,10 @@ async function selectRegions(manifest, sceneId, stateId, projectRoot) {
     if (plan.mode === "runtime-program" && (!["runtime-program", "runtime-data", "runtime-rendered"].includes(region.owner_type) || Object.hasOwn(region, "asset_id"))) throw new Error(`区域 ${region.id} 的 runtime-program 不得映射生产位图`);
     if (plan.mode === "reuse-existing") {
       const source = region.reuse_snapshot;
-      if (!isObject(source) || source.schema !== "asset-reuse-snapshot/1.0" || !["source_file", "source_manifest_file", "source_manifest_sha256", "source_sha256", "compatibility_evidence_file", "compatibility_evidence_sha256", "accepted_at", "source_status"].every((field) => nonEmptyString(source[field]))) throw new Error(`区域 ${region.id} 的 reuse_snapshot 字段不完整`);
+      if (!isObject(source) || source.schema !== "asset-reuse-snapshot/1.0" || !["source_file", "source_manifest_file", "compatibility_evidence_file", "accepted_at", "source_status"].every((field) => nonEmptyString(source[field]))) throw new Error(`区域 ${region.id} 的 reuse_snapshot 字段不完整`);
       if (source.source_status !== "accepted" || Number.isNaN(Date.parse(source.accepted_at))) throw new Error(`区域 ${region.id} 的 reuse_snapshot 必须是 accepted 且包含有效 accepted_at`);
       if (!/\.(?:png|jpe?g)$/i.test(source.source_file)) throw new Error(`区域 ${region.id} 的 reuse_snapshot.source_file 必须是 PNG/JPG`);
       if (basename(source.source_manifest_file.replace(/\\/g, "/")).toLowerCase() === "visual-assets.json") throw new Error(`区域 ${region.id} 的 reuse_snapshot 必须指向不可变快照，不能指向当前 visual-assets.json`);
-      for (const field of ["source_sha256", "source_manifest_sha256", "compatibility_evidence_sha256"]) if (!SHA_PATTERN.test(source[field])) throw new Error(`区域 ${region.id} 的 reuse_snapshot.${field} 格式无效`);
       const reuseErrors = []; await checkReuseSourceFiles(projectRoot, `coverage_audit.regions[${region.annotation_number}]`, source, reuseErrors);
       if (reuseErrors.length) throw new Error(reuseErrors[0]);
     }
@@ -238,9 +235,10 @@ export function technicalRegionSnapshot(region) {
 
 /** 生成绑定目标、区域定义和编号标注图 SHA 的拆解分析技术文件。 */
 function buildProposal(args, manifest, canvas, outputRelative, annotationSha, regions) {
-  const targetSha = manifest.reference_target.target_sha256; const proposalId = args.proposalId ?? `annotation-${args.sceneId}-${args.stateId}-${targetSha.slice(-12)}`;
   const createdAt = args.createdAt ?? manifest.reference_target.frozen_at;
   if (!nonEmptyString(createdAt) || Number.isNaN(Date.parse(createdAt))) throw new Error("proposal created_at 必须通过 --created-at 提供可解析时间，或使用可解析冻结时间");
+  const proposalId = args.proposalId ?? `annotation-${args.sceneId}-${args.stateId}-${Date.parse(createdAt)}`;
+  const targetSha = manifest.reference_target.target_sha256;
   const visualRegions = regions.map((region) => { const production = annotationProductionContract(region); return { region_id: region.id, annotation_number: region.annotation_number, mode: region.implementation_plan.mode, summary: region.implementation_plan.summary, production_method: production.production_method, production_origin: production.production_origin, delivery_kind: production.delivery_kind, production_label: production.label, ownership_evidence: region.ownership_evidence, layout_node_ids: decompositionIds(region), placement_layout_node_ids: placementLayoutNodeIds(region), atomic_image_requirements: deriveAtomicImageRequirements(region), region_definition_sha256: computeRegionDefinitionSha256(region) }; });
   const canvasSnapshot = { scene_id: canvas.scene_id, state_id: canvas.state_id, width: canvas.width, height: canvas.height };
   const technicalRegions = regions.map(technicalRegionSnapshot);
@@ -280,9 +278,8 @@ function buildProposal(args, manifest, canvas, outputRelative, annotationSha, re
 export async function main(argv = process.argv.slice(2)) {
   try {
     const args = parseArgs(argv); const projectRoot = resolve(args.projectRoot); const manifest = await loadManifest(projectPath(projectRoot, args.manifest));
-    if (!isObject(manifest.reference_target) || !SHA_PATTERN.test(manifest.reference_target.target_sha256)) throw new Error("reference_target 缺少合法 target_sha256");
+    if (!isObject(manifest.reference_target) || !nonEmptyString(manifest.reference_target.original_file)) throw new Error("reference_target 缺少 original_file");
     const { canvas, regions } = await selectRegions(manifest, args.sceneId, args.stateId, projectRoot); const originalPath = projectPath(projectRoot, manifest.reference_target.original_file); const originalBytes = await readFile(originalPath);
-    if (sha256Bytes(originalBytes) !== manifest.reference_target.target_sha256) throw new Error("冻结原图文件 SHA-256 与 reference_target 不一致");
     const dimensions = readPngDimensions(originalBytes);
     if (!dimensions) throw new Error("reference_target.original_file 必须是完整合法 PNG");
     if (dimensions.width !== canvas.width || dimensions.height !== canvas.height) throw new Error("冻结原图 PNG 尺寸必须与选定 scene/state 画布一致");

@@ -21,17 +21,18 @@ test("公共去背记录可直接接入透明合同和 Sharp 归一化", async (
     for (let index = 0; index < 16; index += 1) pixels.set([0, 170, 85, 255], index * 4);
     pixels.set([240, 20, 20, 255], 5 * 4);
     await writeFile(rawFile, encodePngRgba(4, 4, pixels));
-    const removal = await removeBackgroundLocal({ sourceFile: rawFile, outputFile: sourceFile, backgroundColor: sourceBackgroundColor, tolerance: 0, requireSolidBackground: true });
+    const removal = await removeBackgroundLocal({ sourceFile: rawFile, outputFile: sourceFile, backgroundColor: sourceBackgroundColor, tolerance: 0, requireSolidBackground: true, edgeProfile: "hard-edge", colorSeparationVerified: true });
     assert.equal(removal.status, "PASS");
     assert.equal(removal.background_removal_attempt.evidence.solid_background_check.status, "passed");
     assert.equal(removal.background_removal_attempt.evidence.solid_background_check.background_color, sourceBackgroundColor);
     assert.equal(removal.background_removal_attempt.evidence.solid_background_check.matched_boundary_pixels, removal.background_removal_attempt.evidence.solid_background_check.boundary_pixels);
-    const normalization = await normalizeImageToContract({ sourceFile, outputFile: runtimeFile, targetWidth: 4, targetHeight: 4, requireAlpha: true });
-    const expectedAsset = { source_file: sourceFile, runtime_file: runtimeFile, width: 4, height: 4, mime_type: "image/png", alpha: true };
+    const normalization = await normalizeImageToContract({ sourceFile, outputFile: runtimeFile, targetWidth: 4, targetHeight: 4, requireAlpha: true, candidateSha256: `sha256:${"c".repeat(64)}` });
+    const expectedAsset = { source_file: sourceFile, runtime_file: runtimeFile, width: 4, height: 4, mime_type: "image/png", alpha: true, transparency_requirements: { strategy: "background-removal", edge_profile: "hard-edge" } };
     const contract = { production_method: "image-generation", image_generation_required: true };
     // 原始 RGBA 可完全不透明但仍有 Alpha 通道；生产合同必须保留实际通道事实。
     const generation = {
-      source_background_mode: "opaque", final_background_mode: "transparent", transparency_strategy: "background-removal",
+      parameters: { size: "4x4" }, postprocess: ["background-removal"],
+      edge_profile: "hard-edge", edge_evidence: "固定纯色背景与红色硬边主体明确区分", color_separation_verified: true, raw_source_sha256: removal.source_sha256, source_sha256: removal.output_sha256, transparency_preview: normalization.transparency_preview, source_background_mode: "opaque", final_background_mode: "transparent", transparency_strategy: "background-removal",
       source_background_color: sourceBackgroundColorRecord,
       raw_source_file: rawFile, raw_source_has_alpha: removal.source_has_alpha,
       source_file: sourceFile, source_has_alpha: true, full_prompt: `生成独立角色。\n${buildSolidBackgroundPrompt(sourceBackgroundColor)}`,

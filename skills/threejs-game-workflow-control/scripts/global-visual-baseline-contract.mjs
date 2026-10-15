@@ -1,50 +1,64 @@
-import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
+import {
+  areGlobalVisualCandidateAssessmentsEquivalent,
+  validateGameArtBrief,
+  validateGlobalVisualCandidateAssessments,
+} from './global-visual-art-quality-contract.mjs';
 
 /** 全局视觉基线选择证据的严格版本；该证据在冻结后只允许通过新版本替换。 */
-export const GLOBAL_VISUAL_BASELINE_SELECTION_SCHEMA = 'threejs-global-visual-baseline-selection/1.0';
+export const GLOBAL_VISUAL_BASELINE_SELECTION_SCHEMA = 'threejs-global-visual-baseline-selection/1.1';
 /** 候选生成记录的严格版本，记录冻结前的同条件生成事实。 */
 export const GLOBAL_VISUAL_BASELINE_CANDIDATE_SCHEMA = 'threejs-global-visual-baseline-candidate-generation/1.0';
 /** 人工选择记录的严格版本，禁止 AUTO 或 pending 记录进入冻结证据。 */
-export const GLOBAL_VISUAL_BASELINE_DECISION_SCHEMA = 'threejs-global-visual-baseline-selection-decision/1.0';
+export const GLOBAL_VISUAL_BASELINE_DECISION_SCHEMA = 'threejs-global-visual-baseline-selection-decision/1.1';
 /** 全局静态基线唯一允许的冻结状态。 */
 export const GLOBAL_VISUAL_BASELINE_FROZEN_STATE = 'global-static-baseline-frozen';
-/** 冻结正文的固定仓库路径，风格指纹必须等于该文件的真实字节 SHA-256。 */
+/** 冻结正文的固定仓库路径，用于复核人工选择后的基线来源。 */
 export const GLOBAL_VISUAL_BASELINE_DOCUMENT = 'docs/visual-baseline.md';
 /** 选择证据只接受三张候选图，避免“多图任选”或少于三张的隐性流程。 */
 export const GLOBAL_VISUAL_BASELINE_CANDIDATE_COUNT = 3;
 
-const SHA256 = /^sha256:[a-f0-9]{64}$/;
 const IMAGE_PATH = /\.(?:png|jpe?g)$/i;
+const OPTIONAL_SNAPSHOT_FIELDS = new Set([
+  'sha256', 'conditionsFingerprint', 'briefSha256', 'outputSha256', 'decisionSha256',
+  'documentSha256', 'styleFingerprint', 'conditions_fingerprint', 'brief_sha256',
+  'output_sha256', 'decision_sha256', 'document_sha256', 'style_fingerprint',
+  'targetSha256', 'target_sha256', 'candidateSha256', 'candidate_sha256', 'candidate_sha',
+  'baselineHash', 'baseline_hash', 'baselineSha256', 'baseline_sha256', 'contentHash', 'content_hash',
+  'artifactHash', 'artifact_hash', 'dependencyHash', 'dependency_hash', 'diffFingerprint', 'diff_fingerprint', 'diffSha256', 'diff_sha256',
+  'evidenceSha256', 'evidence_sha256', 'visualManifestSha256', 'visual_manifest_sha256',
+  'referenceSha256', 'reference_sha256', 'annotationSha256', 'annotation_sha256', 'metadataSha256', 'metadata_sha256',
+  'receiptSha256', 'receipt_sha256', 'proposalSha256', 'proposal_sha256', 'entry_sha256', 'ledger_sha256',
+]);
 
 const ROOT_FIELDS = Object.freeze([
   'schemaVersion', 'workItemId', 'selectionId', 'brief', 'generationBatchId',
-  'conditionsFingerprint', 'candidates', 'humanSelection', 'baseline', 'frozenAt',
+  'candidates', 'humanSelection', 'baseline', 'frozenAt',
 ]);
-const BRIEF_FIELDS = Object.freeze(['briefId', 'path', 'sha256']);
+const BRIEF_FIELDS = Object.freeze(['briefId', 'path']);
 const CANDIDATE_FIELDS = Object.freeze(['candidateId', 'origin', 'status', 'image', 'generationRecord']);
-const FILE_REF_FIELDS = Object.freeze(['path', 'sha256']);
+const FILE_REF_FIELDS = Object.freeze(['path']);
 const GENERATION_RECORD_FIELDS = Object.freeze([
-  'schemaVersion', 'workItemId', 'briefId', 'briefSha256', 'generationBatchId',
-  'conditionsFingerprint', 'candidateId', 'origin', 'outputPath', 'outputSha256',
+  'schemaVersion', 'workItemId', 'briefId', 'generationBatchId',
+  'candidateId', 'origin', 'outputPath',
   'generatedAt', 'prompt',
 ]);
 const HUMAN_SELECTION_FIELDS = Object.freeze([
   'reviewMode', 'status', 'selectedCandidateId', 'presentedCandidateIds',
-  'decisionFile', 'decisionSha256', 'confirmedAt', 'userOriginalText',
+  'candidateAssessments', 'decisionFile', 'confirmedAt', 'userOriginalText',
 ]);
 const DECISION_FIELDS = Object.freeze([
-  'schemaVersion', 'selectionId', 'workItemId', 'briefId', 'briefSha256',
-  'generationBatchId', 'conditionsFingerprint', 'presentedCandidateIds',
-  'reviewMode', 'status', 'selectedCandidateId', 'confirmedAt', 'userOriginalText',
+  'schemaVersion', 'selectionId', 'workItemId', 'briefId',
+  'generationBatchId', 'presentedCandidateIds',
+  'reviewMode', 'status', 'selectedCandidateId', 'candidateAssessments', 'confirmedAt', 'userOriginalText',
 ]);
 const BASELINE_FIELDS = Object.freeze([
-  'id', 'version', 'status', 'document', 'documentSha256', 'styleFingerprint',
+  'id', 'version', 'status', 'document',
   'primaryAnchor', 'selectedCandidateId', 'selectedCandidate',
 ]);
 // 引用属于消费者 Work Item；可选 workItemId 只记录生产者身份，不能改写成消费者身份。
-const REFERENCE_FIELDS = Object.freeze(['path', 'sha256', 'workItemId']);
+const REFERENCE_FIELDS = Object.freeze(['path', 'workItemId']);
 
 /** 判断值是否为不带数组的普通对象。 */
 function isRecord(value) {
@@ -56,9 +70,11 @@ function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-/** 判断值是否是严格的 sha256:<64 位小写十六进制> 身份。 */
-export function isGlobalVisualBaselineSha256(value) {
-  return typeof value === 'string' && SHA256.test(value);
+/** 摘要是可选追踪元数据，不允许它们成为严格对象形状的必填验收条件。 */
+function isOptionalSnapshotField(field) {
+  const normalized = String(field).replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+  return OPTIONAL_SNAPSHOT_FIELDS.has(field)
+    || /(^|[_-])(sha(?:1|256)?|hash|checksum|fingerprint|digest|diff_identity)([_-]|$)/.test(normalized);
 }
 
 /** 判断时间字段是否可被机器解析，拒绝空值和自由文本。 */
@@ -89,17 +105,17 @@ function validateStrictObject(value, fields, label, errors) {
     return false;
   }
   const missing = fields.filter((field) => value[field] === undefined);
-  const extra = Object.keys(value).filter((field) => !fields.includes(field));
+  const extra = Object.keys(value).filter((field) => !fields.includes(field) && !isOptionalSnapshotField(field));
   if (missing.length || extra.length) errors.push(`${label} 字段不严格：缺少 ${missing.join('、') || '无'}；多余 ${extra.join('、') || '无'}`);
   return missing.length === 0 && extra.length === 0;
 }
 
-/** 校验仓库内文件引用的字段形状；真实存在性与 SHA 由文件门复算。 */
+/** 校验仓库内来源文件引用的字段形状；真实存在性由文件门读取。 */
 function validateFileRefShape(value, label, errors, fields = FILE_REF_FIELDS) {
   const valid = validateStrictObject(value, fields, label, errors);
   if (!valid) return false;
-  if (!isRepositoryRelativePath(value.path) || !isGlobalVisualBaselineSha256(value.sha256)) {
-    errors.push(`${label} 必须包含仓库内相对 path 与合法 sha256`);
+  if (!isRepositoryRelativePath(value.path)) {
+    errors.push(`${label} 必须包含仓库内相对来源 path`);
     return false;
   }
   return true;
@@ -107,19 +123,19 @@ function validateFileRefShape(value, label, errors, fields = FILE_REF_FIELDS) {
 
 /**
  * 校验消费者对全局选择根证据的引用形状。
- * 根证据的 workItemId 是生产者身份；消费者只凭不可变 path+sha256 复用，
+ * 根证据的 workItemId 是生产者身份；消费者通过来源路径读取并校验根证据，
  * 因此这里不把可选的生产者标识与当前消费者 Work Item 比较。
  */
 export function validateGlobalVisualBaselineSelectionReferenceShape(reference) {
   const errors = [];
   if (!isRecord(reference)) {
-    errors.push('globalVisualBaselineSelectionRef 必须是 path+sha256 对象；必须完成 3 张候选图 + 人工确认');
+    errors.push('globalVisualBaselineSelectionRef 必须是仓库内来源路径对象；必须完成 3 张候选图 + 人工确认');
     return errors;
   }
-  const missing = ['path', 'sha256'].filter((field) => reference[field] === undefined);
-  const extra = Object.keys(reference).filter((field) => !REFERENCE_FIELDS.includes(field));
+  const missing = ['path'].filter((field) => reference[field] === undefined);
+  const extra = Object.keys(reference).filter((field) => !REFERENCE_FIELDS.includes(field) && !isOptionalSnapshotField(field));
   if (missing.length || extra.length) errors.push(`globalVisualBaselineSelectionRef 字段不严格：缺少 ${missing.join('、') || '无'}；多余 ${extra.join('、') || '无'}`);
-  if (!isRepositoryRelativePath(reference.path) || !isGlobalVisualBaselineSha256(reference.sha256)) errors.push('globalVisualBaselineSelectionRef 必须包含仓库内相对 path 与 sha256');
+  if (!isRepositoryRelativePath(reference.path)) errors.push('globalVisualBaselineSelectionRef 必须包含仓库内相对来源 path');
   if (reference.workItemId !== undefined && !isNonEmptyString(reference.workItemId)) errors.push('globalVisualBaselineSelectionRef.workItemId 若提供必须为非空的生产者 Work Item 身份');
   return [...new Set(errors)];
 }
@@ -145,7 +161,6 @@ export function validateGlobalVisualBaselineSelection(value, options = {}) {
   if (!isNonEmptyString(value.workItemId)) errors.push(`${label}.workItemId 必须为非空字符串`);
   if (!isNonEmptyString(value.selectionId)) errors.push(`${label}.selectionId 必须为非空字符串`);
   if (!isNonEmptyString(value.generationBatchId)) errors.push(`${label}.generationBatchId 必须为非空字符串`);
-  if (!isGlobalVisualBaselineSha256(value.conditionsFingerprint)) errors.push(`${label}.conditionsFingerprint 必须为 sha256`);
   if (!isDateTime(value.frozenAt)) errors.push(`${label}.frozenAt 必须为有效时间`);
 
   const brief = value.brief;
@@ -153,7 +168,7 @@ export function validateGlobalVisualBaselineSelection(value, options = {}) {
   if (briefValid) {
     if (!isNonEmptyString(brief.briefId)) errors.push(`${label}.brief.briefId 必须为非空字符串`);
     if (!isRepositoryRelativePath(brief.path)) errors.push(`${label}.brief.path 必须为仓库内相对路径`);
-    if (!isGlobalVisualBaselineSha256(brief.sha256)) errors.push(`${label}.brief.sha256 必须为 sha256`);
+    if (isNonEmptyString(brief.path) && !/\.json$/i.test(brief.path)) errors.push(`${label}.brief.path 必须指向游戏美术 brief JSON 文件`);
   }
 
   const candidates = value.candidates;
@@ -172,8 +187,8 @@ export function validateGlobalVisualBaselineSelection(value, options = {}) {
       if (candidate.origin !== 'generated' || candidate.status !== 'GENERATED') errors.push(`${candidateLabel} 必须是 origin=generated 且 status=GENERATED 的效果图`);
       validateImageRefShape(candidate.image, `${candidateLabel}.image`, errors);
       validateFileRefShape(candidate.generationRecord, `${candidateLabel}.generationRecord`, errors);
-      if (isRecord(candidate.image)) candidateImageRefs.push(`${normalizePath(candidate.image.path)}:${candidate.image.sha256}`);
-      if (isRecord(candidate.generationRecord)) candidateGenerationRefs.push(`${normalizePath(candidate.generationRecord.path)}:${candidate.generationRecord.sha256}`);
+      if (isRecord(candidate.image)) candidateImageRefs.push(normalizePath(candidate.image.path));
+      if (isRecord(candidate.generationRecord)) candidateGenerationRefs.push(normalizePath(candidate.generationRecord.path));
     }
     if (candidateIds.length !== new Set(candidateIds).size) errors.push(`${label}.candidates.candidateId 必须唯一`);
     if (candidateImageRefs.length !== new Set(candidateImageRefs).size) errors.push(`${label}.candidates.image 必须分别绑定三张不同的候选效果图`);
@@ -186,10 +201,17 @@ export function validateGlobalVisualBaselineSelection(value, options = {}) {
     if (human.reviewMode !== 'SINGLE_HUMAN' || human.status !== 'CONFIRMED') errors.push(`${label}.humanSelection 必须是唯一的 SINGLE_HUMAN、CONFIRMED 选择；禁止 AUTO/pending`);
     if (!isNonEmptyString(human.selectedCandidateId)) errors.push(`${label}.humanSelection.selectedCandidateId 必须为非空字符串`);
     if (!Array.isArray(human.presentedCandidateIds) || JSON.stringify(human.presentedCandidateIds) !== JSON.stringify(candidateIds)) errors.push(`${label}.humanSelection.presentedCandidateIds 必须按原顺序完整呈现三张候选图`);
-    if (!isNonEmptyString(human.decisionFile) || !isGlobalVisualBaselineSha256(human.decisionSha256)) errors.push(`${label}.humanSelection 必须绑定人工决定记录文件及 SHA`);
+    if (!isNonEmptyString(human.decisionFile) || !isRepositoryRelativePath(human.decisionFile)) errors.push(`${label}.humanSelection 必须绑定仓库内人工决定记录文件`);
     if (!isDateTime(human.confirmedAt)) errors.push(`${label}.humanSelection.confirmedAt 必须为有效确认时间`);
     if (!isNonEmptyString(human.userOriginalText)) errors.push(`${label}.humanSelection.userOriginalText 必须保留人工原文`);
     if (candidateIds.length && !candidateIds.includes(human.selectedCandidateId)) errors.push(`${label}.humanSelection.selectedCandidateId 必须属于三张候选图`);
+    // 机器只核对人工传入的五维结论和候选绑定，不读取或推断图像审美质量。
+    errors.push(...validateGlobalVisualCandidateAssessments(
+      human.candidateAssessments,
+      candidateIds,
+      human.selectedCandidateId,
+      `${label}.humanSelection.candidateAssessments`,
+    ));
     if (isDateTime(human.confirmedAt) && isDateTime(value.frozenAt) && Date.parse(human.confirmedAt) > Date.parse(value.frozenAt)) errors.push(`${label}.frozenAt 不得早于人工确认时间`);
   }
 
@@ -199,18 +221,16 @@ export function validateGlobalVisualBaselineSelection(value, options = {}) {
     for (const field of ['id', 'version']) if (!isNonEmptyString(baseline[field])) errors.push(`${label}.baseline.${field} 必须为非空字符串`);
     if (baseline.status !== GLOBAL_VISUAL_BASELINE_FROZEN_STATE) errors.push(`${label}.baseline.status 必须为 ${GLOBAL_VISUAL_BASELINE_FROZEN_STATE}`);
     if (baseline.document !== GLOBAL_VISUAL_BASELINE_DOCUMENT) errors.push(`${label}.baseline.document 必须为 ${GLOBAL_VISUAL_BASELINE_DOCUMENT}`);
-    for (const field of ['documentSha256', 'styleFingerprint']) if (!isGlobalVisualBaselineSha256(baseline[field])) errors.push(`${label}.baseline.${field} 必须为 sha256`);
     validateImageRefShape(baseline.primaryAnchor, `${label}.baseline.primaryAnchor`, errors);
     validateImageRefShape(baseline.selectedCandidate, `${label}.baseline.selectedCandidate`, errors);
     if (!isNonEmptyString(baseline.selectedCandidateId)) errors.push(`${label}.baseline.selectedCandidateId 必须为非空字符串`);
     if (humanValid && baseline.selectedCandidateId !== human.selectedCandidateId) errors.push(`${label}.baseline.selectedCandidateId 必须绑定人工选中的候选`);
-    if (isRecord(baseline.primaryAnchor) && isRecord(baseline.selectedCandidate) && (normalizePath(baseline.primaryAnchor.path) !== normalizePath(baseline.selectedCandidate.path) || baseline.primaryAnchor.sha256 !== baseline.selectedCandidate.sha256)) errors.push(`${label}.baseline.primaryAnchor 必须绑定 selectedCandidate`);
+    if (isRecord(baseline.primaryAnchor) && isRecord(baseline.selectedCandidate) && normalizePath(baseline.primaryAnchor.path) !== normalizePath(baseline.selectedCandidate.path)) errors.push(`${label}.baseline.primaryAnchor 必须绑定 selectedCandidate`);
     if (candidateIds.length && baseline.selectedCandidateId && !candidateIds.includes(baseline.selectedCandidateId)) errors.push(`${label}.baseline.selectedCandidateId 必须属于三张候选图`);
     if (Array.isArray(candidates) && isNonEmptyString(baseline.selectedCandidateId)) {
       const selected = candidates.find((candidate) => candidate?.candidateId === baseline.selectedCandidateId);
-      if (selected && (baseline.selectedCandidate?.path !== selected.image?.path || baseline.selectedCandidate?.sha256 !== selected.image?.sha256)) errors.push(`${label}.baseline.selectedCandidate 未绑定所选候选图片`);
+      if (selected && normalizePath(baseline.selectedCandidate?.path) !== normalizePath(selected.image?.path)) errors.push(`${label}.baseline.selectedCandidate 未绑定所选候选图片`);
     }
-    if (baseline.documentSha256 !== baseline.styleFingerprint) errors.push(`${label}.baseline.documentSha256 必须等于 styleFingerprint`);
   }
 
   if (settings.checkFiles) errors.push(...validateGlobalVisualBaselineSelectionFiles(value, settings));
@@ -226,7 +246,6 @@ function resolveIo(options = {}) {
     existsSync: typeof io.existsSync === 'function' ? io.existsSync : existsSync,
     readFileSync: typeof io.readFileSync === 'function' ? io.readFileSync : readFileSync,
     realpathSync: typeof io.realpathSync === 'function' ? io.realpathSync : realpathSync,
-    fileHash: typeof io.fileHash === 'function' ? io.fileHash : null,
   };
 }
 
@@ -263,16 +282,6 @@ function resolveRepoFile(repo, file, io, label, errors) {
   return target;
 }
 
-/** 复算当前文件字节 SHA-256，任何漂移都使冻结证据失效。 */
-function hashFile(target, io) {
-  try {
-    if (io.fileHash) return io.fileHash(target);
-    return `sha256:${createHash('sha256').update(io.readFileSync(target)).digest('hex')}`;
-  } catch {
-    return null;
-  }
-}
-
 /** 读取并解析仓库内 JSON 文件，返回 null 并保留可解释错误。 */
 function readJsonFile(target, io, label, errors) {
   try {
@@ -284,12 +293,9 @@ function readJsonFile(target, io, label, errors) {
   }
 }
 
-/** 校验文件引用当前字节身份，并返回解析后的目标文件路径。 */
-function validateBoundFile(reference, repo, io, label, errors) {
+/** 校验来源文件路径并返回仓库内目标路径，保留路径越界与缺文件阻断。 */
+function validateSourceFile(reference, repo, io, label, errors) {
   const target = resolveRepoFile(repo, reference?.path, io, `${label}.path`, errors);
-  if (!target) return null;
-  const actual = hashFile(target, io);
-  if (!actual || actual !== reference.sha256) errors.push(`${label} SHA-256 已漂移：${reference?.path}`);
   return target;
 }
 
@@ -323,7 +329,7 @@ function validateImageFileMagic(reference, target, io, label, errors) {
 /** 复核候选生成记录文件，并确保其输出仍是同一张候选图。 */
 function validateCandidateGenerationRecord(candidate, root, candidateIndex, repo, io, errors) {
   const label = `全局视觉基线选择证据.candidates[${candidateIndex}]`;
-  const target = validateBoundFile(candidate?.generationRecord, repo, io, `${label}.generationRecord`, errors);
+  const target = validateSourceFile(candidate?.generationRecord, repo, io, `${label}.generationRecord`, errors);
   if (!target) return;
   const record = readJsonFile(target, io, `${label}.generationRecord`, errors);
   const valid = validateStrictObject(record, GENERATION_RECORD_FIELDS, `${label}.generationRecord.content`, errors);
@@ -332,27 +338,24 @@ function validateCandidateGenerationRecord(candidate, root, candidateIndex, repo
     schemaVersion: GLOBAL_VISUAL_BASELINE_CANDIDATE_SCHEMA,
     workItemId: root.workItemId,
     briefId: root.brief?.briefId,
-    briefSha256: root.brief?.sha256,
     generationBatchId: root.generationBatchId,
-    conditionsFingerprint: root.conditionsFingerprint,
     candidateId: candidate?.candidateId,
     origin: 'generated',
     outputPath: candidate?.image?.path,
-    outputSha256: candidate?.image?.sha256,
   };
   for (const [field, value] of Object.entries(expected)) if (record[field] !== value) errors.push(`${label}.generationRecord.content.${field} 未绑定当前三候选生成合同`);
   if (!isDateTime(record.generatedAt)) errors.push(`${label}.generationRecord.content.generatedAt 必须为有效时间`);
   if (isDateTime(record.generatedAt) && isDateTime(root.humanSelection?.confirmedAt) && Date.parse(record.generatedAt) > Date.parse(root.humanSelection.confirmedAt)) errors.push(`${label}.generationRecord.content.generatedAt 不得晚于人工确认时间`);
   if (isDateTime(record.generatedAt) && isDateTime(root.frozenAt) && Date.parse(record.generatedAt) > Date.parse(root.frozenAt)) errors.push(`${label}.generationRecord.content.generatedAt 不得晚于全局基线冻结时间`);
   if (!isNonEmptyString(record.prompt)) errors.push(`${label}.generationRecord.content.prompt 必须保留实际生成提示词`);
-  const imageTarget = validateBoundFile(candidate?.image, repo, io, `${label}.image`, errors);
+  const imageTarget = validateSourceFile(candidate?.image, repo, io, `${label}.image`, errors);
   validateImageFileMagic(candidate?.image, imageTarget, io, `${label}.image`, errors);
 }
 
 /** 复核人工决定文件，确保唯一 SINGLE_HUMAN、CONFIRMED 记录没有被替换或降级。 */
 function validateHumanDecisionFile(root, repo, io, errors) {
   const human = root.humanSelection;
-  const target = validateBoundFile({ path: human?.decisionFile, sha256: human?.decisionSha256 }, repo, io, '全局视觉基线选择证据.humanSelection.decisionFile', errors);
+  const target = validateSourceFile({ path: human?.decisionFile }, repo, io, '全局视觉基线选择证据.humanSelection.decisionFile', errors);
   if (!target) return;
   const record = readJsonFile(target, io, '全局视觉基线选择证据.humanSelection.decisionFile', errors);
   const valid = validateStrictObject(record, DECISION_FIELDS, '全局视觉基线选择证据.humanSelection.decisionFile.content', errors);
@@ -362,9 +365,7 @@ function validateHumanDecisionFile(root, repo, io, errors) {
     selectionId: root.selectionId,
     workItemId: root.workItemId,
     briefId: root.brief?.briefId,
-    briefSha256: root.brief?.sha256,
     generationBatchId: root.generationBatchId,
-    conditionsFingerprint: root.conditionsFingerprint,
     presentedCandidateIds: Array.isArray(root.candidates) ? root.candidates.map((candidate) => candidate?.candidateId) : undefined,
     reviewMode: 'SINGLE_HUMAN',
     status: 'CONFIRMED',
@@ -373,9 +374,20 @@ function validateHumanDecisionFile(root, repo, io, errors) {
     userOriginalText: human?.userOriginalText,
   };
   for (const [field, value] of Object.entries(expected)) if (JSON.stringify(record[field]) !== JSON.stringify(value)) errors.push(`全局视觉基线选择证据.humanSelection.decisionFile.content.${field} 未绑定唯一人工确认`);
+  const candidateIds = Array.isArray(root.candidates) ? root.candidates.map((candidate) => candidate?.candidateId) : [];
+  // 决定文件重复记录评估结果，语义比较按 candidateId 完成，允许 JSON 键序与评估数组次序变化。
+  errors.push(...validateGlobalVisualCandidateAssessments(
+    record.candidateAssessments,
+    candidateIds,
+    record.selectedCandidateId,
+    '全局视觉基线选择证据.humanSelection.decisionFile.content.candidateAssessments',
+  ));
+  if (!areGlobalVisualCandidateAssessmentsEquivalent(record.candidateAssessments, human?.candidateAssessments)) {
+    errors.push('全局视觉基线选择证据.humanSelection.decisionFile.content.candidateAssessments 必须与根证据人工评估语义一致');
+  }
 }
 
-/** 复核 brief、三张候选图、人工决定与冻结正文的真实字节身份。 */
+/** 复核 brief、三张候选图、人工决定与冻结正文的来源内容。 */
 function validateGlobalVisualBaselineSelectionFiles(root, options) {
   const errors = [];
   const repo = options.projectRoot ?? options.repo;
@@ -384,18 +396,31 @@ function validateGlobalVisualBaselineSelectionFiles(root, options) {
     return errors;
   }
   const io = resolveIo(options);
-  validateBoundFile(root.brief, repo, io, '全局视觉基线选择证据.brief', errors);
+  // brief 是冻结前的项目定义来源，必须读取并校验真实 JSON 内容和生产者身份。
+  const briefTarget = validateSourceFile(root.brief, repo, io, '全局视觉基线选择证据.brief', errors);
+  if (briefTarget) {
+    const brief = readJsonFile(briefTarget, io, '全局视觉基线选择证据.brief', errors);
+    errors.push(...validateGameArtBrief(brief, {
+      workItemId: root.workItemId,
+      briefId: root.brief?.briefId,
+      label: '全局视觉基线选择证据.brief.content',
+    }));
+  }
   if (Array.isArray(root.candidates)) root.candidates.forEach((candidate, index) => validateCandidateGenerationRecord(candidate, root, index, repo, io, errors));
   validateHumanDecisionFile(root, repo, io, errors);
   const baseline = root.baseline;
   if (isRecord(baseline)) {
     const documentTarget = resolveRepoFile(repo, baseline.document, io, '全局视觉基线选择证据.baseline.document', errors);
     if (documentTarget) {
-      const actual = hashFile(documentTarget, io);
-      if (!actual || actual !== baseline.documentSha256 || actual !== baseline.styleFingerprint) errors.push('全局视觉基线选择证据.baseline 文档 SHA/风格指纹已漂移');
+      try {
+        const document = io.readFileSync(documentTarget, 'utf8');
+        if (!String(document).trim()) errors.push('全局视觉基线选择证据.baseline 文档内容不能为空');
+      } catch {
+        errors.push('全局视觉基线选择证据.baseline 文档无法读取');
+      }
     }
-    validateBoundFile(baseline.primaryAnchor, repo, io, '全局视觉基线选择证据.baseline.primaryAnchor', errors);
-    validateBoundFile(baseline.selectedCandidate, repo, io, '全局视觉基线选择证据.baseline.selectedCandidate', errors);
+    validateSourceFile(baseline.primaryAnchor, repo, io, '全局视觉基线选择证据.baseline.primaryAnchor', errors);
+    validateSourceFile(baseline.selectedCandidate, repo, io, '全局视觉基线选择证据.baseline.selectedCandidate', errors);
   }
   return errors;
 }
@@ -418,7 +443,7 @@ export function loadGlobalVisualBaselineSelectionReference(reference, options = 
   if (!isNonEmptyString(repo)) return fail(['全局视觉基线选择证据文件门缺少 projectRoot；必须完成 3 张候选图 + 人工确认']);
   const io = resolveIo(settings);
   const errors = [];
-  const target = validateBoundFile(reference, repo, io, 'globalVisualBaselineSelectionRef', errors);
+  const target = validateSourceFile(reference, repo, io, 'globalVisualBaselineSelectionRef', errors);
   if (!target) return fail(errors);
   const value = readJsonFile(target, io, 'globalVisualBaselineSelectionRef', errors);
   if (value === null) return fail(errors);
@@ -431,7 +456,7 @@ export function loadGlobalVisualBaselineSelectionReference(reference, options = 
     io,
   }));
   if (errors.length) return fail(errors);
-  return { value, file: reference.path, sha256: reference.sha256 };
+  return { value, file: reference.path };
 }
 
 /** 复核冻结 Work Item 的三候选人工选择证据，否则规划和执行门都必须失败。 */
@@ -443,7 +468,7 @@ export function assertGlobalVisualBaselineSelection(work, repo, io) {
   const shapeErrors = validateGlobalVisualBaselineSelectionReferenceShape(reference);
   if (shapeErrors.length) throw new Error(`全局视觉基线选择证据门拒绝：${shapeErrors[0]}；必须完成 3 张候选图 + 人工确认`);
   const loaded = loadGlobalVisualBaselineSelectionReference(reference, { projectRoot: repo, io, throwOnError: true });
-  if (!loaded) throw new Error('全局视觉基线选择证据门拒绝：三张候选图、唯一人工确认或冻结文件 SHA 无效；必须完成 3 张候选图 + 人工确认后才能正式冻结');
+  if (!loaded) throw new Error('全局视觉基线选择证据门拒绝：三张候选图、唯一人工确认或冻结来源文件无效；必须完成 3 张候选图 + 人工确认后才能正式冻结');
   if (loaded.value.baseline?.status !== GLOBAL_VISUAL_BASELINE_FROZEN_STATE) throw new Error('全局视觉基线选择证据门拒绝：冻结身份状态无效；必须完成 3 张候选图 + 人工确认');
   return loaded.value;
 }

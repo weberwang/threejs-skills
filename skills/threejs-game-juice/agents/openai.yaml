@@ -1,0 +1,4 @@
+interface:
+  display_name: "three.js 游戏汁水感"
+  short_description: "围绕关键事件设计多通道反馈、组合边界与动态人工验收，并接入现有流程"
+  default_prompt: "使用 $threejs-game-juice 在当前工作项内设计或优化 three.js 三维游戏的世界、角色、相机与 HUD 反馈，复用既有玩法、美术、动画、音频和 QA 流程。"

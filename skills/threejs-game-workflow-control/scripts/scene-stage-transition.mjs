@@ -2,11 +2,10 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { executionStatePath, loadExecutionState } from './execution-unit-control.mjs';
-import { assertConfirmedPageSketch } from './page-sketch-prerequisite.mjs';
-import { loadImmutableVisualStageReference, validateStandardV2ProductionPlan } from './visual-stage-prerequisites.mjs';
+import { assertVisualStagePrerequisites, loadImmutableVisualStageReference, validateStandardV2ProductionPlan } from './visual-stage-prerequisites.mjs';
 
-const VISUAL_STAGES = Object.freeze(['V0', 'V1', 'V2', 'V3', 'V4', 'V5']);
-const COMPLETION_STATE_FOR = Object.freeze({ V3: 'v3-formal-acceptance-complete', V4: 'v4-page-sketch-confirmed', V5: 'v5-runtime-integration-candidate' });
+const VISUAL_STAGES = Object.freeze(['V0', 'V1', 'V2', 'V3', 'V4']);
+const COMPLETION_STATE_FOR = Object.freeze({ V3: 'v3-formal-acceptance-complete', V4: 'v4-runtime-integration-candidate' });
 
 /** 将视觉阶段转换为可比较的序号；未知值返回 null 并由入口拒绝。 */
 export function visualStageOrder(value) {
@@ -16,7 +15,6 @@ export function visualStageOrder(value) {
 
 /** 读取同一 Work Item 的不可变阶段证据，拒绝仅写状态字段的伪完成。 */
 function requireStageEvidence(work, stage, repo) {
-  if (stage === 'V4') return assertConfirmedPageSketch(work, repo).document;
   const reference = work.visualStageEvidenceRefs?.[stage];
   const loaded = loadImmutableVisualStageReference(reference, `${stage} stage evidence`, { projectRoot: repo });
   const value = loaded?.value;
@@ -25,10 +23,9 @@ function requireStageEvidence(work, stage, repo) {
     const result = validateStandardV2ProductionPlan(value, work, { projectRoot: repo });
     if (!result.ok) throw new Error(`V2 阶段入口的标准冻结拆解方案无效：${result.missingEvidence.join('、')}`);
   } else {
-    const expectedType = stage === 'V3' ? 'v3-formal-acceptance' : 'v5-runtime-integration-candidate';
-    if (value.evidenceType !== expectedType || value.status !== 'PASS' || value.workItemId !== work.workItemId || value.baselineHash !== work.baselineHash) throw new Error(`${stage} 阶段入口缺少当前 Work Item/基线绑定的不可变 PASS 证据`);
+    const expectedType = stage === 'V3' ? 'v3-formal-acceptance' : 'v4-runtime-integration-candidate';
+    if (value.evidenceType !== expectedType || value.status !== 'PASS' || value.workItemId !== work.workItemId) throw new Error(`${stage} 阶段入口缺少当前 Work Item 的 PASS 证据`);
   }
-  if (stage === 'V5' && value.pageSketchSha256 !== work.visualStageEvidenceRefs?.V4?.sha256) throw new Error('V5 运行证据必须绑定当前 V4 页面草图 SHA');
   return value;
 }
 
@@ -52,37 +49,45 @@ export function prepareSceneStageTransition({ work, target, args, repo, validati
   if (!['A1', 'A2', 'A3'].includes(work.pendingApprovalActionLevel)) throw new Error('场景内部阶段入口只允许 Work Item 范围内的 A1–A3，不能替代集成或发布批准');
   const currentStage = visualStageOrder(work.visualStage);
   const requestedStage = visualStageOrder(args['visual-stage']);
-  if (currentStage === null || requestedStage === null || requestedStage < 3) throw new Error('场景阶段入口必须从 V2/V3/V4 相邻推进到 V3/V4/V5');
-  const stageEntry = currentStage === 2 && requestedStage === 3 && target === 'REVIEW' && ['REVIEW', 'PASSED'].includes(work.globalState);
-  const sketchEntry = currentStage === 3 && requestedStage === 4 && target === 'REVIEW' && ['REVIEW', 'PASSED'].includes(work.globalState);
-  const formalEntry = currentStage === 4 && requestedStage === 5 && target === 'IMPLEMENTING' && ['REVIEW', 'PASSED'].includes(work.globalState);
-  const sameStageEntry = currentStage === requestedStage && requestedStage >= 3 && ((requestedStage === 3 && target === 'REVIEW' && ['REVIEW', 'PASSED'].includes(work.globalState)) || (requestedStage === 4 && target === 'REVIEW' && ['REVIEW', 'PASSED'].includes(work.globalState)) || (requestedStage === 5 && target === 'IMPLEMENTING' && work.globalState === 'IMPLEMENTING'));
-  if (!stageEntry && !sketchEntry && !formalEntry && !sameStageEntry) throw new Error('场景阶段入口只能沿 V2→V3→V4→V5 前进；V3→V4 使用 REVIEW 草图确认，V4→V5 使用 IMPLEMENTING');
-  const adjacent = requestedStage === currentStage + 1;
-  const sameStageCompletion = requestedStage === currentStage && requestedStage >= 3;
-  if (!adjacent && !sameStageCompletion) throw new Error('场景视觉阶段只能相邻向前推进，或在 V3/V4/V5 显式提交当前阶段完成证据');
+  const currentStageName = VISUAL_STAGES.find((stage) => visualStageOrder(stage) === currentStage);
+  const requestedStageName = VISUAL_STAGES.find((stage) => visualStageOrder(stage) === requestedStage);
+  if (currentStage === null || requestedStage === null || !['V3', 'V4'].includes(requestedStageName)) throw new Error('未知视觉阶段；场景阶段只能从 V2 进入 V3，再由 V3 进入 V4');
+  const reviewState = ['REVIEW', 'PASSED'].includes(work.globalState);
+  const stageEntry = currentStageName === 'V2' && requestedStageName === 'V3' && target === 'REVIEW' && reviewState;
+  const formalEntry = currentStageName === 'V3' && requestedStageName === 'V4' && target === 'IMPLEMENTING' && reviewState
+    && work.visualStageState === COMPLETION_STATE_FOR.V3;
+  const sameStageEntry = currentStageName === requestedStageName && ((requestedStageName === 'V3' && target === 'REVIEW' && reviewState)
+    || (requestedStageName === 'V4' && target === 'IMPLEMENTING' && work.globalState === 'IMPLEMENTING'));
+  if (!stageEntry && !formalEntry && !sameStageEntry) throw new Error('场景阶段入口只能沿 V2→V3→V4 前进；V3 PASS 后须经 A3 激活新包进入 V4/IMPLEMENTING');
+  const adjacent = (currentStageName === 'V2' && requestedStageName === 'V3') || (currentStageName === 'V3' && requestedStageName === 'V4');
+  const sameStageCompletion = requestedStageName === currentStageName && ['V3', 'V4'].includes(requestedStageName);
+  if (!adjacent && !sameStageCompletion) throw new Error('场景视觉阶段只能由 V2→V3→V4 推进，或在 V3/V4 显式提交当前阶段完成证据');
   const requestedState = String(args['visual-stage-state'] ?? 'in-progress').trim();
-  const completionState = COMPLETION_STATE_FOR[VISUAL_STAGES[requestedStage]];
+  const completionState = COMPLETION_STATE_FOR[requestedStageName];
   const isCompletion = requestedState === completionState;
-  // 草图与运行验收必须各自停留在进行态，让用户能先看到对应阶段再提交确认。
-  if ((sketchEntry || formalEntry) && isCompletion) throw new Error('V3→V4 草图确认和 V4→V5 运行验收必须分两步推进；先进入进行态，再单独提交完成证据');
+  // V4 正式实施必须先激活新包并进入进行态，随后再提交真实运行验收证据。
+  if (formalEntry && isCompletion) throw new Error('V3→V4 必须先通过 A3 激活新正式包进入进行态，再单独提交 V4 运行验收证据');
   if (sameStageCompletion && !isCompletion) throw new Error('同阶段入口只能提交完成证据；上游失效必须使用明确的返工路径');
-  if (!isCompletion && !['in-progress', 'pending', 'failed', 'stale', 'invalid'].includes(requestedState)) throw new Error(`阶段 ${VISUAL_STAGES[requestedStage]} 的 visualStageState 无效`);
-  if (isCompletion) requireStageEvidence(work, VISUAL_STAGES[requestedStage], repo);
-  if (requestedStage === 3 && adjacent) requireStageEvidence(work, 'V2', repo);
-  if (requestedStage === 4 && adjacent) requireStageEvidence(work, 'V3', repo);
-  if (formalEntry) requireStageEvidence(work, 'V4', repo);
-  // 已有执行态必须先闭环；没有执行态的新场景仍可直接进入草图阶段。
+  if (!isCompletion && !['in-progress', 'pending', 'failed', 'stale', 'invalid'].includes(requestedState)) throw new Error(`阶段 ${requestedStageName} 的 visualStageState 无效`);
+  if (isCompletion) requireStageEvidence(work, requestedStageName, repo);
+  if (requestedStageName === 'V3' && adjacent) requireStageEvidence(work, 'V2', repo);
+  if (formalEntry) {
+    requireStageEvidence(work, 'V2', repo);
+    requireStageEvidence(work, 'V3', repo);
+  }
+  // 已有执行态必须先闭环；没有执行态的新场景仍可由 V3 PASS 直接进入正式实施。
   const previous = loadPreviousStage(work, repo, validationContext, unitIo);
   const nextWork = structuredClone(work);
   nextWork.pendingApprovalState = target;
-  nextWork.visualStage = VISUAL_STAGES[requestedStage];
+  nextWork.visualStage = requestedStageName;
   nextWork.visualStageState = requestedState;
   if (args['stage-id'] !== undefined) {
     const requestedStageId = String(args['stage-id']).trim();
-    if (!requestedStageId || (visualStageOrder(requestedStageId) !== null && visualStageOrder(requestedStageId) !== requestedStage)) throw new Error('阶段入口 --stage-id 若使用 V0-V5，必须与 --visual-stage 一致');
+    const requestedStageIdOrder = visualStageOrder(requestedStageId);
+    // 保留任意业务 stageId，但拒绝把已删除或未知的 V 编号伪装成业务标签。
+    if (!requestedStageId || (/^V\d+$/i.test(requestedStageId) && (requestedStageIdOrder === null || requestedStageIdOrder !== requestedStage))) throw new Error('阶段入口 --stage-id 若使用视觉阶段编号，必须是已知阶段且与 --visual-stage 一致');
     nextWork.stageId = requestedStageId;
-  } else if (visualStageOrder(work.stageId) !== null) nextWork.stageId = VISUAL_STAGES[requestedStage];
+  } else if (visualStageOrder(work.stageId) !== null) nextWork.stageId = requestedStageName;
   nextWork.pendingApprovalStage = nextWork.stageId;
   // 阶段身份改变后，旧候选审计和验证批次不能继续证明新阶段。
   delete nextWork.diffAuditRecord;
@@ -93,25 +98,26 @@ export function prepareSceneStageTransition({ work, target, args, repo, validati
   return { nextWork, previousWork: work, previousPackage: previous.package, previousState: previous.state, updateExecutionState: Boolean(previous.state), reuseExecutionState: Boolean(previous.state), formalEntry };
 }
 
-/** 准备 V5 正式包激活，要求当前 V4 页面草图人工确认并随包固定引用。 */
+/** 准备 V4 正式包激活，要求当前 V3 PASS 资源证据并使用全新正式实施包。 */
 export function prepareImplementationPackageActivation({ work, pkg, packagePath, repo, validationContext, unitIo, validateWorkItem }) {
-  if (!['REVIEW', 'PASSED'].includes(work.globalState) || work.visualStage !== 'V4' || work.visualStageState !== 'v4-page-sketch-confirmed') throw new Error('正式 Implementation Package 只能在同一 Work Item 的 V4 页面草图确认后进入 V5/IMPLEMENTING');
-  requireStageEvidence(work, 'V4', repo);
-  const sketchReference = work.visualStageEvidenceRefs.V4;
-  if (pkg.pageSketchFile !== sketchReference.path || pkg.pageSketchSha256 !== sketchReference.sha256) throw new Error('V5 Implementation Package 必须绑定当前 V4 页面草图 path/SHA');
+  if (!['REVIEW', 'PASSED'].includes(work.globalState) || work.visualStage !== 'V3' || work.visualStageState !== COMPLETION_STATE_FOR.V3) throw new Error('正式 Implementation Package 只能在同一 Work Item 的 V3 正式资源 PASS 后进入 V4/IMPLEMENTING');
+  requireStageEvidence(work, 'V2', repo);
+  requireStageEvidence(work, 'V3', repo);
+  // 包激活前复用阶段硬门，确保 V2/V3 文件来源、候选归属和实际资源仍然有效。
+  // A3 激活会废弃上一阶段 pending 快照；只清除旧快照比较，不放宽当前 V2/V3 的真实来源读取。
+  assertVisualStagePrerequisites({ ...work, visibleVisualProductionIntegration: true, pendingVisualPrerequisiteSnapshot: undefined, pending_visual_prerequisite_snapshot: undefined }, { projectRoot: repo, implementationPackage: pkg });
   const nextPath = resolve(repo, packagePath);
-  // 正式包替换必须先关闭旧执行序列；只有 V3→V4 草图准备入口豁免此条件。
+  // 正式包替换必须先关闭旧执行序列，避免旧状态绑定到新的正式实施计划。
   const previous = loadPreviousStage(work, repo, validationContext, unitIo);
   if (previous.package && previous.package.packageId === pkg.packageId) throw new Error('正式 Implementation Package 必须使用新的 packageId，禁止复用旧冻结包');
   const nextWork = structuredClone(work);
-  nextWork.visualStage = 'V5';
+  nextWork.visualStage = 'V4';
   nextWork.visualStageState = 'in-progress';
-  if (visualStageOrder(work.stageId) !== null) nextWork.stageId = 'V5';
+  if (visualStageOrder(work.stageId) !== null) nextWork.stageId = 'V4';
   delete nextWork.diffAuditRecord;
   delete nextWork.diffAuditLedgerRecord;
   nextWork.validationBatchId = `BATCH-${nextWork.workItemId}-${pkg.packageId}`;
   validateWorkItem(nextWork);
   const nextPackage = validationContext.validateImplementationPackage(pkg, nextWork);
-  if (nextPackage.pageSketchFile !== sketchReference.path || nextPackage.pageSketchSha256 !== sketchReference.sha256) throw new Error('V5 Implementation Package 草图绑定在校验时发生变化');
   return { nextWork, package: nextPackage, packagePath: nextPath, previousWork: previous.state ? work : null, previousPackage: previous.package, previousState: previous.state, replaceExisting: Boolean(previous.state) };
 }

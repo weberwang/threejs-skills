@@ -9,7 +9,7 @@
 1. 从已批准 GDD、TDD 和代码事实提取玩家行为、状态变化、平台能力、资源依赖、失败路径和验收证据；优先扩展边界清晰的现有模块。
 2. 建立候选模块图，记录职责与非目标、公开入口和输入/输出、状态/数据所有权、生命周期、错误与降级、资源/平台依赖、允许/禁止依赖、测试边界和负责人。
 3. 规定单向依赖和调用契约。公共代码和公共正式资源只有被至少两个已确认场景稳定复用，或属于启动运行必需时才提取；消除或明确处理循环依赖、双向状态写入、无边界 `common`/`utils`、公共素材库、全局事件和绕过公开入口的访问。
-4. 给出 G1 内可独立验证的实施计划。全局基线、foundation-only 边界和场景 V0→V5 顺序以[控制模型](../../threejs-game-workflow-control/references/control-model.md)和[状态、阶段与停止门](../../threejs-game-workflow-control/references/state-gates.md)为准；本文件只冻结模块/场景/显示层的职责、所有权、依赖和实施单元。基础包只承载场景无关的 `SHARED`/`MODULE` 能力。场景闭环自身规则、画面、常驻 HUD、清理和证据；modal/popup 等弹窗建立独立 DISPLAY_LAYER Work Item，不并入宿主场景完成条件。
+4. 给出 G1 内可独立验证的实施计划。全局基线、foundation-only 边界和场景 V0→V1→V2→V3→V4 顺序以[控制模型](../../threejs-game-workflow-control/references/control-model.md)和[状态、阶段与停止门](../../threejs-game-workflow-control/references/state-gates.md)为准；本文件只冻结模块/场景/显示层的职责、所有权、依赖和实施单元。基础包只承载场景无关的 `SHARED`/`MODULE` 能力。场景闭环自身规则、画面、常驻 HUD、清理和证据；modal/popup 等弹窗建立独立 DISPLAY_LAYER Work Item，不并入宿主场景完成条件。
 5. 把每个模块、场景、共享基础和集成点拆成实施单元，按数组位置记录单元 ID、类型、范围、并行模式/并行组、负责人、互斥写范围、状态所有权、验收命令或证据；同一非空并行组的 PARALLEL 单元必须在数组中连续出现并视为一个顺序阶段，串行单元必须写明原因，禁止只写笼统的“可并行”。
 6. 主动识别安全并行：`SHARED` 契约/入口和 `INTEGRATION` 单元强制串行；`MODULE`、`SCENE`、`DISPLAY_LAYER` 可在依赖满足且写范围与状态所有权互斥时并行。`SCENE` 与 `DISPLAY_LAYER` 必须位于不同 Work Item 和 Implementation Package；后者的 `hostSceneId` 只标识运行上下文。SERIAL 单元的 READY 需要其前面全部单元有当前有效 PASS Unit Result，PARALLEL 单元的 READY 只需要其并行组首项之前全部单元有当前有效 PASS，同组 peer 不互相等待，不得手工自填。
 7. 场景与模块使用同一粒度规则逐个标注。当前共享工作区可依独占所有权并行；不得自动创建 worktree，只有人工明确要求时才按既有规则使用。

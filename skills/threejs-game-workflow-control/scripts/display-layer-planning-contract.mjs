@@ -22,11 +22,6 @@ function nonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-/** 判断标准 sha256 身份。 */
-function isSha256(value) {
-  return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value);
-}
-
 /** 判断正数 viewport。 */
 function validViewport(value) {
   return isObject(value)
@@ -59,11 +54,8 @@ function validateContextualEffectImage(image, layer, state, sceneMaster, targetI
   }
   for (const [field, description] of [
     ["evidence", "效果图证据"],
-    ["sha256", "效果图 SHA-256"],
     ["origin", "效果图来源身份"],
     ["host_scene_id", "宿主 scene_id"],
-    ["host_target_sha256", "宿主 target SHA-256"],
-    ["layer_target_sha256", "显示层 target SHA-256"],
     ["viewport", "效果图 viewport"],
     ["kind", "效果图类型"],
     ["isolated_only", "孤立图标志"],
@@ -71,23 +63,19 @@ function validateContextualEffectImage(image, layer, state, sceneMaster, targetI
     if (image[field] === undefined || image[field] === null) errors.push(planningError(stage, layer, `${label} 上下文效果图缺少 ${description}`, `缺失=contextual_effect_image.${field}`));
   }
   if (!nonEmptyString(image.evidence)) errors.push(planningError(stage, layer, `${label} 上下文效果图 evidence 必须是项目内文件路径`, "实际=missing"));
-  if (!isSha256(image.sha256)) errors.push(planningError(stage, layer, `${label} 上下文效果图 sha256 格式无效`, "预期=sha256:<64 位小写十六进制"));
+  // SHA 摘要仅供追踪；场景身份由显式 scene_id/state_id 与实际证据路径校验。
   if (image.kind !== "host-scene-context") errors.push(planningError(stage, layer, `${label} 效果图必须声明 kind=host-scene-context`, `实际=${String(image.kind ?? "missing")}`));
   if (image.isolated_only !== false) errors.push(planningError(stage, layer, `${label} 孤立组件图不能作为完整效果图证据`, "预期=isolated_only:false"));
   if (image.host_scene_id !== sceneMaster.scene_id || image.host_scene_id !== layer.host_scene_id || image.host_scene_id !== targetInfo.sceneId) errors.push(planningError(stage, layer, `${label} 上下文效果图未绑定宿主场景`, `预期=${sceneMaster.scene_id}`));
-  if (image.host_target_sha256 !== sceneMaster.target_sha256 || image.host_target_sha256 !== targetInfo.targetSha) errors.push(planningError(stage, layer, `${label} 上下文效果图未绑定宿主场景 target SHA`, `预期=${sceneMaster.target_sha256}`));
-  if (image.layer_target_sha256 !== layer.target_sha256) errors.push(planningError(stage, layer, `${label} 上下文效果图未绑定显示层 target SHA`, `预期=${layer.target_sha256}`));
   const masterViewport = sceneMaster.viewport ?? {};
   if (!validViewport(image.viewport) || image.viewport.width !== masterViewport.width || image.viewport.height !== masterViewport.height) errors.push(planningError(stage, layer, `${label} 上下文效果图 viewport 必须与 scene master 一致`, `预期=${masterViewport.width ?? "missing"}x${masterViewport.height ?? "missing"}`));
   errors.push(...validateVisualEffectImageOrigin(image, {
     label: `${label} contextual_effect_image`,
     visual_baseline: visualBaseline,
-    target_sha256: image.host_target_sha256,
-    output_sha256: image.sha256,
   }));
 }
 
-/** 校验 V5 的真实打开→交互→关闭→恢复轨迹。 */
+/** 校验 V4 的真实打开→交互→关闭→恢复轨迹。 */
 function validateRuntimeReplay(replay, layer, sceneMaster, stage, errors) {
   if (!isObject(replay)) {
     errors.push(planningError(stage, layer, "transient 显示层缺少宿主场景运行轨迹", "缺失=runtime_replay"));
@@ -121,7 +109,7 @@ function validateLayer(layer, sceneMaster, targetInfo, stage, errors, layerIds, 
   }
   const requiredFields = [
     ["layer_id", "稳定 ID"], ["type", "类型"], ["host_scene_id", "宿主场景"],
-    ["target_sha256", "显示层 target SHA-256"], ["persistence", "persistent/transient"],
+    ["persistence", "persistent/transient"],
     ["states", "状态列表"], ["in_scene_master", "scene master 归属"], ["trigger", "触发条件"],
     ["dismiss", "关闭条件"], ["input_blocking", "输入阻断策略"], ["z_order", "层级"],
     ["backdrop", "遮罩策略"], ["focus_restore", "焦点恢复策略"], ["responsive", "响应式规则"], ["relations", "互斥/共存关系"],
@@ -132,7 +120,6 @@ function validateLayer(layer, sceneMaster, targetInfo, stage, errors, layerIds, 
   layerIds.add(layer.layer_id);
   if (!DISPLAY_LAYER_TYPES.has(layer.type)) errors.push(planningError(stage, layer, "type 无效", `预期=${[...DISPLAY_LAYER_TYPES].join("/")}`));
   if (!nonEmptyString(layer.host_scene_id) || layer.host_scene_id !== sceneMaster.scene_id || layer.host_scene_id !== targetInfo.sceneId) errors.push(planningError(stage, layer, "host_scene_id 必须绑定当前宿主场景", `预期=${sceneMaster.scene_id}`));
-  if (!isSha256(layer.target_sha256)) errors.push(planningError(stage, layer, "target_sha256 格式无效", "预期=sha256:<64 位小写十六进制>"));
   if (!DISPLAY_LAYER_LIFECYCLES.has(layer.persistence)) errors.push(planningError(stage, layer, "persistence 只能为 persistent 或 transient"));
   if (layer.type === "hud" && layer.persistence !== "persistent") errors.push(planningError(stage, layer, "HUD 必须声明 persistent 生命周期"));
   if (typeof layer.in_scene_master !== "boolean") errors.push(planningError(stage, layer, "in_scene_master 必须为布尔值"));
@@ -158,7 +145,7 @@ function validateLayer(layer, sceneMaster, targetInfo, stage, errors, layerIds, 
     const relationIds = layer.relations?.[relationType];
     if (!Array.isArray(relationIds) || relationIds.some((id) => !nonEmptyString(id)) || new Set(relationIds).size !== relationIds.length) errors.push(planningError(stage, layer, `relations.${relationType} 必须是无重复非空 layer_id 数组`));
   }
-  if (stage === "V5" && layer.persistence === "transient") validateRuntimeReplay(layer.runtime_replay, layer, sceneMaster, stage, errors);
+  if (stage === "V4" && layer.persistence === "transient") validateRuntimeReplay(layer.runtime_replay, layer, sceneMaster, stage, errors);
 }
 
 /**
@@ -181,20 +168,16 @@ export function validateDisplayLayerPlanning(planning, targetInfo = null, option
     return errors;
   }
   const sceneMaster = planning.scene_master;
-  for (const field of ["scene_id", "state_id", "target_sha256", "origin", "viewport", "persistent_layer_ids"]) if (sceneMaster[field] === undefined || sceneMaster[field] === null) errors.push(planningError(stage, null, `scene_master 缺少 ${field}`));
+  for (const field of ["scene_id", "state_id", "origin", "viewport", "persistent_layer_ids"]) if (sceneMaster[field] === undefined || sceneMaster[field] === null) errors.push(planningError(stage, null, `scene_master 缺少 ${field}`));
   if (!nonEmptyString(sceneMaster.scene_id) || !nonEmptyString(sceneMaster.state_id)) errors.push(planningError(stage, null, "scene_master.scene_id/state_id 必须为非空字符串"));
-  if (!isSha256(sceneMaster.target_sha256)) errors.push(planningError(stage, null, "scene_master.target_sha256 格式无效"));
   if (!validViewport(sceneMaster.viewport)) errors.push(planningError(stage, null, "scene_master.viewport 必须包含正数 width/height"));
   if (!Array.isArray(sceneMaster.persistent_layer_ids) || sceneMaster.persistent_layer_ids.some((id) => !nonEmptyString(id)) || new Set(sceneMaster.persistent_layer_ids).size !== sceneMaster.persistent_layer_ids.length) errors.push(planningError(stage, null, "scene_master.persistent_layer_ids 必须是无重复字符串数组"));
   errors.push(...validateVisualEffectImageOrigin(sceneMaster, {
     label: "scene_master",
     visual_baseline: options.visual_baseline ?? null,
-    target_sha256: sceneMaster.target_sha256,
-    output_sha256: sceneMaster.target_sha256,
   }).map((message) => planningError(stage, null, message)));
   if (targetInfo) {
     if (sceneMaster.scene_id !== targetInfo.sceneId || sceneMaster.state_id !== targetInfo.stateId) errors.push(planningError(stage, null, "scene_master scene/state 未绑定当前冻结目标", `预期=${targetInfo.sceneId}/${targetInfo.stateId}`));
-    if (sceneMaster.target_sha256 !== targetInfo.targetSha) errors.push(planningError(stage, null, "scene_master.target_sha256 未绑定当前冻结目标", `预期=${targetInfo.targetSha}`));
     const masterViewport = sceneMaster.viewport ?? {};
     if (!validViewport(targetInfo.viewport) || masterViewport.width !== targetInfo.viewport.width || masterViewport.height !== targetInfo.viewport.height) errors.push(planningError(stage, null, "scene_master.viewport 未绑定当前冻结目标", `预期=${targetInfo.viewport?.width}x${targetInfo.viewport?.height}`));
   }
@@ -209,7 +192,7 @@ export function validateDisplayLayerPlanning(planning, targetInfo = null, option
       errors.push(planningError(stage, layer, "瞬态显示层不属于场景工作项", "请建立独立 DISPLAY_LAYER Work Item；host_scene_id 仅作为运行上下文"));
       continue;
     }
-    validateLayer(layer, sceneMaster, targetInfo ?? { sceneId: sceneMaster.scene_id, targetSha: sceneMaster.target_sha256 }, stage, errors, layerIds, options.visual_baseline ?? null);
+    validateLayer(layer, sceneMaster, targetInfo ?? { sceneId: sceneMaster.scene_id }, stage, errors, layerIds, options.visual_baseline ?? null);
   }
   if (Object.hasOwn(planning, "deferred_layers")) errors.push(planningError(stage, null, "display_layer_planning.deferred_layers 已移除", "弹窗、抽屉和 Toast 必须建立独立 DISPLAY_LAYER 工作项，不得挂入场景验收"));
   const declaredMasterIds = new Set(sceneMaster.persistent_layer_ids ?? []);
@@ -235,10 +218,10 @@ export function collectDisplayLayerEvidencePaths(planning) {
     if (!isObject(layer)) continue;
     for (const state of Array.isArray(layer.states) ? layer.states : []) {
       const image = state?.contextual_effect_image;
-      if (isObject(image) && nonEmptyString(image.evidence)) paths.push({ field: `display_layer_planning.${layer.layer_id}.${state.state_id}.contextual_effect_image`, path: image.evidence, sha256: image.sha256 });
+      if (isObject(image) && nonEmptyString(image.evidence)) paths.push({ field: `display_layer_planning.${layer.layer_id}.${state.state_id}.contextual_effect_image`, path: image.evidence });
       if (isObject(image?.generation_record)) for (const item of collectGlobalVisualConsistencyEvidencePaths(image.generation_record, `display_layer_planning.${layer.layer_id}.${state.state_id}.generation_record`)) paths.push(item);
     }
-    for (const step of layer.runtime_replay?.steps ?? []) if (isObject(step) && nonEmptyString(step.evidence)) paths.push({ field: `display_layer_planning.${layer.layer_id}.runtime_replay.${step.phase}`, path: step.evidence, sha256: step.sha256 ?? null });
+    for (const step of layer.runtime_replay?.steps ?? []) if (isObject(step) && nonEmptyString(step.evidence)) paths.push({ field: `display_layer_planning.${layer.layer_id}.runtime_replay.${step.phase}`, path: step.evidence });
   }
   return paths;
 }

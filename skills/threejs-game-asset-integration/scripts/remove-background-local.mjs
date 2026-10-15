@@ -8,9 +8,10 @@
  */
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { decodePngRgba, encodePngRgba } from "./effect_image_raster.mjs";
+import { assertTransparencyPreviewPathsAvailable, writeTransparencyPreviews } from "./transparent-raster.mjs";
 
 /** 本工具输出记录的稳定 schema。 */
 export const LOCAL_BACKGROUND_REMOVAL_SCHEMA = "background-removal-local/1";
@@ -77,10 +78,10 @@ export function parseBackgroundColor(value) {
   return Object.freeze(channels.slice(0, 3));
 }
 
-/** 校验颜色容差；RGB 欧氏距离的理论最大值约为 441.67。 */
+/** 校验颜色容差；硬边去背将距离上限限制为 64，避免容差被用来吞掉主体。 */
 export function parseColorTolerance(value) {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > Math.sqrt(3 * 255 ** 2)) {
-    throw new BackgroundRemovalError("tolerance 必须是 0 到 441.67 之间的有限数字");
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 64) {
+    throw new BackgroundRemovalError("tolerance 必须是 0 到 64 之间的有限数字");
   }
   return value;
 }
@@ -262,55 +263,10 @@ function hasTransparentPixels(pixels) {
   return false;
 }
 
-/**
- * 将透明像素合成到不透明底色，生成可人工检查的单张预览。
- * 预览不参与交付尺寸和透明 Alpha 合同，只用于暴露残留底色与误删边缘。
- */
-function compositePreview(image, background) {
-  const { pixels } = image;
-  const preview = Buffer.alloc(pixels.length);
-  for (let index = 0; index < pixels.length; index += 4) {
-    const alpha = pixels[index + 3] / 255;
-    preview[index] = Math.round(pixels[index] * alpha + background[0] * (1 - alpha));
-    preview[index + 1] = Math.round(pixels[index + 1] * alpha + background[1] * (1 - alpha));
-    preview[index + 2] = Math.round(pixels[index + 2] * alpha + background[2] * (1 - alpha));
-    preview[index + 3] = 255;
-  }
-  return preview;
-}
-
-/** 根据输出文件名建立两张深浅底预览路径。 */
-function previewPaths(outputFile, previewDirectory) {
-  const directory = previewDirectory ?? `${outputFile}.previews`;
-  const stem = basename(outputFile, extname(outputFile));
-  return { directory, light: join(directory, `${stem}.light.png`), dark: join(directory, `${stem}.dark.png`) };
-}
-
-/** 检查深浅底预览不会覆盖本次执行的任一输入、输出或记录文件。 */
-function assertPreviewPathsSafe(paths, reservedPaths = []) {
-  const candidates = [paths.light, paths.dark];
-  const reserved = [paths.light, paths.dark, ...reservedPaths].filter(nonEmptyString);
-  for (let index = 0; index < candidates.length; index += 1) {
-    for (let other = index + 1; other < reserved.length; other += 1) {
-      if (sameResolvedPath(candidates[index], reserved[other])) throw new BackgroundRemovalError("预览文件不得覆盖源图、输出图、记录文件或另一张预览");
-    }
-  }
-}
-
-/** 写入深浅底预览并返回其路径；未请求预览时不创建任何额外文件。 */
-async function writePreviews(image, outputFile, previewDirectory, reservedPaths = []) {
-  const paths = previewPaths(outputFile, previewDirectory);
-  assertPreviewPathsSafe(paths, [outputFile, ...reservedPaths]);
-  await mkdir(paths.directory, { recursive: true });
-  await writeFile(paths.light, encodePngRgba(image.width, image.height, compositePreview(image, [242, 233, 223])));
-  await writeFile(paths.dark, encodePngRgba(image.width, image.height, compositePreview(image, [22, 32, 46])));
-  return { light: paths.light, dark: paths.dark };
-}
-
 /** 生成失败原因，供调用方在不抛出像素门禁失败时自动修复。 */
-function validationFailures({ reuseAlpha, removedPixels, foregroundPixels }) {
+function validationFailures({ reuseAlpha, removedPixels, foregroundPixels, allowEmptyForeground }) {
   const failures = [];
-  if (foregroundPixels === 0) failures.push("empty-foreground");
+  if (foregroundPixels === 0 && !allowEmptyForeground) failures.push("empty-foreground");
   if (!reuseAlpha && removedPixels === 0) failures.push("zero-deletion");
   return failures;
 }
@@ -320,14 +276,23 @@ function validationFailures({ reuseAlpha, removedPixels, foregroundPixels }) {
  *
  * 本函数只输出原始像素尺寸的 PNG；比例、裁切和 DPR 归一化交给现有的
  * visual-image-normalization 模块，避免去背景阶段偷偷改变主体边缘或构图。
+ * 帧动画调用方可显式允许单帧为空，但须另行验证整段至少包含一帧前景。
  */
 export async function removeBackgroundLocal(options = {}) {
   const paths = resolvePaths(options);
+  const allowEmptyForeground = options.allowEmptyForeground ?? false;
+  if (typeof allowEmptyForeground !== "boolean") throw new BackgroundRemovalError("allowEmptyForeground 必须是布尔值");
   const reuseAlpha = options.reuseExistingAlpha ?? options.reuse_existing_alpha ?? options.reuseAlpha ?? options.reuse_alpha ?? false;
   if (typeof reuseAlpha !== "boolean") throw new BackgroundRemovalError("reuse_existing_alpha 必须是布尔值");
-  const requireSolidBackground = options.requireSolidBackground ?? options.require_solid_background ?? false;
+  const requireSolidBackground = options.requireSolidBackground ?? options.require_solid_background ?? !reuseAlpha;
   if (typeof requireSolidBackground !== "boolean") throw new BackgroundRemovalError("require_solid_background 必须是布尔值");
   if (reuseAlpha && requireSolidBackground) throw new BackgroundRemovalError("require_solid_background 与 reuse_existing_alpha 互斥");
+  const edgeProfile = options.edgeProfile ?? options.edge_profile;
+  const colorSeparationVerified = options.colorSeparationVerified ?? options.color_separation_verified;
+  if (!reuseAlpha && edgeProfile !== "hard-edge") throw new BackgroundRemovalError("颜色阈值去背只接受显式 edge_profile='hard-edge'；复杂或未知边缘需要真实 Alpha、遮罩或重新生产");
+  if (!reuseAlpha && colorSeparationVerified !== true) throw new BackgroundRemovalError("颜色阈值去背必须显式确认 color_separation_verified=true");
+  if (!reuseAlpha && !requireSolidBackground) throw new BackgroundRemovalError("颜色阈值去背必须启用 require_solid_background=true");
+  const candidateSha256 = options.candidateSha256 ?? options.candidate_sha256;
 
   let sourceBytes;
   try {
@@ -354,35 +319,37 @@ export async function removeBackgroundLocal(options = {}) {
     processed = { pixels: Buffer.from(source.pixels), removedPixels: 0 };
     method = "reuse-verified-alpha";
   } else {
+    if (inputAlpha.opaque !== source.width * source.height) throw new BackgroundRemovalError("颜色阈值去背不接受含透明或半透明像素的输入；请保留真实 Alpha 或选择其他透明路线");
     backgroundColor = parseBackgroundColor(options.backgroundColor ?? options.background_color);
     tolerance = parseColorTolerance(options.tolerance);
-    if (requireSolidBackground) {
-      solidBackgroundCheck = inspectSolidBackground(source, backgroundColor, tolerance);
-      // 严格检查失败时在任何输出、预览或记录写入前终止，避免棋盘格被误当作成功输入。
-      if (solidBackgroundCheck.status !== "passed") {
-        const reasons = [];
-        if (!solidBackgroundCheck.opaque) reasons.push("输入必须完全不透明");
-        if (solidBackgroundCheck.matched_boundary_pixels !== solidBackgroundCheck.boundary_pixels) reasons.push("画布边缘必须匹配指定背景色");
-        throw new BackgroundRemovalError(`require_solid_background 检查失败：${reasons.join("；")}`);
-      }
+    solidBackgroundCheck = inspectSolidBackground(source, backgroundColor, tolerance);
+    // 颜色去背仅处理完全不透明且整圈边缘一致的硬边样例，防止阈值碰到半透明轮廓。
+    if (solidBackgroundCheck.status !== "passed") {
+      const reasons = [];
+      if (!solidBackgroundCheck.opaque) reasons.push("输入必须完全不透明");
+      if (solidBackgroundCheck.matched_boundary_pixels !== solidBackgroundCheck.boundary_pixels) reasons.push("画布边缘必须匹配指定背景色");
+      throw new BackgroundRemovalError(`require_solid_background 检查失败：${reasons.join("；")}`);
     }
     processed = removeConnectedBackground(source, { backgroundColor, tolerance });
     method = "edge-connected-chroma-removal";
   }
 
   const outputAlpha = countAlphaPixels(processed.pixels);
-  const failures = validationFailures({ reuseAlpha, removedPixels: processed.removedPixels, foregroundPixels: outputAlpha.foreground });
+  // 空白终态属于动画时间轴，只有显式的逐帧调用才允许保留；普通资产仍拒绝误删主体。
+  if (outputAlpha.foreground === 0 && !allowEmptyForeground) throw new BackgroundRemovalError("去背会清除全部主体；拒绝生成空透明图，请重新确认硬边背景色与容差");
+  const failures = validationFailures({ reuseAlpha, removedPixels: processed.removedPixels, foregroundPixels: outputAlpha.foreground, allowEmptyForeground });
   const status = failures.length === 0 ? "PASS" : "FAIL";
   const outputBytes = encodePngRgba(source.width, source.height, processed.pixels);
-  const previewConfiguration = options.preview === true || options.previewDirectory !== undefined || options.preview_directory !== undefined;
-  const previewConfigurationPaths = previewConfiguration ? previewPaths(paths.outputFile, options.previewDirectory ?? options.preview_directory) : null;
-  // 预览检查必须先于任何输出写入，避免冲突路径留下半成品或意外覆盖源文件。
-  if (previewConfigurationPaths) assertPreviewPathsSafe(previewConfigurationPaths, [paths.sourceFile, paths.outputFile, paths.recordFile]);
+  const previewDirectory = options.previewDirectory ?? options.preview_directory ?? `${paths.outputFile}.previews`;
+  // 预览目标覆盖任何受保护产物时，在主输出、预览图和记录写入前统一拒绝。
+  await assertTransparencyPreviewPathsAvailable({ sourceFile: paths.outputFile, previewDirectory, reservedPaths: [paths.sourceFile, paths.recordFile].filter(Boolean) });
   await mkdir(dirname(paths.outputFile), { recursive: true });
   await writeFile(paths.outputFile, outputBytes);
 
-  const previewDirectory = options.previewDirectory ?? options.preview_directory;
-  const previews = previewConfiguration ? await writePreviews({ ...source, pixels: processed.pixels }, paths.outputFile, previewDirectory, [paths.sourceFile, paths.recordFile]) : null;
+  // 合法空帧由整段动画预览呈现，单张主体检查页要求可见前景，不能拿空帧冒充普通资产。
+  const transparencyPreview = outputAlpha.foreground > 0
+    ? await writeTransparencyPreviews({ sourceFile: paths.outputFile, previewDirectory, candidateSha256, reservedPaths: [paths.sourceFile, paths.recordFile].filter(Boolean) })
+    : null;
   const completedAt = new Date().toISOString();
   const backgroundRemovalAttempt = reuseAlpha ? null : {
     operation: LOCAL_BACKGROUND_REMOVAL_OPERATION,
@@ -400,7 +367,11 @@ export async function removeBackgroundLocal(options = {}) {
       output_sha256: sha256Bytes(outputBytes),
       removed_pixels: processed.removedPixels,
       failures,
-      background_color: backgroundColor ? formatBackgroundColor(backgroundColor) : null,
+      parameters: {
+        tolerance, edge_profile: edgeProfile, color_separation_verified: colorSeparationVerified,
+        ...(allowEmptyForeground ? { allow_empty_foreground: true } : {}),
+      },
+      background_color: formatBackgroundColor(backgroundColor),
       tolerance,
       validation_status: status,
       ...(solidBackgroundCheck ? { solid_background_check: solidBackgroundCheck } : {}),
@@ -413,8 +384,7 @@ export async function removeBackgroundLocal(options = {}) {
     failures,
     validation_status: status,
     method,
-    tool: LOCAL_BACKGROUND_REMOVAL_TOOL,
-    tool_version: LOCAL_BACKGROUND_REMOVAL_TOOL_VERSION,
+    ...(!reuseAlpha ? { tool: LOCAL_BACKGROUND_REMOVAL_TOOL, tool_version: LOCAL_BACKGROUND_REMOVAL_TOOL_VERSION } : {}),
     transparency_strategy: reuseAlpha ? LOCAL_DIRECT_ALPHA_OPERATION : LOCAL_BACKGROUND_REMOVAL_OPERATION,
     source_file: paths.sourceFile,
     source_sha256: sha256Bytes(sourceBytes),
@@ -429,14 +399,19 @@ export async function removeBackgroundLocal(options = {}) {
     output_has_alpha: true,
     transparent_pixels: outputAlpha.transparent,
     foreground_pixels: outputAlpha.foreground,
+    allow_empty_foreground: allowEmptyForeground,
     removed_pixels: processed.removedPixels,
-    background_color: backgroundColor ? formatBackgroundColor(backgroundColor) : null,
-    tolerance,
+    ...(!reuseAlpha ? {
+      background_color: formatBackgroundColor(backgroundColor),
+      tolerance,
+      edge_profile: edgeProfile,
+      color_separation_verified: colorSeparationVerified,
+    } : {}),
     preserve_dimensions: true,
     normalization_required: true,
     completed_at: completedAt,
-    limitation: "仅支持显式纯色背景的边缘连通移除；复杂背景、毛发、玻璃、发光和半透明边缘需要专门分割或人工遮罩。",
-    ...(previews ? { preview_files: previews } : {}),
+    limitation: "颜色阈值只适用于显式确认色彩分离的硬边主体；半透明、辉光、柔和阴影、毛发和玻璃应改走经验证的 Alpha、遮罩、重新生产或 ThreeJS 特效路线。",
+    transparency_preview: { ...transparencyPreview, inspection: { status: "pending" } },
     ...(paths.recordFile ? { record_file: paths.recordFile } : {}),
     ...(backgroundRemovalAttempt ? { background_removal_attempt: backgroundRemovalAttempt } : {}),
     ...(solidBackgroundCheck ? { solid_background_check: solidBackgroundCheck } : {}),
@@ -460,7 +435,7 @@ function readCliValue(args, flag) {
 /** 运行 CLI；成功和像素验证失败都输出完整记录，参数错误输出稳定错误对象。 */
 export async function runRemoveBackgroundCli(args = process.argv.slice(2), output = console) {
   if (args.includes("--help") || args.includes("-h")) {
-    output.log("用法：node remove-background-local.mjs --source input.png --output output.png --background-color '#00aa55' --tolerance 24 [--require-solid-background] [--reuse-alpha] [--record record.json] [--preview-dir previews]");
+    output.log("用法：node remove-background-local.mjs --source input.png --output output.png --background-color '#00aa55' --tolerance 24 --edge-profile hard-edge --color-separation-verified [--record record.json] [--preview-dir previews] [--candidate-sha256 sha256:…]");
     return 0;
   }
   try {
@@ -469,13 +444,16 @@ export async function runRemoveBackgroundCli(args = process.argv.slice(2), outpu
       outputFile: readCliValue(args, "--output"),
       backgroundColor: readCliValue(args, "--background-color"),
       tolerance: Number(readCliValue(args, "--tolerance")),
-      requireSolidBackground: args.includes("--require-solid-background"),
+      edgeProfile: readCliValue(args, "--edge-profile"),
+      colorSeparationVerified: args.includes("--color-separation-verified"),
+      requireSolidBackground: args.includes("--require-solid-background") ? true : undefined,
       reuseExistingAlpha: args.includes("--reuse-alpha"),
       recordFile: readCliValue(args, "--record"),
       previewDirectory: readCliValue(args, "--preview-dir"),
-      preview: args.includes("--preview"),
+      candidateSha256: readCliValue(args, "--candidate-sha256"),
     });
     output.log(JSON.stringify(record, null, 2));
+    if (!record.transparency_preview.candidate_sha256) output.warn?.("透明预览未绑定 workflow candidate_sha256；输出可检查，但不能据此声称候选合同完整。");
     return record.status === "PASS" ? 0 : 1;
   } catch (error) {
     output.error(JSON.stringify({ schema: LOCAL_BACKGROUND_REMOVAL_SCHEMA, status: "FAIL", error: error.message }));

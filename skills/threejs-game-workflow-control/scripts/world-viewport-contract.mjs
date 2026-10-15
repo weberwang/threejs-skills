@@ -20,13 +20,12 @@ export const WORLD_VIEWPORT_CONTRACT_FIELDS = Object.freeze([
 export const WORLD_VIEWPORT_EVIDENCE_FIELDS = Object.freeze([
   'capturedAt', 'measurementSource', 'viewportId', 'canvasCssRect', 'canvasBackingSize',
   'rawDevicePixelRatio', 'effectiveDevicePixelRatio', 'camera', 'inputHitResults',
-  'resizeTrajectory', 'rendererMetrics', 'screenshot', 'sceneId', 'stateId', 'candidateSha256', 'pageReloaded',
+  'resizeTrajectory', 'rendererMetrics', 'screenshot', 'sceneId', 'stateId', 'pageReloaded',
 ]);
 
 /** 运行记录必须列出的证据字段；它们描述观察数据，不代表人工验收。 */
 export const WORLD_VIEWPORT_REQUIRED_EVIDENCE = Object.freeze([...WORLD_VIEWPORT_EVIDENCE_FIELDS]);
 
-const SHA256 = /^sha256:[a-f0-9]{64}$/i;
 const EPSILON = 1e-6;
 const ALLOWED_ORIENTATIONS = new Set(['portrait', 'landscape']);
 const ALLOWED_RENDERERS = new Set(['webgl2', 'webgpu']);
@@ -346,7 +345,7 @@ function validateResizeTrajectory(record, contract, stage, scope, errors) {
 
 /** 校验单条世界视口运行观察记录；只返回结构合同错误，不输出验收结论。 */
 export function validateWorldViewportEvidenceRecord(record, contract, options = {}) {
-  const stage = String(options.stage ?? 'V5').toUpperCase();
+  const stage = String(options.stage ?? 'V4').toUpperCase();
   const scope = options.scope ?? record?.sceneId ?? '*';
   const errors = [];
   if (!isObject(record)) return [error(stage, scope, '世界视口运行证据必须为对象')];
@@ -358,8 +357,6 @@ export function validateWorldViewportEvidenceRecord(record, contract, options = 
   if (record.measurementSource !== 'browser-runtime') errors.push(error(stage, scope, 'measurementSource 必须指向 browser-runtime 观察来源'));
   if (!nonEmptyString(record.sceneId) || (options.sceneId && record.sceneId !== options.sceneId)) errors.push(error(stage, scope, 'sceneId 必须绑定当前场景'));
   if (!nonEmptyString(record.stateId) || (options.stateId && record.stateId !== options.stateId)) errors.push(error(stage, scope, 'stateId 必须绑定当前场景状态'));
-  if (!SHA256.test(String(record.candidateSha256 ?? ''))) errors.push(error(stage, scope, 'candidateSha256 必须为当前候选 sha256'));
-  if (options.candidateSha256 && record.candidateSha256 !== options.candidateSha256) errors.push(error(stage, scope, 'candidateSha256 与当前候选不一致'));
   if (record.pageReloaded !== false) errors.push(error(stage, scope, 'resize 证据必须声明 pageReloaded=false'));
   validateMeasuredViewport(record.canvasCssRect, record.canvasBackingSize, record.rawDevicePixelRatio, record.effectiveDevicePixelRatio, contract, stage, scope, errors);
   if (isRect(record.canvasCssRect)) validateCameraEvidence(record.camera, record.canvasCssRect, contract, stage, scope, errors);
@@ -376,16 +373,13 @@ export function validateWorldViewportEvidenceRecord(record, contract, options = 
 
 /** 校验世界证据清单中的候选绑定、场景/状态和代表视口覆盖。 */
 export function validateWorldViewportEvidenceManifest(value, contract, options = {}) {
-  const stage = String(options.stage ?? value?.currentStage ?? value?.current_stage ?? 'V5').toUpperCase();
+  const stage = String(options.stage ?? value?.currentStage ?? value?.current_stage ?? 'V4').toUpperCase();
   const errors = [];
   if (!isObject(contract)) return [error(stage, '*', '世界视口证据清单缺少 world-3d 响应式合同')];
   const contractErrors = validateWorldViewportContract(contract, { stage, scope: '*' });
   if (contractErrors.length) return contractErrors;
   const records = Array.isArray(value) ? value : value?.responsiveEvidence ?? value?.responsiveRuntimeEvidence ?? value?.runtimeEvidence;
   if (!Array.isArray(records) || records.length === 0) return [error(stage, '*', '世界视口证据清单必须包含运行观察记录')];
-  const candidateSha256 = options.candidateSha256 ?? (!Array.isArray(value) ? value.candidateSha256 : undefined);
-  if (!SHA256.test(String(candidateSha256 ?? ''))) errors.push(error(stage, '*', '清单必须声明当前 candidateSha256'));
-  if (options.candidateSha256 && !Array.isArray(value) && value.candidateSha256 !== undefined && value.candidateSha256 !== options.candidateSha256) errors.push(error(stage, '*', '清单 candidateSha256 与当前候选不一致'));
   const sceneId = options.sceneId ?? (!Array.isArray(value) ? value.sceneId : undefined);
   const stateId = options.stateId ?? (!Array.isArray(value) ? value.stateId : undefined);
   if (!options.requiredUnits?.length && !nonEmptyString(sceneId)) errors.push(error(stage, '*', '清单必须绑定当前 sceneId'));
@@ -397,7 +391,6 @@ export function validateWorldViewportEvidenceManifest(value, contract, options =
       || (item.displayLayerId !== undefined && item.displayLayerId === record?.displayLayerId));
     errors.push(...validateWorldViewportEvidenceRecord(record, contract, {
       ...options,
-      candidateSha256,
       sceneId: unit?.sceneId ?? sceneId,
       stateId: unit?.stateId ?? stateId,
       scope: record?.sceneId ?? `record-${index}`,

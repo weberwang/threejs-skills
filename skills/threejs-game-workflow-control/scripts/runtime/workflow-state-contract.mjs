@@ -27,7 +27,6 @@ export function validateChangeRequests(work, repo, level, ledger, pkg, deps, fai
     const change = deps.validateChangeRequest(deps.readJson(deps.resolve(repo, path), 'Change Request'), work);
     if (!change.affectedModules.some((moduleId) => relevantModules.has(moduleId))) continue;
     if (change.status !== 'ACCEPTED') fail(`Change Request ${change.changeRequestId} 尚未形成 ACCEPTED 用户决定`);
-    if (change.affectedBaselineHash === work.baselineHash) fail(`Change Request ${change.changeRequestId} 接受后尚未建立新基线`);
     if (ledger && (!change.invalidatedApprovalIds.length || change.invalidatedApprovalIds.some((id) => !ledger.approvals.some((approval) => approval.approvalId === id && approval.invalidatedAt)))) {
       fail(`Change Request ${change.changeRequestId} 未使旧审批失效`);
     }

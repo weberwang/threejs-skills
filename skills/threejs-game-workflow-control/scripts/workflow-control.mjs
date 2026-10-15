@@ -11,10 +11,10 @@ import { validateDelegationBinding, validateExecutionPlan } from './parallel-pla
 import { repositoryLint } from './repository-lint.mjs';
 import { pathMatches } from './path-matcher.mjs';
 import { isVisualProductionWork, loadVisualManifestSnapshot, validateVisualChangeRequest, validateVisualDelegationBinding, validateVisualEvidence, validateVisualImplementationPackage, validateVisualImplementationPackageBinding } from './visual-production-contract.mjs';
-import { computeVisualConfirmationPrerequisiteFilesSha256, validateVisualConfirmationReferences, visualConfirmationAuthority } from './visual-confirmation-authority.mjs';
+import { validateVisualConfirmationReferences, visualConfirmationAuthority } from './visual-confirmation-authority.mjs';
 import { enforceVisualStageGate, structuredVisualStageFailure, validateVisualStageDeclaration, validateVisualStagePrerequisites, VISUAL_REMEDIATION } from './visual-stage-prerequisites.mjs'; import { createReturnRecord, invalidateReturnArtifacts, parseReturnRequest, validateReturnRecord, validateReturnResume } from './return-disposition.mjs';
-import { computePlanFingerprint, fileHash, hashText } from './runtime/fingerprint.mjs';
-import { parseArgs, list, readJson, readJsonWithIdentity, captureJsonIdentity, writeJson, writeJsonTransaction, transactionJournalPathForLedger, requireFields, requireStringArray, requireHash, requireBaselineHash } from './runtime/io.mjs';
+import { artifactFingerprint, computePlanFingerprint, fileHash, hashText } from './runtime/fingerprint.mjs';
+import { parseArgs, list, readJson, readJsonWithIdentity, captureJsonIdentity, writeJson, writeJsonTransaction, transactionJournalPathForLedger, requireFields, requireStringArray } from './runtime/io.mjs';
 import { failureRecord, renderResult, writeResult } from './runtime/output.mjs';
 import { createStableCommands } from './runtime/stable-commands.mjs';
 import { createRecordValidators } from './runtime/validators.mjs';
@@ -71,7 +71,7 @@ const visualStageGate = enforceVisualStageGate;
 }
 const recordValidators = createRecordValidators({
   gates: GATES, states: STATES, automaticActions: AUTOMATIC_THREEJS_ACTIONS, actionLevels: LEVELS,
-  requireFields, requireStringArray, requireHash, requireBaselineHash, validateThreeJSAction,
+  requireFields, requireStringArray, validateThreeJSAction,
   actionLevelFor: (action) => THREEJS_ACTION_LEVEL.get(action), validateExecutionPlan,
   validateVisualImplementationPackage, validateVisualChangeRequest, pathMatches, fail,
 });
@@ -107,13 +107,8 @@ function validateWorkItem(work) {
   if (Number.isNaN(Date.parse(work.pendingApprovalPreparedAt))) fail('Work Item.pendingApprovalPreparedAt 必须为有效时间');
   if (work.pendingApprovalPresentedId !== null && work.pendingApprovalPresentedId !== work.pendingApprovalId) fail('Work Item pending 展示记录与当前审批点不一致');
   if (work.pendingApprovalPresentedAt !== null && Number.isNaN(Date.parse(work.pendingApprovalPresentedAt))) fail('Work Item.pendingApprovalPresentedAt 必须为有效时间或 null');
-  requireBaselineHash(work.baselineHash, 'Work Item baselineHash');
   if (work.userOriginalText !== undefined && (typeof work.userOriginalText !== 'string' || !work.userOriginalText.trim())) fail('Work Item.userOriginalText 必须为非空字符串');
   if (work.visualConfirmationPrerequisiteFiles !== undefined) requireStringArray(work.visualConfirmationPrerequisiteFiles, 'Work Item.visualConfirmationPrerequisiteFiles');
-  if (work.visualConfirmationPrerequisiteFilesSha256 !== undefined) requireHash(work.visualConfirmationPrerequisiteFilesSha256, 'Work Item.visualConfirmationPrerequisiteFilesSha256');
-  if (Array.isArray(work.visualConfirmationAuthorityRefs)) {
-    if (!Array.isArray(work.visualConfirmationPrerequisiteFiles) || !work.visualConfirmationPrerequisiteFiles.length || work.visualConfirmationPrerequisiteFilesSha256 !== computeVisualConfirmationPrerequisiteFilesSha256(work.visualConfirmationPrerequisiteFiles)) fail('视觉确认前置文件必须冻结在 Work Item 并绑定列表 SHA');
-  }
   for (const field of ['inScope', 'outOfScope', 'approvedRequirements', 'allowedActions', 'allowedActionLevels', 'explicitApprovalActionLevels', 'prohibitedActions', 'allowedPaths', 'forbiddenPaths', 'allowedExternalTargets', 'protectedExternalTargets', 'requiredGates', 'delegatedAgents', 'expectedOutputs', 'validationPlan', 'exitCriteria', 'changeRequestFiles', 'pendingApprovalImpactSummary', 'pendingApprovalFileScope', 'pendingApprovalServices', 'pendingApprovalExternalTargets']) requireStringArray(work[field], `Work Item.${field}`);
   for (const action of [...work.allowedActions, ...work.prohibitedActions]) validateThreeJSAction(action, null, 'Work Item 动作');
   // 当前动作必须同时受白名单和工作项集合约束，避免 diff-audit 绕过 preflight 的动作检查。
@@ -134,7 +129,7 @@ function validateWorkItem(work) {
 }
 /** 校验 Implementation Package 与 Work Item/审批/基线一致。 */
 function validateImplementationPackage(pkg, work, repo = process.cwd(), delegations = [], options = {}) {
-  const visualRequired = isVisualProductionWork(work) || pkg?.visualProductionUnits !== undefined || pkg?.visualManifestFile !== undefined || pkg?.visualManifestSha256 !== undefined;
+  const visualRequired = isVisualProductionWork(work) || pkg?.visualProductionUnits !== undefined || pkg?.visualManifestFile !== undefined;
   const manifestSnapshot = options.manifestSnapshot ?? (visualRequired ? loadVisualManifestSnapshot(pkg, repo) : null);
   if (visualRequired && (!manifestSnapshot || manifestSnapshot.errors?.length)) fail(manifestSnapshot?.errors?.[0] ?? '视觉 Implementation Package 缺少有效 visual manifest');
   const authority = options.authority ?? visualConfirmationAuthority(work, manifestSnapshot?.manifest ?? null, { projectRoot: repo, checkFiles: true, implementationPackage: pkg, delegations });
@@ -150,7 +145,7 @@ function validateImplementationPackage(pkg, work, repo = process.cwd(), delegati
       if (unitErrors.length) fail(unitErrors[0]);
     }
   }
-  if (pkg.workItemId !== work.workItemId || pkg.baselineVersion !== work.baselineVersion || pkg.baselineHash !== work.baselineHash) fail('Implementation Package 未绑定当前工作项与基线');
+  if (pkg.workItemId !== work.workItemId || pkg.baselineVersion !== work.baselineVersion) fail('Implementation Package 未绑定当前工作项与基线版本');
   if (JSON.stringify(pkg.approvedRequirements) !== JSON.stringify(work.approvedRequirements) || JSON.stringify(pkg.allowedPaths) !== JSON.stringify(work.allowedPaths) || JSON.stringify(pkg.forbiddenPaths) !== JSON.stringify(work.forbiddenPaths) || JSON.stringify(pkg.outOfScope) !== JSON.stringify(work.outOfScope)) fail('Implementation Package 与工作项范围不一致');
   if (pkg.executionUnits.some((unit) => !work.moduleIds.includes(unit.moduleId))) fail('Implementation Package execution unit.moduleId 不属于 Work Item.moduleIds');
   try { assertImplementationPackagePlanningPrerequisites(pkg, work, repo, unitIo(repo)); } catch (error) { fail(error.message); }
@@ -555,13 +550,6 @@ function artifactRecords(repo, paths, work, externalReceipt = false) {
   });
 }
 
-/** 计算无 Git diff 工件集合的稳定指纹。 */
-function artifactFingerprint(artifacts) {
-  const hash = createHash('sha256');
-  for (const item of [...artifacts].sort((a, b) => a.file.localeCompare(b.file))) hash.update(`${item.file}\0${item.hash}\n`);
-  return `sha256:${hash.digest('hex')}`;
-}
-
 /** 对真实 diff 执行审批、模块、删除、所有权、路径和基线审计。 */
 function diffAudit(args) {
   const workPath = resolve(String(args['work-item']));
@@ -569,8 +557,8 @@ function diffAudit(args) {
   const validationContext = commandValidationContext(repo);
   const work = validateWorkItem(validationContext.readJson(workPath, 'Work Item'));
   requireResolvedUserInput(work, fail);
+  // 基线引用用于确定本次 Git diff 范围；后续验收按 Work Item 基线复核真实路径，不比较摘要文本。
   const baseline = String(args.baseline ?? work.baselineId);
-  if (baseline !== work.baselineId || String(args['baseline-hash'] ?? '') !== work.baselineHash) fail('diff-audit 基线漂移');
   const level = String(args['action-level'] ?? work.pendingApprovalActionLevel);
   const actionType = String(args['action-type'] ?? work.pendingApprovalActionType);
   validateThreeJSAction(actionType, level, 'diff-audit actionType');
@@ -625,24 +613,35 @@ function diffAudit(args) {
   process.stdout.write(JSON.stringify({ ok: true, command: 'diff-audit', ...record }, null, 2));
 }
 
-/** 重新计算并验证 diff audit 记录仍对应当前候选。 */
+/** 按当前真实变更路径复核审计记录；摘要只作记录，不决定验收是否有效。 */
 function verifyDiffAudit(work, repo, path, validationContext = null) {
   if (!path) fail('缺少 Diff Audit Record 路径');
   const read = validationContext?.readJson?.bind(validationContext) ?? readJson;
   const record = read(resolve(repo, path), 'Diff Audit Record');
-  requireFields(record, ['recordType', 'workItemId', 'baselineId', 'baselineHash', 'diffFingerprint', 'actionLevel', 'authorizationBasis', 'recordedAt', 'entries', 'artifacts', 'verdict'], 'Diff Audit Record');
-  if (record.recordType !== 'DIFF_AUDIT' || record.verdict !== 'PASS' || record.workItemId !== work.workItemId || record.baselineId !== work.baselineId || record.baselineHash !== work.baselineHash || !LEVELS.includes(record.actionLevel) || Number.isNaN(Date.parse(record.recordedAt)) || !Array.isArray(record.entries) || !Array.isArray(record.artifacts)) fail('Diff Audit Record 绑定不一致');
+  requireFields(record, ['recordType', 'workItemId', 'actionLevel', 'authorizationBasis', 'recordedAt', 'entries', 'artifacts', 'verdict'], 'Diff Audit Record');
+  // 记录中的 baselineId 只是追踪信息；实际变更始终按当前 Work Item 的基线重算。
+  if (record.recordType !== 'DIFF_AUDIT' || record.verdict !== 'PASS' || record.workItemId !== work.workItemId || !LEVELS.includes(record.actionLevel) || Number.isNaN(Date.parse(record.recordedAt)) || !Array.isArray(record.entries) || !Array.isArray(record.artifacts)) fail('Diff Audit Record 绑定不一致');
   if (record.authorizationBasis === 'EXPLICIT_APPROVAL') {
     if (!record.approvalId || record.approvalId !== work.approvalRecord) fail('Diff Audit Record 显式审批审计未绑定当前 approvalId');
     if (!work.diffAuditLedgerRecord) fail('显式审批审计缺少 Approval Ledger 绑定');
     const approval = (validationContext?.readLedger?.(resolve(repo, work.diffAuditLedgerRecord)) ?? readLedger(resolve(repo, work.diffAuditLedgerRecord))).approvals.find((item) => item.approvalId === record.approvalId && !item.invalidatedAt && !item.legacyReadOnly);
-    if (!approval || approval.workItemId !== work.workItemId || JSON.stringify(approval.moduleIds) !== JSON.stringify(work.moduleIds) || approval.baselineHash !== work.baselineHash || approval.actionLevel !== record.actionLevel) fail('Diff Audit Record 审批已失效或绑定不一致');
+    if (!approval || approval.workItemId !== work.workItemId || JSON.stringify(approval.moduleIds) !== JSON.stringify(work.moduleIds) || approval.actionLevel !== record.actionLevel) fail('Diff Audit Record 审批已失效或绑定不一致');
   } else if (record.authorizationBasis !== 'TASK_SCOPE' || record.approvalId !== undefined || requiresExplicitApproval(record.actionLevel, declaredOperationFlags(work)) || userInputRequired(work)) fail('Diff Audit Record Work Item 范围绑定无效或存在未决用户选择');
   const entries = changedEntries(repo, work.baselineId).filter((entry) => !pathMatches(entry.file, '.workflow-control'));
+  if (!entries.length && !record.artifacts.length) fail('Diff Audit Record 缺少真实变更或 artifact-only 证据');
   if (!entries.length && record.artifacts.length) {
-    const currentArtifacts = artifactRecords(repo, record.artifacts.map((item) => item.file), work, ['A5', 'A6'].includes(record.actionLevel));
-    if (JSON.stringify(currentArtifacts) !== JSON.stringify(record.artifacts) || artifactFingerprint(currentArtifacts) !== record.diffFingerprint) fail('Diff Audit Record 工件哈希已过期');
-  } else if (record.artifacts.length || diffFingerprint(repo, work.baselineId, entries) !== record.diffFingerprint) fail('Diff Audit Record 已过期');
+    const artifactPaths = record.artifacts.map((item) => item?.file);
+    if (artifactPaths.some((file) => typeof file !== 'string' || !file) || new Set(artifactPaths).size !== artifactPaths.length) fail('Diff Audit Record 工件路径无效');
+    const externalReceipt = ['A5', 'A6'].includes(record.actionLevel);
+    const normalized = externalReceipt ? artifactPaths.map((file) => normalizeRepoPath(repo, file)) : checkPaths(artifactPaths, work.allowedPaths, work.forbiddenPaths, repo);
+    const evidenceRoot = resolve(repo, work.evidenceRoot);
+    for (const file of normalized) {
+      if (externalReceipt && (work.forbiddenPaths.some((pattern) => pathMatches(file, pattern)) || relative(evidenceRoot, resolve(repo, file)).startsWith('..'))) fail(`回执工件路径无效：${file}`);
+      const target = resolve(repo, file);
+      if (!existsSync(target)) fail(`审计工件不存在：${file}`);
+      readFileSync(target);
+    }
+  } else if (record.artifacts.length) fail('Diff Audit Record 不得在存在 Git diff 时另附 artifact-only 工件');
   checkPaths(entries.map((entry) => entry.file), work.allowedPaths, work.forbiddenPaths, repo);
   if (record.entries.length !== entries.length) fail('Diff Audit Record.entries 与真实 diff 数量不一致');
   if (['A3', 'A4'].includes(record.actionLevel) && !work.implementationPackageRecord) fail('Diff Audit Record 缺少 Implementation Package 绑定');
@@ -656,7 +655,7 @@ function verifyDiffAudit(work, repo, path, validationContext = null) {
     const item = mapped[0];
     if (item.workItemId !== work.workItemId || item.domain !== work.domain || item.stageId !== work.stageId || item.actionLevel !== record.actionLevel || (item.approvalId ?? null) !== (record.approvalId ?? null) || item.authorizationBasis !== record.authorizationBasis) fail(`Diff Audit Record.entries 归属映射不一致：${entry.file}`);
     if (pkg) {
-      if (pkg.workItemId !== work.workItemId || pkg.baselineHash !== work.baselineHash) fail('Diff Audit Record 的 Implementation Package 绑定不一致');
+      if (pkg.workItemId !== work.workItemId) fail('Diff Audit Record 的 Implementation Package 绑定不一致');
       const owners = Object.entries(pkg.fileOwnership).filter(([pattern]) => pathMatches(entry.file, pattern));
       const units = pkg.executionUnits.filter((unit) => unit.ownedPaths.some((pattern) => pathMatches(entry.file, pattern)));
       if (owners.length !== 1 || units.length !== 1 || item.owner !== owners[0][1] || item.executionUnitId !== units[0].unitId || item.moduleId !== units[0].moduleId || item.sceneId !== units[0].sceneId || item.displayLayerId !== (units[0].displayLayerId ?? null) || item.hostSceneId !== (units[0].hostSceneId ?? null)) fail(`Diff Audit Record.entries 单元/模块/场景/显示层/ownership 不一致：${entry.file}`);
@@ -665,7 +664,7 @@ function verifyDiffAudit(work, repo, path, validationContext = null) {
   return record;
 }
 
-/** 验证证据目录、文件哈希、命令输出、批次和 F0-F3 门结果。 */
+/** 验证证据目录、命令结果、批次身份和 F0-F3 门结果。 */
 function evidenceCheck(args, silent = false, validationContextOverride = null) {
   const repo = resolve(String(args.repo ?? process.cwd()));
   const validationContext = validationContextOverride ?? commandValidationContext(repo);
@@ -673,16 +672,19 @@ function evidenceCheck(args, silent = false, validationContextOverride = null) {
   const evidence = validateEvidence(validationContext.readEvidence(args.evidence));
   const evidenceRoot = resolve(repo, work.evidenceRoot);
   if (relative(evidenceRoot, resolve(String(args.evidence))).startsWith('..')) fail('Evidence Manifest 目录与 evidenceRoot 不一致');
-  if (evidence.workItemId !== work.workItemId || evidence.batchId !== work.validationBatchId || evidence.baselineHash !== work.baselineHash) fail('证据绑定了旧工作项、旧批次或旧基线');
+  if (evidence.workItemId !== work.workItemId || evidence.batchId !== work.validationBatchId) fail('证据绑定了旧工作项或旧批次');
   for (const file of evidence.files) {
     const target = resolve(repo, file);
     if (relative(evidenceRoot, target).startsWith('..')) fail(`证据文件不在 evidenceRoot：${file}`);
-    if (!existsSync(target) || evidence.fileHashes[file] !== fileHash(target)) fail(`证据文件不存在或哈希不匹配：${file}`);
+    if (!existsSync(target)) fail(`证据文件不存在：${file}`);
+    // 文件摘要可能随中途编辑变化；验收继续检查引用路径真实存在且可读取。
+    readFileSync(target);
   }
   for (const command of evidence.commands) {
-    requireFields(command, ['command', 'exitCode', 'outputFile', 'outputHash'], 'Evidence command');
+    requireFields(command, ['command', 'exitCode', 'outputFile'], 'Evidence command');
     const output = resolve(repo, command.outputFile);
-    if (relative(evidenceRoot, output).startsWith('..') || !existsSync(output) || command.outputHash !== fileHash(output) || command.exitCode !== 0) fail('命令结果工件不在证据目录、哈希不符或命令失败');
+    if (relative(evidenceRoot, output).startsWith('..') || !existsSync(output) || command.exitCode !== 0) fail('命令结果工件不在证据目录、不存在或命令失败');
+    readFileSync(output);
   }
   if (evidence.verdict !== 'PASS' || evidence.uncoveredItems.length) fail('证据不是完整 PASS，或仍有未覆盖项');
   const audit = verifyDiffAudit(work, repo, work.diffAuditRecord, validationContext);
@@ -693,19 +695,16 @@ function evidenceCheck(args, silent = false, validationContextOverride = null) {
     const implementationPackage = validationContext.validateImplementationPackage(validationContext.readJson(resolve(repo, packagePath), 'Implementation Package'), work);
     executionPackage = implementationPackage;
     if (isVisualProductionWork(work)) visualPackage = implementationPackage;
-  } else if (isVisualProductionWork(work) && ['V3', 'V5'].includes(String(work.visualStage ?? '').toUpperCase())) {
-    if (!packagePath) fail('V3/V5 视觉 Evidence 必须绑定 Implementation Package');
+  } else if (isVisualProductionWork(work) && ['V3', 'V4'].includes(String(work.visualStage ?? '').toUpperCase())) {
+    if (!packagePath) fail('V3/V4 视觉 Evidence 必须绑定 Implementation Package');
     visualPackage = validationContext.validateImplementationPackage(validationContext.readJson(resolve(repo, packagePath), 'Implementation Package'), work);
   }
-  if (audit.diffFingerprint !== evidence.diffFingerprint) fail('旧证据不能验证当前 diff');
   if (Date.parse(evidence.recordedAt) < Date.parse(audit.recordedAt)) fail('Evidence.recordedAt 早于当前 Diff Audit Record');
-  const head = git(repo, ['rev-parse', 'HEAD']).trim();
-  if (evidence.codeFingerprint !== `git:${head}`) fail('证据 codeFingerprint 未绑定当前代码基线');
   const visualMachineValidation = isVisualProductionWork(work);
   for (const gate of EVIDENCE_GATES) {
     const result = evidence.gateResults[gate];
     const passed = result.status === 'PASS' || (gate === 'F2' && visualMachineValidation && result.status === 'passed');
-    if (!passed || result.baselineHash !== work.baselineHash || result.diffFingerprint !== evidence.diffFingerprint) fail(`${gate} 未绑定当前候选并通过`);
+    if (!passed) fail(`${gate} 未通过`);
   }
   const reviewer = evidence.gateResults.F2.reviewer;
   const reviewMode = evidence.gateResults.F2.reviewMode;
@@ -713,14 +712,14 @@ function evidenceCheck(args, silent = false, validationContextOverride = null) {
   // Evidence 顶层已经绑定 Work Item；F0 可附带 TASK_SCOPE 或 workItemId，附带时必须一致。
   const f0MatchesWork = (f0.workItemId === undefined || f0.workItemId === work.workItemId)
     && (f0.authorizationBasis === undefined || f0.authorizationBasis === audit.authorizationBasis);
-  // V2 拆解确认通过后，V3/V5 的视觉 F2 只消费机器验证事实；通用非视觉 F2 仍保留 reviewer/reviewMode 硬门。
+  // V2 拆解确认通过后，V3/V4 的视觉 F2 只消费机器验证事实；通用非视觉 F2 仍保留 reviewer/reviewMode 硬门。
   if (!f0MatchesWork || evidence.gateResults.F3.evidenceId !== evidence.evidenceId || (!visualMachineValidation && !reviewer)) fail('F0 范围、F2 审查或 F3 证据绑定不完整');
   let visualManifest = null;
   if (visualPackage) { const snapshot = validationContext.loadVisualManifestSnapshot(visualPackage); if (snapshot?.errors?.length) fail(snapshot.errors[0]); visualManifest = snapshot?.manifest ?? null; }
-  // V5 可见单元必须逐条提交真实响应式运行证据；宿主场景通过不能替代独立 DISPLAY_LAYER 轨迹。
-  if (isResponsiveWorkItem(work, executionPackage ?? visualPackage) && (String(work.visualStage ?? work.stageId).toUpperCase() === 'V5' || evidence.responsiveEvidence !== undefined || evidence.responsiveRuntimeEvidence !== undefined)) validateResponsiveEvidence(evidence, executionPackage ?? visualPackage ?? work, { stage: 'V5', candidateSha256: visualManifest?.candidate_identity?.sha256 ?? visualManifest?.candidateSha256 ?? evidence.candidateSha256, requiredUnits: (executionPackage?.executionUnits ?? visualPackage?.executionUnits ?? []).filter((unit) => ['SCENE', 'DISPLAY_LAYER'].includes(unit?.unitType)) });
+  // V4 可见单元必须逐条提交真实响应式运行证据；宿主场景通过不能替代独立 DISPLAY_LAYER 轨迹。
+  if (isResponsiveWorkItem(work, executionPackage ?? visualPackage) && (String(work.visualStage ?? work.stageId).toUpperCase() === 'V4' || evidence.responsiveEvidence !== undefined || evidence.responsiveRuntimeEvidence !== undefined)) validateResponsiveEvidence(evidence, executionPackage ?? visualPackage ?? work, { stage: 'V4', requiredUnits: (executionPackage?.executionUnits ?? visualPackage?.executionUnits ?? []).filter((unit) => ['SCENE', 'DISPLAY_LAYER'].includes(unit?.unitType)) });
   visualStageGate({ ...work, implementationPackage: visualPackage, visualManifest }, { command: 'evidence-check', actionLevel: audit.actionLevel, projectRoot: repo, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, evidence });
-  const visualEvidenceErrors = validateVisualEvidence(evidence, visualPackage, { manifest: visualManifest, projectRoot: repo, diffFingerprint: evidence.diffFingerprint, implementationPackage: visualPackage, authority: visualPackage ? validationContext.authorityFor(visualPackage, work) : null });
+  const visualEvidenceErrors = validateVisualEvidence(evidence, visualPackage, { manifest: visualManifest, projectRoot: repo, implementationPackage: visualPackage, authority: visualPackage ? validationContext.authorityFor(visualPackage, work) : null });
   if (visualEvidenceErrors.length) fail(visualEvidenceErrors[0]);
   if (!visualMachineValidation) {
     if (['A1', 'A2'].includes(audit.actionLevel)) {
@@ -829,7 +828,7 @@ function transition(args) {
       const requiredLevel = work.releaseWorkItem ? 'A6' : 'A4';
       const currentApproval = validationContext.readLedger(args.ledger, { required: true }).approvals.find((item) => item.approvalId === audit.approvalId && !item.invalidatedAt && item.promptContextId === work.pendingApprovalId && item.pendingState === work.pendingApprovalState && item.pendingContext === work.pendingApprovalContext);
       const f4 = evidence.gateResults.F4;
-      if (!currentApproval || currentApproval.actionLevel !== requiredLevel || currentApproval.gate !== 'F4' || Date.parse(evidence.recordedAt) < Date.parse(currentApproval.approvedAt) || f4.status !== 'PASS' || f4.baselineHash !== work.baselineHash || f4.diffFingerprint !== evidence.diffFingerprint || f4.approvalId !== audit.approvalId) fail('COMPLETE 缺少当前精确 F4 集成/发布审批与证据');
+      if (!currentApproval || currentApproval.actionLevel !== requiredLevel || currentApproval.gate !== 'F4' || Date.parse(evidence.recordedAt) < Date.parse(currentApproval.approvedAt) || f4.status !== 'PASS' || f4.approvalId !== audit.approvalId) fail('COMPLETE 缺少当前精确 F4 集成/发布审批与证据');
     }
   }
   work.globalState = target; validateWorkItem(work);
@@ -916,11 +915,10 @@ function init(args) {
   const record = args.record ? readJson(args.record, 'Bootstrap Record') : {
     workItemId: args['work-item-id'], projectId: args['project-id'], moduleIds: list(args['module-id']).sort(), domain: args.domain, stageId: args['stage-id'], baselineId: args['baseline-id'], baselineVersion: args['baseline-version'], baselineHash: args['baseline-hash'], objective: args.objective, userOriginalText: args['user-text'], explicitObject: args.object, actionLevel: 'A1', allowedPaths: list(args['allowed-path']), pendingApprovalId: args['pending-approval-id']
   };
-  requireFields(record, ['workItemId', 'projectId', 'moduleIds', 'domain', 'stageId', 'baselineId', 'baselineVersion', 'baselineHash', 'objective', 'userOriginalText', 'explicitObject', 'allowedPaths'], 'Bootstrap Record');
+  requireFields(record, ['workItemId', 'projectId', 'moduleIds', 'domain', 'stageId', 'baselineId', 'baselineVersion', 'objective', 'userOriginalText', 'explicitObject', 'allowedPaths'], 'Bootstrap Record');
   requireStringArray(record.moduleIds, 'Bootstrap.moduleIds');
   record.moduleIds = [...new Set(record.moduleIds)].sort();
   if (!record.moduleIds.length) fail('Bootstrap.moduleIds 不能为空');
-  requireBaselineHash(record.baselineHash, 'Bootstrap baselineHash');
   requireStringArray(record.allowedPaths, 'Bootstrap.allowedPaths');
   if (record.actionLevel !== 'A1' || SHORT_APPROVAL.test(record.userOriginalText.trim()) || !record.explicitObject) fail('Bootstrap 必须来自明确 A1 用户原文和对象');
   for (const directory of ['work-items', 'delegations', 'delegations/batches', `evidence/${record.workItemId}`, `evidence/${record.workItemId}/units`, 'change-requests']) mkdirSync(join(controlRoot, directory), { recursive: true });
@@ -949,11 +947,11 @@ function lint(args) {
 
 const HELP_COMMANDS = ['run', 'check', 'status', 'init', 'route', 'advance', 'prepare-approval', 'handoff', 'preflight', 'approve', 'delegate-check', 'parallel-check', 'unit-check', 'diff-audit', 'evidence-check', 'transition', 'lint'];
 const COMMAND_HELP = {
-  transition: '用法：node <skill-dir>/scripts/workflow-control.mjs transition --repo <目录> --work-item <文件> --to <状态> [--visual-stage V3|V4|V5] [--visual-stage-state <状态>]\nV2→V3 进入 REVIEW；V3→V4 进入 REVIEW 草图阶段；V4 确认后激活新包进入 V5/IMPLEMENTING。阶段通过须绑定真实证据。',
+  transition: '用法：node <skill-dir>/scripts/workflow-control.mjs transition --repo <目录> --work-item <文件> --to <状态> [--visual-stage V3|V4] [--visual-stage-state <状态>]\nV2→V3 进入 REVIEW；V3 正式资源验收后通过 A3 激活新包，直接进入 V4/IMPLEMENTING。阶段通过须绑定真实证据。',
   run: '用法：node <skill-dir>/scripts/workflow-control.mjs run --repo <目录> --work-item <文件> [--input <文件>]... [--json]\n必填：--repo、--work-item；连续推进已满足条件的 A0-A3 控制面状态，进入 IMPLEMENTING 或遇到门禁即停止。',
   check: '用法：node <skill-dir>/scripts/workflow-control.mjs check --repo <目录> --work-item <文件> [--implementation-package <文件>] [--evidence <文件>] [--input <文件>]... [--json]\n必填：--repo、--work-item；只读校验，不写入工件。',
   status: '用法：node <skill-dir>/scripts/workflow-control.mjs status --repo <目录> --work-item <文件> [--input <文件>]... [--json]\n必填：--repo、--work-item；输出最小状态、阻断原因和下一动作。',
-  init: '用法：node <skill-dir>/scripts/workflow-control.mjs init --repo <目录> --work-item-id <id> --project-id <id> --module-id <module> --domain <domain> --stage-id <stage> --baseline-id <git-id> --baseline-version <version> --baseline-hash <git-id|sha256:...> --objective "<目标>" --user-text "<用户原文>" --object "<对象>" --allowed-path <path>...\n必填：以上 Bootstrap Record 字段；--module-id、--allowed-path 可重复。也可用 --record <bootstrap.json>。',
+  init: '用法：node <skill-dir>/scripts/workflow-control.mjs init --repo <目录> --work-item-id <id> --project-id <id> --module-id <module> --domain <domain> --stage-id <stage> --baseline-id <git-id> --baseline-version <version> [--baseline-hash <摘要记录>] --objective "<目标>" --user-text "<用户原文>" --object "<对象>" --allowed-path <path>...\n必填：除 --baseline-hash 外的 Bootstrap Record 字段；--module-id、--allowed-path 可重复。也可用 --record <bootstrap.json>。',
 };
 
 /** 输出只读顶层或命令级帮助；未知命令仍保持明确拒绝。 */

@@ -1,20 +1,20 @@
 /**
  * 图像生成透明背景生产合同。
  *
- * 对需要生成的透明资产，先生成指定不透明纯色背景的原图，再按需执行
- * 有限次背景移除；复用既有透明图不属于这条生图生产路线。
+ * 根据可观察边缘和已验证能力选择真实 Alpha、硬边去背或独立遮罩。
+ * 复用既有透明图不属于生成路线，实际输出仍须解码和独立视觉检查。
  */
 
-/** 透明目标生成路线只允许记录不透明源图。 */
-export const TRANSPARENT_SOURCE_BACKGROUND_MODES = Object.freeze(["opaque"]);
+import { TRANSPARENT_EDGE_PROFILES, TRANSPARENT_ROUTES, validateTransparencyPreview, validateTransparencyRoute } from "./transparent-route-contract.mjs";
+
+/** 记录实际源图背景，不能由最终透明需求反推生成器输出能力。 */
+export const TRANSPARENT_SOURCE_BACKGROUND_MODES = Object.freeze(["opaque", "transparent"]);
 /** 透明目标的最终交付背景模式。 */
 export const TRANSPARENT_FINAL_BACKGROUND_MODE = "transparent";
 /** 先生成不透明原图，再按需移除背景的透明生产策略。 */
 export const TRANSPARENT_BACKGROUND_STRATEGY = "background-removal";
 /** 透明目标策略白名单，禁止静默引入其它旁路。 */
-export const TRANSPARENT_BACKGROUND_STRATEGIES = Object.freeze([
-  TRANSPARENT_BACKGROUND_STRATEGY,
-]);
+export const TRANSPARENT_BACKGROUND_STRATEGIES = TRANSPARENT_ROUTES;
 /** 结构化背景移除操作的稳定名称。 */
 export const BACKGROUND_REMOVAL_OPERATION = "background-removal";
 /** 背景移除最多保留的尝试数，允许失败历史但避免无界重试。 */
@@ -111,6 +111,12 @@ export function expressesSolidBackgroundProduction(value, color = DEFAULT_SOURCE
 /** 判断提示词是否满足背景移除生产所需的源图背景合同。 */
 export function expressesBackgroundRemovalProduction(value, color = DEFAULT_SOURCE_BACKGROUND_COLOR) {
   return expressesSolidBackgroundProduction(value, color);
+}
+
+/** 直接透明提示必须请求真实透明信息并禁止烘焙棋盘底，实际能力仍由像素门证明。 */
+export function expressesDirectAlphaProduction(value) {
+  return nonEmptyString(value) && /(?:真实透明|真实\s*Alpha|true\s*alpha)/i.test(value)
+    && /(?:禁止|不得|without|no)[^。；;\n]{0,24}(?:棋盘格|checkerboard)/i.test(value);
 }
 
 /** 判断 evidence 是否至少包含可追溯内容；空对象不能冒充审计事实。 */
@@ -236,6 +242,9 @@ function validateBackgroundRemovalProduction(generation, normalizationRecord, co
 export function validateTransparentExpectedAssetContract(expectedAsset, contract = {}) {
   if (!requiresTransparentBackgroundProduction(expectedAsset, contract)) return [];
   const errors = [];
+  const requirements = expectedAsset.transparency_requirements;
+  if (!isObject(requirements) || !TRANSPARENT_ROUTES.includes(requirements.strategy) || !TRANSPARENT_EDGE_PROFILES.includes(requirements.edge_profile)) errors.push("透明 expected_assets 必须冻结合法 transparency_requirements 策略和边缘类型");
+  else if (requirements.strategy === "background-removal" && requirements.edge_profile !== "hard-edge") errors.push("透明 expected_assets 的颜色去背只能冻结 hard-edge，复杂边缘必须选择其他路线或报告能力缺口");
   if (expectedAsset.mime_type !== "image/png") errors.push("透明图像生成 expected_assets 必须声明 mime_type=image/png");
   for (const field of ["source_file", "runtime_file"]) if (!nonEmptyString(expectedAsset[field]) || !PNG_FILE_PATTERN.test(expectedAsset[field])) errors.push(`透明图像生成 expected_assets.${field} 必须使用非空 .png 文件`);
   if (nonEmptyString(expectedAsset.delivery_kind) && expectedAsset.delivery_kind !== "raster-image") errors.push("透明图像生成 expected_assets 必须使用 delivery_kind=raster-image");
@@ -247,11 +256,11 @@ export function validateTransparentBackgroundProductionRecord(generation, expect
   if (!requiresTransparentBackgroundProduction(expectedAsset, contract)) return [];
   const errors = [];
   if (!isObject(generation)) return ["透明图像生成缺少 generation_record，无法证明透明生产"];
-  if (generation.source_background_mode !== "opaque") errors.push("透明 generation_record.source_background_mode 必须为 opaque，生成路线禁止 direct-alpha");
+  if (!TRANSPARENT_SOURCE_BACKGROUND_MODES.includes(generation.source_background_mode)) errors.push("透明 source_background_mode 必须记录实际 opaque 或 transparent");
   if (generation.final_background_mode !== TRANSPARENT_FINAL_BACKGROUND_MODE) errors.push(`透明 generation_record.final_background_mode 必须为 ${TRANSPARENT_FINAL_BACKGROUND_MODE}`);
   if (Object.hasOwn(generation, "background_mode")) errors.push("透明生成禁止使用含义不明确的 background_mode，必须声明 source_background_mode/final_background_mode");
-  if (!TRANSPARENT_BACKGROUND_STRATEGIES.includes(generation.transparency_strategy)) errors.push(`透明 generation_record.transparency_strategy 必须为 ${TRANSPARENT_BACKGROUND_STRATEGIES.join(" 或 ")}，direct-alpha 已移除`);
-  if (!isSourceBackgroundColor(generation.source_background_color)) errors.push("透明 generation_record.source_background_color 必须是 #RRGGBB");
+  if (!TRANSPARENT_BACKGROUND_STRATEGIES.includes(generation.transparency_strategy)) errors.push(`透明 generation_record.transparency_strategy 必须为 ${TRANSPARENT_BACKGROUND_STRATEGIES.join(" 或 ")}`);
+  if (isBackgroundRemovalProduction(generation) && !isSourceBackgroundColor(generation.source_background_color)) errors.push("去背 generation_record.source_background_color 必须是 #RRGGBB");
   if (!nonEmptyString(generation.raw_source_file)) errors.push("透明 generation_record.raw_source_file 缺失");
   else if (!IMAGE_FILE_PATTERN.test(generation.raw_source_file)) errors.push("透明 generation_record.raw_source_file 必须使用 PNG/JPEG 文件");
   if (!nonEmptyString(generation.source_file)) errors.push("透明 generation_record.source_file 缺失");
@@ -264,10 +273,13 @@ export function validateTransparentBackgroundProductionRecord(generation, expect
     ["positive_prompt", generation.positive_prompt],
     ["prompt", generation.prompt],
   ].filter(([, value]) => nonEmptyString(value));
-  if (promptEntries.length === 0) errors.push("透明图像生成必须记录包含指定纯色背景要求的实际提示词");
-  else if (isSourceBackgroundColor(generation.source_background_color)) {
+  if (promptEntries.length === 0) errors.push("透明图像生成必须记录实际路线的完整提示词");
+  else if (isBackgroundRemovalProduction(generation) && isSourceBackgroundColor(generation.source_background_color)) {
     const expectedColor = normalizeSourceBackgroundColor(generation.source_background_color);
     for (const [field, prompt] of promptEntries) if (!expressesBackgroundRemovalProduction(prompt, expectedColor)) errors.push(`透明 generation_record.${field} 必须包含 ${expectedColor}、不透明纯色背景和棋盘格禁用要求`);
+  }
+  else if (generation.transparency_strategy === "direct-alpha") {
+    for (const [field, prompt] of promptEntries) if (!expressesDirectAlphaProduction(prompt)) errors.push(`direct-alpha generation_record.${field} 必须请求真实 Alpha 并禁止烘焙棋盘格`);
   }
   if (Object.hasOwn(generation, "direct_generation_attempt") || Object.hasOwn(generation, "directGenerationAttempt")) errors.push("透明生产禁止使用 direct_generation_attempt 旧字段");
   if (isBackgroundRemovalProduction(generation)) errors.push(...validateBackgroundRemovalProduction(generation, normalizationRecord, contract));
@@ -288,7 +300,7 @@ export function validateTransparentOutputMetadata(metadata, expectedAsset, contr
 }
 
 /** 汇总透明 expected asset、生产记录、归一化记录和输出元数据的机器校验。 */
-export function validateTransparentBackgroundContract({ asset, contract, generation, expectedAsset, metadata } = {}) {
+export function validateTransparentBackgroundContract({ asset, contract, generation, expectedAsset, metadata, options = {} } = {}) {
   if (!requiresTransparentBackgroundProduction(expectedAsset, contract)) return [];
   const normalizationRecord = resolveNormalizationRecord(generation, asset);
   const errors = [
@@ -296,6 +308,11 @@ export function validateTransparentBackgroundContract({ asset, contract, generat
     ...validateTransparentBackgroundProductionRecord(generation, expectedAsset, contract, normalizationRecord),
     ...validateTransparentOutputMetadata(metadata, expectedAsset, contract),
   ];
+  if (isObject(generation)) {
+    const routeRecord = { ...generation, normalization_record: normalizationRecord };
+    errors.push(...validateTransparencyRoute(routeRecord, expectedAsset, options));
+    errors.push(...validateTransparencyPreview(routeRecord, expectedAsset, options));
+  }
   // 原始不透明中间图可以是 JPEG；透明生产的 source、归一化输出和运行时路径必须是 PNG。
   for (const path of [...collectOutputPaths(asset, FINAL_OUTPUT_PATH_FIELDS), ...collectOutputPaths(generation, FINAL_OUTPUT_PATH_FIELDS)]) if (!PNG_FILE_PATTERN.test(path)) errors.push("透明图像生成 source、去背输出、运行时文件和实际输出必须使用 .png 后缀");
   return [...new Set(errors)];

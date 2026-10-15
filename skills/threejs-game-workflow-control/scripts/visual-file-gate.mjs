@@ -11,10 +11,10 @@ export function hasImageGenerationRequired(manifest = {}) {
   return candidates.some((item) => isObject(item) && (item.image_generation_required === true || item.production_method === "image-generation" || item.production_contract?.image_generation_required === true));
 }
 
-/** 判断 V3/V5 是否必须显式开启文件证据门。 */
+/** 判断 V3/V4 是否必须显式开启文件证据门。 */
 export function requiresVisualFileGate(manifest = {}, stage = "V3") {
   const normalizedStage = String(stage).toUpperCase();
-  if (!new Set(["V3", "V5"]).has(normalizedStage)) return false;
+  if (!new Set(["V3", "V4"]).has(normalizedStage)) return false;
   return manifest?.effect_image_reconstruction?.applicability === "effect-image" || hasImageGenerationRequired(manifest);
 }
 

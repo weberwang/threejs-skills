@@ -6,9 +6,8 @@
  */
 import { buildVisualConfirmationAuthorityByRegion, validateVisualDecompositionConfirmations } from "../../threejs-game-workflow-control/scripts/visual-decomposition-confirmation.mjs";
 import { validateLayoutAnnotationConfirmation } from "../../threejs-game-workflow-control/scripts/layout_annotation_confirmation.mjs";
-import { auditProductionContract, resolveProductionContract, validateV5ProductionGate } from "../../threejs-game-workflow-control/scripts/visual-production-contract.mjs";
+import { auditProductionContract, resolveProductionContract, validateV4ProductionGate } from "../../threejs-game-workflow-control/scripts/visual-production-contract.mjs";
 
-const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
 /** 判断普通对象。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -24,15 +23,15 @@ export function validateReusePlanRelation(region, label, errors) {
   if (mode === "reuse-existing" && method !== "reuse") errors.push(`${label} annotation_number=${region?.annotation_number ?? "?"} region_id=${region?.id ?? "?"} implementation_plan.mode=reuse-existing 必须绑定 production_method=reuse`);
 }
 
-/** 校验人工确认的结构字段；真实文件和 SHA 由 check-files 门复算。 */
+/** 校验人工确认的结构字段；实际内容与适配关系由文件门检查，SHA 仅作可选记录。 */
 export function validateManualConfirmationEvidence(confirmation, label, errors) {
   if (confirmation?.confirmation_schema !== "visual-decomposition-confirmation/1.0") errors.push(`${label}.confirmation.confirmation_schema 必须为 visual-decomposition-confirmation/1.0`);
   if (confirmation?.status !== "accepted") errors.push(`${label}.confirmation.status 必须为 accepted`);
   if (confirmation?.confirmation_mode !== "manual" || Object.hasOwn(confirmation ?? {}, "mode")) errors.push(`${label}.confirmation_mode 必须为 manual accepted，禁止 AUTO/旧 mode`);
-  // 结构门先检查完整身份字段，文件门再读取并复算三份不可变证据。
-  for (const field of ["confirmation_id", "confirmation_sha256", "proposal_id", "target_sha256", "scene_id", "state_id", "annotation_number", "region_id", "region_definition_sha256", "production_origin", "production_method", "delivery_kind", "production_label", "component_ids", "state_ids", "asset_requirement_ids", "asset_ids", "user_original_text", "user_message_sha256", "accepted_at", "work_item_id", "candidate_version", "candidate_sha256"]) if (!Object.hasOwn(confirmation ?? {}, field)) errors.push(`${label}.confirmation.${field} 必须绑定人工确认身份`);
-  for (const field of ["proposal_file", "proposal_sha256", "annotation_file", "annotation_sha256", "decision_record_file", "decision_record_sha256", "user_decision_receipt_file", "user_decision_receipt_sha256", "annotation_width", "annotation_height", "annotation_schema", "annotation_layout", "annotation_metadata_sha256", "annotation_identity_sha256"]) if (!Object.hasOwn(confirmation ?? {}, field) || (typeof confirmation[field] === "string" && !nonEmptyString(confirmation[field]))) errors.push(`${label}.confirmation.${field} 必须绑定人工确认文件和 SHA`);
-  for (const field of ["proposal_sha256", "annotation_sha256", "decision_record_sha256"]) if (nonEmptyString(confirmation?.[field]) && !SHA_PATTERN.test(confirmation[field])) errors.push(`${label}.confirmation.${field} 格式无效`);
+  // 必须保留人工决定、scene/state、区域、工作项与候选版本身份；摘要不参与通过判定。
+  for (const field of ["confirmation_id", "proposal_id", "scene_id", "state_id", "annotation_number", "region_id", "production_origin", "production_method", "delivery_kind", "production_label", "component_ids", "state_ids", "asset_requirement_ids", "asset_ids", "user_original_text", "accepted_at", "work_item_id", "candidate_version"]) if (!Object.hasOwn(confirmation ?? {}, field)) errors.push(`${label}.confirmation.${field} 必须绑定人工确认身份`);
+  for (const field of ["proposal_file", "annotation_file", "decision_record_file", "user_decision_receipt_file"]) if (!nonEmptyString(confirmation?.[field])) errors.push(`${label}.confirmation.${field} 必须绑定可读取的人工确认文件`);
+  for (const field of ["annotation_width", "annotation_height", "annotation_schema", "annotation_layout"]) if (!Object.hasOwn(confirmation ?? {}, field) || (typeof confirmation[field] === "string" && !nonEmptyString(confirmation[field]))) errors.push(`${label}.confirmation.${field} 必须绑定实际标注结构`);
 }
 
 /** 校验实施模式及不可变复用快照的结构身份。 */
@@ -51,10 +50,9 @@ export function validateImplementationPlan(plan, region, assetById, label, error
     const asset = assetById.get(region.asset_id ?? (Array.isArray(region.asset_ids) ? region.asset_ids[0] : undefined));
     if (!isObject(source)) { errors.push(`${label}.reuse_snapshot 必须是对象`); return plan.mode; }
     if (source.schema !== "asset-reuse-snapshot/1.0") errors.push(`${label}.reuse_snapshot.schema 必须为 asset-reuse-snapshot/1.0`);
-    for (const field of ["source_file", "source_manifest_file", "source_manifest_sha256", "source_sha256", "compatibility_evidence_file", "compatibility_evidence_sha256", "accepted_at", "source_status"]) if (!Object.hasOwn(source, field)) errors.push(`${label}.reuse_snapshot.${field} 必须是不可变来源字段`);
+    for (const field of ["source_file", "source_manifest_file", "compatibility_evidence_file", "accepted_at", "source_status"]) if (!Object.hasOwn(source, field)) errors.push(`${label}.reuse_snapshot.${field} 必须是可追溯来源字段`);
     if (nonEmptyString(source.source_file) && !/\.(?:png|jpe?g)$/i.test(source.source_file)) errors.push(`${label}.reuse_snapshot.source_file 必须是 PNG/JPG 位图`);
     if (nonEmptyString(source.source_manifest_file) && !source.source_manifest_file.toLowerCase().endsWith(".json")) errors.push(`${label}.reuse_snapshot.source_manifest_file 必须是 JSON 快照文件`);
-    for (const field of ["source_sha256", "source_manifest_sha256", "compatibility_evidence_sha256"]) if (nonEmptyString(source[field]) && !SHA_PATTERN.test(source[field])) errors.push(`${label}.reuse_snapshot.${field} 格式无效`);
     if (nonEmptyString(source.accepted_at) && Number.isNaN(Date.parse(source.accepted_at))) errors.push(`${label}.reuse_snapshot.accepted_at 必须是可解析时间`);
     if (source.source_status !== "accepted") errors.push(`${label}.reuse_snapshot.source_status 必须为 accepted`);
     if (!asset || asset.status !== "accepted") errors.push(`${label} reuse-existing 必须映射 status=accepted 的既有资源`);
@@ -167,15 +165,15 @@ export async function auditProductionContractByGroups(data, options = {}) {
   return [...new Set(errors)];
 }
 
-/** 逐 scene/state 运行 V5 总门，避免不同确认文件互相串联。 */
-export function validateV5ProductionGateByGroups(data, options = {}) {
+/** 逐 scene/state 运行 V4 总门，避免不同确认文件互相串联。 */
+export function validateV4ProductionGateByGroups(data, options = {}) {
   const groups = confirmationRegionGroups(data);
-  if (groups.length === 0) return validateV5ProductionGate(data, options);
+  if (groups.length === 0) return validateV4ProductionGate(data, options);
   const errors = [];
   for (const group of groups) {
     const scoped = scopedConfirmationManifest(data, group.regions);
     const base = confirmationAuthorityBase(data, options.projectRoot, options, group);
-    errors.push(...validateV5ProductionGate(scoped, { ...options, ...base, projectRoot: options.projectRoot, checkFiles: options.checkFiles === true || base.checkFiles === true, authorityByRegion: buildVisualConfirmationAuthorityByRegion(scoped, base) }));
+    errors.push(...validateV4ProductionGate(scoped, { ...options, ...base, projectRoot: options.projectRoot, checkFiles: options.checkFiles === true || base.checkFiles === true, authorityByRegion: buildVisualConfirmationAuthorityByRegion(scoped, base) }));
   }
   return [...new Set(errors)];
 }

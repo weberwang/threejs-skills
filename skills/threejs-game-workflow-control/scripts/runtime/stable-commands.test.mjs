@@ -87,7 +87,7 @@ function withoutOutput(callback) {
 test('run/check/status 提供稳定紧凑入口', () => {
   const fixture = makeRepo();
   const workPath = join(fixture.repo, '.workflow-control', 'work-items', 'WI-1.json');
-  const initialized = invoke(fixture.repo, 'init', ['--repo', fixture.repo, '--work-item-id', 'WI-1', '--project-id', 'P-1', '--module-id', 'core', '--domain', 'code', '--stage-id', 'G0', '--baseline-id', fixture.head, '--baseline-version', '1', '--baseline-hash', fixture.head, '--objective', '建立控制面', '--user-text', '请建立控制面工作项', '--object', 'workflow bootstrap', '--allowed-path', 'src']);
+  const initialized = invoke(fixture.repo, 'init', ['--repo', fixture.repo, '--work-item-id', 'WI-1', '--project-id', 'P-1', '--module-id', 'core', '--domain', 'code', '--stage-id', 'G0', '--baseline-id', fixture.head, '--baseline-version', '1', '--objective', '建立控制面', '--user-text', '请建立控制面工作项', '--object', 'workflow bootstrap', '--allowed-path', 'src']);
   assert.equal(initialized.status, 0, initialized.stderr);
   const outsideCwd = mkdtempSync(join(tmpdir(), 'threejs-stable-cwd-'));
   const advanced = invoke(fixture.repo, 'run', ['--repo', fixture.repo, '--work-item', '.workflow-control/work-items/WI-1.json', '--json'], outsideCwd);
@@ -153,11 +153,11 @@ test('run 在缺少证据、用户决定、A4-A6 或 RETURN 时保持只读停�
 test('场景 V2/V3 在 PASSED 时提示同一 Work Item 的下一视觉阶段', () => {
   const work = makeInjectedWork({ globalState: 'PASSED', pendingApprovalActionLevel: 'A1', visualStage: 'V2' });
   const deps = makeInjectedDeps(work, { withEvidence: true });
-  deps.assertSceneWorkItemComplete = () => { throw new Error('场景 Work Item 只有 V5 运行态联合验收完成后才能 COMPLETE'); };
+  deps.assertSceneWorkItemComplete = () => { throw new Error('场景 Work Item 只有 V4 运行态联合验收完成后才能 COMPLETE'); };
   const result = withoutOutput(() => createStableCommands(deps).run({ 'work-item': 'ignored', repo: '.', evidence: 'evidence.json', json: true }));
   assert.equal(result.status, 'BLOCKED');
   assert.deepEqual(result.changed, []);
-  assert.match(result.blocking[0], /V5/);
+  assert.match(result.blocking[0], /V4/);
   assert.equal(result.next, '在同一 Work Item 中显式迁移到 V3 后再继续');
   assert.equal(deps.transitions.length, 0);
 });

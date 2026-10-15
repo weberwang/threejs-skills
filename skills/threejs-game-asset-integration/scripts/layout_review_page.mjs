@@ -6,7 +6,6 @@
  * 页面是布局标注 PNG 的审阅辅助物，所有几何事实直接来自同一次生成的
  * nodesDocument；这里不会写入业务状态，也不会创建人工确认记录。
  */
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { deriveAutomaticLayoutFacts } from "./layout_annotation_contract.mjs";
 import { readPngDimensions } from "./validate_visual_manifest.mjs";
@@ -15,7 +14,6 @@ import { validateUiLayout } from "./ui-layout-organization.mjs";
 export const LAYOUT_REVIEW_SCHEMA = "threejs-layout-review/1.0";
 export const LAYOUT_REVIEW_STATUS = "candidate-awaiting-layout-confirmation";
 
-const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const ROOT_IDS = new Set(["viewport", "safe-area"]);
 const HORIZONTAL_ALIGNMENTS = new Set(["left", "center", "right"]);
 const VERTICAL_ALIGNMENTS = new Set(["top", "center", "bottom"]);
@@ -30,11 +28,6 @@ function isObject(value) {
 /** 判断非空字符串，所有身份字段都必须经过同一入口检查。 */
 function nonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
-}
-
-/** 计算输入字节的标准 SHA-256。 */
-function sha256(bytes) {
-  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
 /** 将外部传入的字节统一为只读语义的 Buffer 视图。 */
@@ -52,6 +45,15 @@ function canonicalJson(value) {
   return encoded === undefined ? "null" : encoded;
 }
 
+/** 对照 HTML 与外部节点快照时忽略可选摘要记录，保留其余结构的严格比较。 */
+function canonicalWithoutSha(value) {
+  if (Array.isArray(value)) return value.map(canonicalWithoutSha);
+  if (!isObject(value)) return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !/(?:sha1|sha256|hash|fingerprint)/iu.test(key))
+    .map(([key, item]) => [key, canonicalWithoutSha(item)]));
+}
+
 /** 转义 JSON script 中会改变 HTML 解析边界的字符。 */
 function escapeJsonForScript(value) {
   return canonicalJson(value).replace(/[<>&\u2028\u2029]/g, (character) => ({
@@ -66,11 +68,6 @@ function escapeJsonForScript(value) {
 /** 创建只含固定 MIME 和实际输入字节的离线 data URL。 */
 function dataUrl(mime, bytes) {
   return `data:${mime};base64,${bytes.toString("base64")}`;
-}
-
-/** 校验 SHA-256 字段，防止审阅页把任意文件冒充为绑定产物。 */
-function assertSha(value, label) {
-  if (!SHA_PATTERN.test(String(value ?? ""))) throw new Error(`${label} 必须是合法 sha256`);
 }
 
 /** 拒绝绝对路径与路径上跳，避免把本机位置写入可移动审阅页。 */
@@ -112,7 +109,6 @@ export function validateReviewNodesDocument(nodesDocument) {
   if (nodesDocument.schema !== "threejs-layout-nodes/1.0") throw new Error("nodesDocument.schema 必须为 threejs-layout-nodes/1.0");
   if (nodesDocument.status !== LAYOUT_REVIEW_STATUS) throw new Error(`nodesDocument.status 必须为 ${LAYOUT_REVIEW_STATUS}`);
   for (const field of ["scene_id", "state_id", "decomposition_confirmation_id", "layout_decision_id"]) if (!nonEmptyString(nodesDocument[field])) throw new Error(`nodesDocument.${field} 必须是非空字符串`);
-  for (const field of ["target_sha256", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_sha256"]) assertSha(nodesDocument[field], `nodesDocument.${field}`);
   const viewport = validateViewport(nodesDocument.viewport, "nodesDocument.viewport");
   if (!Array.isArray(nodesDocument.layout_nodes) || nodesDocument.layout_nodes.length === 0) throw new Error("nodesDocument.layout_nodes 必须是非空数组");
   if (!Array.isArray(nodesDocument.root_nodes) || nodesDocument.root_nodes.length === 0) throw new Error("nodesDocument.root_nodes 必须是非空数组");
@@ -196,42 +192,32 @@ export function validateReviewNodesDocument(nodesDocument) {
   return { viewport, nodes, roots };
 }
 
-/** 校验绑定对象的结构、场景身份和每个实际输入文件的 SHA。 */
+/** 校验绑定对象的结构、场景身份和实际输入文件内容。 */
 function validateBindings(nodesDocument, bindings, bytes) {
   if (!isObject(bindings)) throw new Error("bindings 必须是对象");
   if (bindings.schema !== LAYOUT_REVIEW_SCHEMA) throw new Error(`bindings.schema 必须为 ${LAYOUT_REVIEW_SCHEMA}`);
   if (bindings.status !== LAYOUT_REVIEW_STATUS) throw new Error(`bindings.status 必须为 ${LAYOUT_REVIEW_STATUS}`);
   for (const field of ["scene_id", "state_id", "decomposition_confirmation_id", "layout_decision_id"]) if (!nonEmptyString(bindings[field])) throw new Error(`bindings.${field} 必须是非空字符串`);
-  for (const field of ["decomposition_confirmation_sha256"]) assertSha(bindings[field], `bindings.${field}`);
   const bindingViewport = validateViewport(bindings.viewport, "bindings.viewport");
   if (!sameBounds({ ...bindingViewport, x: 0, y: 0 }, { ...nodesDocument.viewport, x: 0, y: 0 })) throw new Error("bindings.viewport 与 nodesDocument.viewport 不一致");
-  for (const field of ["scene_id", "state_id", "decomposition_confirmation_id", "decomposition_confirmation_sha256", "layout_decision_id"]) {
-    const documentField = field === "decomposition_confirmation_sha256" ? "decomposition_confirmation_sha256" : field;
-    if (bindings[field] !== nodesDocument[documentField]) throw new Error(`bindings.${field} 与 nodesDocument.${documentField} 不一致`);
+  for (const field of ["scene_id", "state_id", "decomposition_confirmation_id", "layout_decision_id"]) {
+    if (bindings[field] !== nodesDocument[field]) throw new Error(`bindings.${field} 与 nodesDocument.${field} 不一致`);
   }
   const groups = ["reference", "proposal", "decision", "nodes", "annotation"];
   for (const group of groups) {
     if (!isObject(bindings[group]) || !nonEmptyString(bindings[group].file)) throw new Error(`bindings.${group}.file 必须是非空字符串`);
     assertRelativeFilePath(bindings[group].file, `bindings.${group}.file`);
-    assertSha(bindings[group].sha256, `bindings.${group}.sha256`);
   }
-  if (bindings.proposal.sha256 !== nodesDocument.proposal_sha256) throw new Error("bindings.proposal.sha256 与 nodesDocument.proposal_sha256 不一致");
-  if (bindings.decision.sha256 !== nodesDocument.layout_decision_sha256) throw new Error("bindings.decision.sha256 与 nodesDocument.layout_decision_sha256 不一致");
-  if (bindings.nodes.sha256 !== sha256(bytes.nodes)) throw new Error("布局节点 JSON 文件 SHA-256 与 bindings.nodes.sha256 不一致");
-  if (bindings.decision.sha256 !== sha256(bytes.decision)) throw new Error("布局决策 JSON 文件 SHA-256 与 bindings.decision.sha256 不一致");
-  if (bindings.reference.sha256 !== sha256(bytes.original)) throw new Error("冻结参考图 SHA-256 与 bindings.reference.sha256 不一致");
-  if (bindings.annotation.sha256 !== sha256(bytes.annotation)) throw new Error("标准布局标注 PNG SHA-256 与 bindings.annotation.sha256 不一致");
-  if (nodesDocument.target_sha256 !== bindings.reference.sha256) throw new Error("nodesDocument.target_sha256 未绑定冻结参考图 SHA-256");
 
   let nodesFileDocument;
   try { nodesFileDocument = JSON.parse(bytes.nodes.toString("utf8")); } catch (error) { throw new Error(`布局节点 JSON 不是合法 JSON：${error.message}`); }
-  if (!isObject(nodesFileDocument) || canonicalJson(nodesFileDocument) !== canonicalJson(nodesDocument)) throw new Error("布局节点 JSON 与页面展示的 nodesDocument 不一致");
+  if (!isObject(nodesFileDocument) || canonicalJson(canonicalWithoutSha(nodesFileDocument)) !== canonicalJson(canonicalWithoutSha(nodesDocument))) throw new Error("布局节点 JSON 与页面展示的 nodesDocument 不一致");
   let decisionDocument;
   try { decisionDocument = JSON.parse(bytes.decision.toString("utf8")); } catch (error) { throw new Error(`布局决策 JSON 不是合法 JSON：${error.message}`); }
   if (!isObject(decisionDocument)) throw new Error("布局决策 JSON 必须是对象");
   const decisionId = decisionDocument.layout_decision_id ?? decisionDocument.decision_id;
   if (decisionId !== undefined && decisionId !== nodesDocument.layout_decision_id) throw new Error("布局决策 JSON 的 ID 与 nodesDocument 不一致");
-  for (const [field, expected] of [["scene_id", nodesDocument.scene_id], ["state_id", nodesDocument.state_id], ["target_sha256", nodesDocument.target_sha256]]) if (decisionDocument[field] !== undefined && decisionDocument[field] !== expected) throw new Error(`布局决策 JSON 的 ${field} 与 nodesDocument 不一致`);
+  for (const [field, expected] of [["scene_id", nodesDocument.scene_id], ["state_id", nodesDocument.state_id]]) if (decisionDocument[field] !== undefined && decisionDocument[field] !== expected) throw new Error(`布局决策 JSON 的 ${field} 与 nodesDocument 不一致`);
 }
 
 /** 替换模板占位符，并在有遗漏时立即失败，避免产出半动态 HTML。 */

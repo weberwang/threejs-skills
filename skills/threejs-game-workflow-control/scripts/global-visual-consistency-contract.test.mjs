@@ -85,18 +85,20 @@ test("旧基线、提示词未实际发送或允许风格迁移时失败", () =>
   assert.ok(errors.some((message) => message.includes("style_drift_policy")));
 });
 
-test("generated 记录缺少实际发送标记或目标 SHA 时失败", () => {
+test("generated 记录缺少实际发送标记时失败，但缺失或陈旧 SHA 不阻断", () => {
   const baseline = createBaseline();
   const promptMissing = validateGlobalVisualGenerationRecord(createRecord(baseline, { prompt_sent: undefined }), {
     visual_baseline: baseline,
     target_sha256: sha("c"),
   });
   assert.ok(promptMissing.some((message) => message.includes("未证明完整提示词实际发送")));
-  const targetMissing = validateGlobalVisualGenerationRecord(createRecord(baseline, { target_sha256: undefined }), {
-    visual_baseline: baseline,
-    target_sha256: sha("c"),
+  const noSha = createRecord(baseline, {
+    target_sha256: undefined,
+    output_sha256: "not-a-digest",
+    style_reference_inputs: baseline.anchor_evidence.map(({ path }) => ({ path })),
+    consistency_evidence: { path: "evidence/visual/consistency.json", sha256: "stale" },
   });
-  assert.ok(targetMissing.some((message) => message.includes("target_sha256 未绑定当前冻结目标")));
+  assert.deepEqual(validateGlobalVisualGenerationRecord(noSha, { visual_baseline: baseline }), []);
 });
 
 test("provided 效果图不得伪造 generated 记录", () => {
@@ -116,11 +118,11 @@ test("全局一致性提示词组合和文件证据路径保持可复核", () =>
   const evidencePaths = collectGlobalVisualConsistencyEvidencePaths(record);
   assert.equal(evidencePaths.length, 3);
   assert.deepEqual(
-    evidencePaths.map(({ path, sha256 }) => ({ path, sha256 })),
+    evidencePaths.map(({ path }) => ({ path })),
     [
-      { path: baseline.anchor_evidence[0].path, sha256: sha("a") },
-      { path: baseline.anchor_evidence[1].path, sha256: sha("b") },
-      { path: "evidence/visual/consistency.json", sha256: sha("e") },
+      { path: baseline.anchor_evidence[0].path },
+      { path: baseline.anchor_evidence[1].path },
+      { path: "evidence/visual/consistency.json" },
     ],
   );
 });

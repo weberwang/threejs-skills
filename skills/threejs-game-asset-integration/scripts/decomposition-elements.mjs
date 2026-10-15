@@ -7,6 +7,7 @@
 
 import { normalizeSemanticGrouping, semanticGroupingOf, validateSemanticGrouping } from "./semantic-grouping-contract.mjs";
 import { normalizeUiLayout, validateUiInteractionTree, validateUiLayout } from "./ui-layout-organization.mjs";
+import { equalNineSliceContracts, isNineSliceStretch, isNineSliceStretchTargetAllowed, requiresNineSliceDecision, validateNineSliceContract, validateNineSliceTargetBounds } from "../../threejs-game-ui-layout/scripts/nine-slice-contract.mjs";
 
 const CONTAINER_ROLES = new Set(["container", "parent", "group", "layout-container", "empty-container"]);
 
@@ -34,7 +35,20 @@ function normalizeElement(element, region, index = 0) {
   const bounds = field(element, "bounds", "target_bounds", "targetBounds");
   const semanticGrouping = field(element, "semantic_grouping");
   const uiLayout = field(element, "ui_layout");
-  return { element_id: field(element, "element_id", "elementId") ?? `${region.id}-element-${index + 1}`, element_type: elementType, role: field(element, "role", "layout_role", "layoutRole", "node_type", "nodeType") ?? (nonEmptyString(declaredType) ? declaredType : elementType), bounds: validBounds(bounds) ? copyBounds(bounds) : bounds, scene_id: region.scene_id, state_id: region.state_id, region_id: region.id, component_id: componentId, placement_id: placementId, ...(nonEmptyString(parentElementId(element)) ? { parent_element_id: parentElementId(element) } : {}), ...(semanticGrouping !== undefined ? { semantic_grouping: normalizeSemanticGrouping(semanticGrouping) } : {}), ...(uiLayout !== undefined ? { ui_layout: normalizeUiLayout(uiLayout) } : {}), empty_container: field(element, "empty_container", "emptyContainer") === true };
+  const role = field(element, "role", "layout_role", "layoutRole", "node_type", "nodeType") ?? (nonEmptyString(declaredType) ? declaredType : elementType);
+  const routeAnalysis = field(region, "visual_route_analysis", "visualRouteAnalysis");
+  const routeElementType = field(routeAnalysis, "element_type", "elementType");
+  // 只按明确的生产归属与职责判定必评估对象，不从中文名称或纹理猜测。
+  const routeDecisionRequired = requiresNineSliceDecision({ owner_type: region?.owner_type ?? region?.ownerType, element_type: elementType, role, layer: region?.layer, visual_route_element_type: routeElementType });
+  const suppliedDecisionRequired = field(element, "nine_slice_decision_required", "nineSliceDecisionRequired");
+  if (suppliedDecisionRequired !== undefined && suppliedDecisionRequired !== routeDecisionRequired) {
+    throw new TypeError(`decomposition_elements.${field(element, "element_id", "elementId") ?? index}.nine_slice_decision_required 是由拆解角色派生的事实，不能手工覆盖`);
+  }
+  const nineSlice = field(element, "nine_slice", "nineSlice");
+  const normalizedNineSlice = nineSlice === undefined ? undefined : validateNineSliceContract(nineSlice, `decomposition_elements.${field(element, "element_id", "elementId") ?? index}.nine_slice`);
+  if (isNineSliceStretch(normalizedNineSlice) && elementType !== "component") throw new TypeError("九宫格 stretch 只能声明在叶子 component 图片皮肤上，不能用于结构容器");
+  if (routeDecisionRequired && normalizedNineSlice === undefined) throw new TypeError(`decomposition_elements.${field(element, "element_id", "elementId") ?? index} 属于固定生产 UI 皮肤，V2 必须确认 nine_slice 或 not-applicable`);
+  return { element_id: field(element, "element_id", "elementId") ?? `${region.id}-element-${index + 1}`, element_type: elementType, role, bounds: validBounds(bounds) ? copyBounds(bounds) : bounds, scene_id: region.scene_id, state_id: region.state_id, region_id: region.id, component_id: componentId, placement_id: placementId, ...(nonEmptyString(parentElementId(element)) ? { parent_element_id: parentElementId(element) } : {}), ...(semanticGrouping !== undefined ? { semantic_grouping: normalizeSemanticGrouping(semanticGrouping) } : {}), ...(uiLayout !== undefined ? { ui_layout: normalizeUiLayout(uiLayout) } : {}), ...(normalizedNineSlice !== undefined ? { nine_slice: normalizedNineSlice } : {}), ...(routeDecisionRequired ? { nine_slice_decision_required: true } : {}), ...(typeof region?.owner_type === "string" ? { owner_type: region.owner_type } : typeof region?.ownerType === "string" ? { owner_type: region.ownerType } : {}), ...(typeof region?.layer === "string" ? { region_layer: region.layer } : {}), ...(nonEmptyString(routeElementType) ? { visual_route_element_type: routeElementType } : {}), empty_container: field(element, "empty_container", "emptyContainer") === true };
 }
 
 /** 从当前区域生成稳定元素；显式 decomposition_elements 优先，支持人工声明空容器。 */
@@ -44,14 +58,14 @@ function buildRegionElements(region) {
   const components = componentList(region); const elements = [];
   for (const [index, component] of components.entries()) {
     const componentId = field(component, "component_id", "componentId") ?? `${region.id}-component-${index + 1}`; const role = field(component, "role", "layout_role", "layoutRole", "node_type", "nodeType") ?? "component"; const placements = Array.isArray(component?.placements) ? component.placements : []; const container = explicitlyContainer(component); const containerId = `container:${componentId}`;
-    if (container) elements.push(normalizeElement({ element_id: containerId, element_type: "container", role, bounds: field(component, "bounds", "target_bounds", "targetBounds") ?? region.bounds, component_id: componentId, placement_id: `${componentId}-container`, parent_element_id: parentElementId(component), semantic_grouping: semanticGroupingOf(component), ui_layout: field(component, "ui_layout"), empty_container: placements.length === 0 }, region, index));
+    if (container) elements.push(normalizeElement({ element_id: containerId, element_type: "container", role, bounds: field(component, "bounds", "target_bounds", "targetBounds") ?? region.bounds, component_id: componentId, placement_id: `${componentId}-container`, parent_element_id: parentElementId(component), semantic_grouping: semanticGroupingOf(component), ui_layout: field(component, "ui_layout"), nine_slice: field(component, "nine_slice", "nineSlice"), nine_slice_decision_required: field(component, "nine_slice_decision_required", "nineSliceDecisionRequired"), empty_container: placements.length === 0 }, region, index));
     // 显式容器没有 placements 时只保留容器本身；只有普通叶子才需要合成默认子元素。
     const sourcePlacements = placements.length > 0 || container ? placements : [null];
     for (const [placementIndex, placement] of sourcePlacements.entries()) {
       const placementId = field(placement, "placement_id", "placementId") ?? `${componentId}-placement-${placementIndex + 1}`; const elementId = field(placement, "element_id", "elementId") ?? field(placement, "layout_node_id", "layoutNodeId") ?? `${componentId}:${placementId}`; const bounds = field(placement, "bounds", "target_bounds", "targetBounds") ?? field(component, "bounds", "target_bounds", "targetBounds") ?? region.bounds;
       // 没有 placement 的单实例直接继承 component 自身的显式声明；多实例不按共享资源身份补归属。
       const source = placement ?? component;
-      elements.push(normalizeElement({ element_id: elementId, element_type: "component", role: field(component, "role", "element_type", "elementType") ?? "component", bounds, component_id: componentId, placement_id: placementId, semantic_grouping: semanticGroupingOf(source), ui_layout: field(source, "ui_layout"), parent_element_id: parentElementId(source) }, region, placementIndex));
+      elements.push(normalizeElement({ element_id: elementId, element_type: "component", role: field(placement, "role", "element_type", "elementType") ?? field(component, "role", "element_type", "elementType") ?? "component", bounds, component_id: componentId, placement_id: placementId, semantic_grouping: semanticGroupingOf(source), ui_layout: field(source, "ui_layout"), nine_slice: field(source, "nine_slice", "nineSlice") ?? field(component, "nine_slice", "nineSlice"), nine_slice_decision_required: field(source, "nine_slice_decision_required", "nineSliceDecisionRequired") ?? field(component, "nine_slice_decision_required", "nineSliceDecisionRequired"), parent_element_id: parentElementId(source) }, region, placementIndex));
     }
   }
   if (elements.length === 0) elements.push(normalizeElement({ element_id: region.id, element_type: "component", role: "component", bounds: region.bounds, component_id: `${region.id}-component`, placement_id: `${region.id}-placement` }, region));
@@ -75,6 +89,35 @@ export function validateDecompositionElements(elements, regions = [], canvas = n
     if (!validBounds(element.bounds)) errors.push(`${itemLabel}.bounds 必须是有效正尺寸矩形`);
     if (element.element_type === "container" && typeof element.empty_container !== "boolean") errors.push(`${itemLabel}.empty_container 必须是布尔值`);
     if (element.element_type === "component" && element.empty_container === true) errors.push(`${itemLabel} 普通 component 不得标记 empty_container`);
+    const sourceRegion = regionById.get(element.region_id);
+    const regionOwnerType = field(sourceRegion, "owner_type", "ownerType");
+    const regionLayer = field(sourceRegion, "layer");
+    const regionRouteType = field(field(sourceRegion, "visual_route_analysis", "visualRouteAnalysis"), "element_type", "elementType");
+    if (regionOwnerType !== undefined && element.owner_type !== undefined && element.owner_type !== regionOwnerType) errors.push(`${itemLabel}.owner_type 不得覆盖所属区域的权威归属`);
+    if (regionLayer !== undefined && element.region_layer !== undefined && element.region_layer !== regionLayer) errors.push(`${itemLabel}.region_layer 不得覆盖所属区域的权威 layer`);
+    if (regionRouteType !== undefined && element.visual_route_element_type !== undefined && element.visual_route_element_type !== regionRouteType) errors.push(`${itemLabel}.visual_route_element_type 不得覆盖所属区域的权威视觉路线`);
+    // V2 原始区域是权威来源；布局重算缺少 region 时才依赖元素已冻结的派生上下文。
+    const roleDecisionRequired = requiresNineSliceDecision({ owner_type: regionOwnerType ?? element.owner_type, element_type: element.element_type, role: element.role, region_layer: regionLayer ?? element.region_layer, visual_route_element_type: regionRouteType || element.visual_route_element_type });
+    if (element.nine_slice_decision_required !== undefined && element.nine_slice_decision_required !== true) errors.push(`${itemLabel}.nine_slice_decision_required 是派生必评估标记，不接受 false 覆盖`);
+    if (roleDecisionRequired && element.nine_slice_decision_required !== true) errors.push(`${itemLabel}.nine_slice_decision_required 缺少 V2 派生必评估标记`);
+    if ((roleDecisionRequired || element.nine_slice_decision_required === true) && element.nine_slice === undefined) errors.push(`${itemLabel} 固定生产 UI 皮肤必须冻结 nine_slice 或 not-applicable`);
+    if (element.nine_slice !== undefined) {
+      try {
+        const nineSlice = validateNineSliceTargetBounds(element.nine_slice, element.bounds, `${itemLabel}.bounds`);
+        if (isNineSliceStretch(nineSlice)) {
+          const allowedTarget = isNineSliceStretchTargetAllowed({
+            element_type: element.element_type,
+            is_container: explicitlyContainer(element) || element.empty_container === true,
+            role: element.role,
+            region_layer: regionLayer ?? element.region_layer,
+            visual_route_element_type: regionRouteType || element.visual_route_element_type,
+          });
+          if (!allowedTarget) errors.push(`${itemLabel} 九宫格 stretch 只能用于非背景的叶子图片皮肤，不能用于结构容器`);
+        }
+      } catch (error) {
+        errors.push(`${itemLabel}.nine_slice 无效：${error.message}`);
+      }
+    }
     validateUiLayout(element.ui_layout, { rootParent: ["viewport", "safe-area"].includes(element.parent_element_id), container: element.element_type === "container", emptyContainer: element.element_type === "container" && element.empty_container === true }, errors, `${itemLabel}.ui_layout`);
     if (ids.has(element.element_id)) errors.push(`${itemLabel}.element_id 重复：${element.element_id}`); else { ids.add(element.element_id); elementById.set(element.element_id, element); }
     const region = regionById.get(element.region_id); if (!region) errors.push(`${itemLabel}.region_id 未绑定当前 scene/state 区域`); else { regionIds.add(element.region_id); if (element.scene_id !== region.scene_id || element.state_id !== region.state_id) errors.push(`${itemLabel} scene/state 未绑定所属区域`); if (validBounds(region.bounds) && validBounds(element.bounds) && !containsBounds(region.bounds, element.bounds)) errors.push(`${itemLabel}.bounds 超出所属区域`); }
@@ -88,6 +131,18 @@ export function validateDecompositionElements(elements, regions = [], canvas = n
     // 背景的叶子职责与是否已有子元素无关，空容器同样不得冻结进入 V2。
     if (backgrounds.has(element.element_id) && (explicitlyContainer(element) || element.empty_container === true)) errors.push(`${label} 背景 ${element.element_id} 不能声明为容器（含空容器）`);
     if (backgrounds.has(element.element_id) && element.parent_element_id !== "viewport") errors.push(`${label} 背景 ${element.element_id} 必须独立归属 viewport`);
+    if (isNineSliceStretch(element.nine_slice) && elements.some((child) => child?.parent_element_id === element.element_id)) {
+      errors.push(`${label} 九宫格 stretch 元素 ${element.element_id} 必须是叶子图片皮肤，不能承载子节点`);
+    }
+  }
+  // 同一原子 component 的 placements 共用一张纹理，拆解阶段必须冻结同一份九宫格决策。
+  const componentNineSlice = new Map();
+  for (const element of elements) {
+    if (!isObject(element) || !nonEmptyString(element.component_id)) continue;
+    const prior = componentNineSlice.get(element.component_id);
+    if (prior && !equalNineSliceContracts(prior.nineSlice, element.nine_slice)) {
+      errors.push(`${label} component ${element.component_id} 的所有 placements 必须保留相同 nine_slice 决策`);
+    } else if (!prior) componentNineSlice.set(element.component_id, { nineSlice: element.nine_slice });
   }
   validateSemanticGrouping(elements, { canvas }, errors, label);
   validateUiInteractionTree(elements, errors, label);

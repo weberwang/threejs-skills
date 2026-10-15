@@ -17,33 +17,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "approvalId",
-          "promptContextId",
-          "pendingState",
-          "pendingContext",
-          "workItemId",
-          "userOriginalText",
-          "approvedAt",
-          "explicitObject",
-          "stageId",
-          "moduleIds",
-          "baselineVersion",
-          "baselineHash",
-          "actionType",
-          "actionLevel",
-          "impactSummary",
-          "fileScope",
-          "services",
-          "allowServiceStart",
-          "allowDelete",
-          "externalWrite",
-          "destructive",
-          "physicalDevice",
-          "release",
-          "gate",
-          "invalidatedWhen"
-        ],
+        "required": ["approvalId","promptContextId","pendingState","pendingContext","workItemId","userOriginalText","approvedAt","explicitObject","stageId","moduleIds","baselineVersion","actionType","actionLevel","impactSummary","fileScope","services","allowServiceStart","allowDelete","externalWrite","destructive","physicalDevice","release","gate","invalidatedWhen"],
         "properties": {
           "approvalId": {
             "type": "string",
@@ -104,10 +78,7 @@
             "type": "string",
             "minLength": 1
           },
-          "baselineHash": {
-            "type": "string",
-          "pattern": "^(?:sha256:[a-f0-9]{64}|[a-f0-9]{40}(?:[a-f0-9]{24})?)$"
-          },
+          "baselineHash": {"description":"仅作为可选摘要记录，不参与验收或放行。"},
           "actionType": {
             "enum": [
               "threejs-integration",

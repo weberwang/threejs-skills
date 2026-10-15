@@ -104,7 +104,7 @@ test("RETURN 由控制面推导恢复状态并实际清除旧审批与下游引�
 });
 
 test("RETURN 到 IMPLEMENTING 保留 V2 视觉证据，不扩大失效范围", () => {
-  const record = createReturnRecord({ classification: "hard-gate-would-be-bypassed", reason: "实施硬门需要重新验证", affectedScope: ["stage:V5"] }, returnWork({ visualStage: "V5" }));
+  const record = createReturnRecord({ classification: "hard-gate-would-be-bypassed", reason: "实施硬门需要重新验证", affectedScope: ["stage:V4"] }, returnWork({ visualStage: "V4" }));
   assert.equal(record.returnState, "IMPLEMENTING");
   assert.equal(record.invalidatedArtifacts.includes("visualStageEvidenceRefs"), false);
   assert.equal(record.invalidatedArtifacts.includes("visualHumanApproval"), false);
@@ -134,9 +134,11 @@ test("RETURN 明确拒绝旧记录和自由指定 returnState", () => {
   assert.notEqual(validateReturnRecord({ classification: "hard-gate-would-be-bypassed", reason: "旧格式", affectedScope: ["stage:V2"], fromState: "IMPLEMENTING", toState: "RETURN", invalidatesDownstream: true, recordedAt: "2026-08-25T00:00:00.000Z", resolvedAt: null }), null);
 });
 
-test("纯合同拒绝不同路径但相同 SHA，并接受不同尺寸的合法两次 attempt", () => {
-  const sameSha = cropFixture([validAttemptOne, { ...validAttemptTwo, sha256: validAttemptOne.sha256, file: "art/attempt-two-copy.png" }]);
-  assert( validateImageNormalizationContract(sameSha).some((error) => error.includes("不同的 SHA-256")));
+test("纯合同允许不同路径的相同 SHA，并拒绝相同路径的 attempt", () => {
+  const sameSha = cropFixture([validAttemptOne, { ...validAttemptTwo, sha256: validAttemptOne.sha256 }]);
+  assert.deepEqual(validateImageNormalizationContract(sameSha), []);
+  const samePath = cropFixture([validAttemptOne, { ...validAttemptTwo, file: validAttemptOne.file }]);
+  assert(validateImageNormalizationContract(samePath).some((error) => error.includes("必须是不同的实际文件")));
   const differentDimensions = cropFixture([validAttemptOne, validAttemptTwo]);
   assert.deepEqual(validateImageNormalizationContract(differentDimensions), []);
 });

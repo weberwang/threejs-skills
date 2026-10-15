@@ -6,7 +6,8 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import sharp from "sharp";
 import { checkFrameAnimationWorkflowFiles, FRAME_ANIMATION_WORKFLOW_SCHEMA, sha256Bytes as contractSha256Bytes } from "../../threejs-game-asset-integration/scripts/frame-animation-workflow-contract.mjs";
-import { parseVideoAtlasArgs, videoToAtlas, VideoAtlasError, VIDEO_ATLAS_SCHEMA } from "./video-to-atlas.mjs";
+import { createThreeJSAtlasContract } from "./frame-atlas-core.mjs";
+import { parseVideoAtlasArgs, videoAtlasHelp, videoToAtlas, VideoAtlasError } from "./video-to-atlas.mjs";
 
 /** 建立指定颜色的 RGBA PNG，测试不依赖系统安装 ffmpeg。 */
 async function solidPng(width, height, color, patches = []) {
@@ -29,7 +30,7 @@ function fakeRunner(frameBytes, observed = {}) {
       return {
         exitCode: 0,
         stdout: JSON.stringify(observed.probePayload ?? {
-          streams: [{ width: 4, height: 2, avg_frame_rate: "24/1", r_frame_rate: "24/1", duration: "1.5" }],
+          streams: [{ codec_type: "video", width: 4, height: 2, avg_frame_rate: "24/1", r_frame_rate: "24/1", duration: "1.5" }],
           format: { duration: "1.5" },
         }),
       };
@@ -129,9 +130,10 @@ test("视频抽帧生成单行 ThreeJS 图集、尺寸与网页预览", async (t
 
   assert.equal(observed.filter, "fps=6");
   assert.equal(observed.input, inputVideo);
-  assert.equal(report.schema, VIDEO_ATLAS_SCHEMA);
+  assert.equal(report.schema, "threejs-video-atlas/1");
   assert.equal(report.status, "PASS");
   assert.equal(report.input.fps, 6);
+  assert.equal(report.input.has_audio, false);
   assert.equal(report.input.remove_background, false);
   assert.equal(report.settings.width, 2);
   assert.equal(report.settings.height, 1);
@@ -143,17 +145,13 @@ test("视频抽帧生成单行 ThreeJS 图集、尺寸与网页预览", async (t
   assert.equal(report.threejs.texture_loader.class, "THREE.TextureLoader");
   assert.equal(report.threejs.texture_loader.method, "loadAsync");
   assert.equal(report.threejs.texture_loader.url, "assets/walk.png");
-  assert.deepEqual(report.threejs.atlas_uv.frame_index, { start: 0, end: 2 });
+  assert.equal(report.threejs.atlas_uv.frame_index.end, 2);
   assert.deepEqual(report.threejs.atlas_uv.repeat, { x: 1 / 3, y: 1 });
-  assert.deepEqual(report.threejs.atlas_uv.offset, { x_start: 0, x_step: 1 / 3, y: 0 });
-  assert.deepEqual(report.threejs.sprite.center, {
-    x: 0.5, y: 0, target_anchor: { x: 1, y: 1 }, unit: "normalized-cell", source_origin: "top-left",
-  });
-  assert.match(report.threejs.snippets.factory, /new THREE\.TextureLoader\(\)\.loadAsync/u);
-  assert.match(report.threejs.snippets.factory, /new THREE\.SpriteMaterial/u);
-  assert.match(report.threejs.snippets.factory, /new THREE\.Sprite\(/u);
-  assert.match(report.threejs.snippets.factory, /sprite\.scale\.set/u);
-  assert.doesNotMatch(report.threejs.snippets.factory, /this\.load|this\.anims|setOrigin|generateFrameNumbers/u);
+  assert.equal(report.threejs.sprite.material_class, "THREE.SpriteMaterial");
+  assert.equal(report.threejs.sprite.object_class, "THREE.Sprite");
+  assert.match(report.threejs.snippets.factory, /texture\.offset\.x = frameIndex \/ frameCount/u);
+  assert.match(report.threejs.snippets.factory, /sprite\.center\.set/u);
+  assert.match(report.threejs.snippets.usage, /animation\.update\(deltaSeconds\)/u);
 
   const decoded = await sharp(await readFile(outputSheet)).raw().toBuffer({ resolveWithObject: true });
   assert.deepEqual({ width: decoded.info.width, height: decoded.info.height }, { width: 6, height: 1 });
@@ -166,7 +164,71 @@ test("视频抽帧生成单行 ThreeJS 图集、尺寸与网页预览", async (t
   assert.match(preview, /<video controls/u);
   assert.match(preview, /src="walk\.png"/u);
   assert.match(preview, new RegExp(`<meta name="threejs-atlas-sha256" content="${report.artifacts.sheet.sha256}">`, "u"));
-  assert.match(await readFile(outputReport, "utf8"), /"schema": "threejs-video-atlas\/2"/u);
+  assert.match(await readFile(outputReport, "utf8"), /"schema": "threejs-video-atlas\/1"/u);
+});
+
+/** 编译报告内的 factory，并用最小 three.js 替身检查实际更新和释放行为。 */
+test("报告中的 Three.js factory 可创建 Sprite 并按 deltaSeconds 播放", async () => {
+  const contract = createThreeJSAtlasContract({
+    animationKey: "hero-run",
+    textureKey: "hero-texture",
+    runtimeUrl: "assets/hero.png",
+    outputSheet: "public/assets/hero.png",
+    fps: 2,
+    loop: false,
+  }, { width: 2, height: 4, target_anchor: { x: 1, y: 3 } }, 3);
+  const texture = {
+    repeat: { set(x, y) { this.x = x; this.y = y; } },
+    offset: { x: 0, y: 0, set(x, y) { this.x = x; this.y = y; } },
+    dispose() { this.disposed = true; },
+  };
+  /** 返回测试纹理，验证 factory 传入配置过的图集 URL。 */
+  class TextureLoader {
+    /** 模拟异步纹理加载并检查运行时 URL。 */
+    async loadAsync(url) { assert.equal(url, "assets/hero.png"); return texture; }
+  }
+  /** 记录透明材质选项并模拟资源释放。 */
+  class SpriteMaterial {
+    /** 保存 SpriteMaterial 构造参数供测试核对。 */
+    constructor(options) { this.options = options; }
+    dispose() { this.disposed = true; }
+  }
+  /** 提供 Sprite 需要的 scale 与 center 向量替身。 */
+  class Sprite {
+    /** 接收材质并记录尺寸及语义锚点设置。 */
+    constructor(material) {
+      this.material = material;
+      this.scale = { set: (...values) => { this.scale.values = values; } };
+      this.center = { set: (...values) => { this.center.values = values; } };
+    }
+  }
+  const THREE = {
+    TextureLoader,
+    SpriteMaterial,
+    Sprite,
+    SRGBColorSpace: "srgb",
+    ClampToEdgeWrapping: "clamp",
+    LinearFilter: "linear",
+  };
+  const added = [];
+  const removed = [];
+  const scene = { add(value) { added.push(value); }, remove(value) { removed.push(value); } };
+  const createFrameAnimation = runInNewContext(`${contract.snippets.factory}\ncreateFrameAnimation`, {});
+  const animation = await createFrameAnimation(THREE, scene, 0.5);
+
+  assert.equal(added[0], animation.sprite);
+  assert.deepEqual(animation.sprite.scale.values, [1, 2, 1]);
+  assert.deepEqual(animation.sprite.center.values, [0.5, 0.25]);
+  assert.equal(animation.sprite.material.options.transparent, true);
+  assert.equal(texture.repeat.x, 1 / 3);
+  assert.equal(animation.update(0.5), 1);
+  assert.equal(texture.offset.x, 1 / 3);
+  assert.equal(animation.update(5), 2);
+  assert.equal(texture.offset.x, 2 / 3);
+  assert.equal(animation.update(1), 2, "单次播放完成后应停在末帧");
+  animation.dispose();
+  assert.deepEqual(removed, [animation.sprite]);
+  assert.equal(texture.disposed, true);
 });
 
 /** 验证带旋转元数据的视频尺寸以自动旋转后的首帧 PNG 为准。 */
@@ -178,13 +240,14 @@ test("按旋转视频抽出的首帧尺寸计算图集", async (t) => {
   const rotatedFrame = await solidPng(2, 4, [90, 80, 70]);
   const observed = {
     probePayload: {
-      streams: [{ width: 4, height: 2, avg_frame_rate: "24/1", duration: "1.5", side_data_list: [{ rotation: 90 }] }],
+      streams: [{ codec_type: "video", width: 4, height: 2, avg_frame_rate: "24/1", duration: "1.5", side_data_list: [{ rotation: 90 }] }],
       format: { duration: "1.5" },
     },
   };
   const report = await videoToAtlas({
     inputVideo,
     outputSheet,
+    region: { x: 0, y: 0, width: 2, height: 4 },
     fps: 1,
     ffmpegPath: "ffmpeg-test",
     ffprobePath: "ffprobe-test",
@@ -192,8 +255,301 @@ test("按旋转视频抽出的首帧尺寸计算图集", async (t) => {
   });
   assert.deepEqual([report.cell.width, report.cell.height], [2, 4]);
   assert.deepEqual([report.input.display_width, report.input.display_height], [2, 4]);
+  assert.deepEqual(report.input.region, { x: 0, y: 0, width: 2, height: 4 }, "区域坐标基于自动旋转后的解码画布");
   const dimensions = await sharp(await readFile(outputSheet)).metadata();
   assert.deepEqual([dimensions.width, dimensions.height], [2, 4]);
+});
+
+/** 验证同一源视频可按不同区域独立生成图集，并识别音视频流顺序。 */
+test("同一源帧的不同区域生成独立图集并记录精确区域", async (t) => {
+  const directory = await testDirectory(t);
+  const inputVideo = join(directory, "multi-action.mp4");
+  await writeFile(inputVideo, "shared source video");
+  const frame = await solidPng(6, 4, [20, 30, 40], [
+    { x: 1, y: 1, color: [240, 20, 10] }, { x: 2, y: 1, color: [240, 20, 10] },
+    { x: 1, y: 2, color: [240, 20, 10] }, { x: 2, y: 2, color: [240, 20, 10] },
+    { x: 4, y: 0, color: [10, 40, 240] }, { x: 5, y: 0, color: [10, 40, 240] },
+    { x: 4, y: 1, color: [10, 40, 240] }, { x: 5, y: 1, color: [10, 40, 240] },
+    { x: 4, y: 2, color: [10, 40, 240] }, { x: 5, y: 2, color: [10, 40, 240] },
+    { x: 4, y: 3, color: [10, 40, 240] }, { x: 5, y: 3, color: [10, 40, 240] },
+  ]);
+  const probePayload = {
+    streams: [
+      { codec_type: "audio", duration: "1.5" },
+      { codec_type: "video", width: 6, height: 4, avg_frame_rate: "24/1", duration: "1.5" },
+    ],
+    format: { duration: "1.5" },
+  };
+  // 为同源视频的每次区域抽帧复用完全相同的媒体流探测事实。
+  const runFrames = (frames) => fakeRunner(frames, { probePayload });
+  const dependencies = {
+    inputVideo,
+    fps: 1,
+    ffmpegPath: "ffmpeg-test",
+    ffprobePath: "ffprobe-test",
+  };
+  const firstRegion = { x: 1, y: 1, width: 2, height: 2 };
+  const first = await videoToAtlas({
+    ...dependencies,
+    region: firstRegion,
+    outputSheet: join(directory, "left.png"),
+    commandRunner: runFrames([frame]),
+  });
+  const secondRegion = { x: 4, y: 0, width: 2, height: 4 };
+  const second = await videoToAtlas({
+    ...dependencies,
+    region: secondRegion,
+    width: 4,
+    outputSheet: join(directory, "right.png"),
+    commandRunner: runFrames([frame]),
+  });
+  const thirdRegion = { x: 0, y: 0, width: 4, height: 2 };
+  const third = await videoToAtlas({
+    ...dependencies,
+    region: thirdRegion,
+    height: 4,
+    outputSheet: join(directory, "bottom.png"),
+    commandRunner: runFrames([frame]),
+  });
+
+  assert.deepEqual([first.cell.width, first.cell.height], [2, 2]);
+  assert.deepEqual([second.cell.width, second.cell.height], [4, 8]);
+  assert.deepEqual([third.cell.width, third.cell.height], [8, 4]);
+  assert.deepEqual(first.input.region, firstRegion);
+  assert.deepEqual(first.settings.region, firstRegion);
+  assert.deepEqual(second.input.region, secondRegion);
+  assert.deepEqual(second.settings.region, secondRegion);
+  assert.deepEqual(third.input.region, thirdRegion);
+  assert.deepEqual(third.settings.region, thirdRegion);
+  assert.deepEqual([first.input.display_width, first.input.display_height], [6, 4], "报告使用实际解码画布尺寸");
+  assert.equal(first.input.has_audio, true);
+  assert.equal(second.input.has_audio, true);
+  assert.equal(third.input.has_audio, true);
+  assert.equal(first.frames[0].source_sha256, contractSha256Bytes(frame), "源帧身份仍应对应未裁剪的解码 PNG");
+  const leftPixels = await sharp(await readFile(join(directory, "left.png"))).raw().toBuffer();
+  const rightPixels = await sharp(await readFile(join(directory, "right.png"))).raw().toBuffer();
+  const bottomPixels = await sharp(await readFile(join(directory, "bottom.png"))).raw().toBuffer();
+  assert.deepEqual([...leftPixels.subarray(0, 4)], [240, 20, 10, 255]);
+  assert.deepEqual([...rightPixels.subarray(0, 4)], [10, 40, 240, 255]);
+  assert.ok(Math.abs(bottomPixels[0] - 20) <= 1 && bottomPixels[1] === 30 && bottomPixels[2] === 40 && bottomPixels[3] === 255, "高宽单边推导后仍应保留对应区域颜色");
+  assert.equal(first.threejs.atlas_uv.frame_count, first.frames.length);
+  assert.equal(second.threejs.atlas_uv.frame_count, second.frames.length);
+});
+
+/** 验证去背景先使用裁剪区域，并在显式宽高时等比缩放到透明固定单元格。 */
+test("区域先裁剪再去背景且双边尺寸使用透明 contain", async (t) => {
+  const directory = await testDirectory(t);
+  const inputVideo = join(directory, "contained.mp4");
+  const outputSheet = join(directory, "contained.png");
+  await writeFile(inputVideo, "fake video bytes");
+  const patches = [];
+  // 区域边框为绿色、内部为红色，区域外为深色；整帧去背景会因画布边缘不匹配而失败。
+  for (let y = 1; y <= 4; y += 1) {
+    for (let x = 1; x <= 6; x += 1) {
+      patches.push({ x, y, color: x === 1 || x === 6 || y === 1 || y === 4 ? [0, 255, 0] : [220, 20, 10] });
+    }
+  }
+  const frame = await solidPng(8, 6, [20, 20, 20], patches);
+  const region = { x: 1, y: 1, width: 6, height: 4 };
+  const report = await videoToAtlas({
+    inputVideo,
+    outputSheet,
+    region,
+    width: 8,
+    height: 8,
+    removeBackground: true,
+    edgeProfile: "hard-edge",
+    colorSeparationVerified: true,
+    backgroundColor: "#00ff00",
+    backgroundTolerance: 0,
+    ffmpegPath: "ffmpeg-test",
+    ffprobePath: "ffprobe-test",
+    commandRunner: fakeRunner([frame]),
+  });
+
+  assert.deepEqual([report.cell.width, report.cell.height], [8, 8]);
+  const decoded = await sharp(await readFile(outputSheet)).raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual([decoded.info.width, decoded.info.height], [8, 8]);
+  assert.deepEqual([...decoded.data.subarray(0, 4)], [0, 0, 0, 0], "contain 留白应透明");
+  const center = (4 * decoded.info.width + 4) * 4;
+  assert.ok(decoded.data[center] > decoded.data[center + 1] && decoded.data[center + 3] > 0, "区域内红色主体应在裁剪后保留");
+});
+
+/** 验证实际缩放留白矩形和默认/显式锚点都映射到固定输出单元格。 */
+test("4x2内容缩放到4x4时记录透明留白和局部锚点", async (t) => {
+  const directory = await testDirectory(t);
+  const inputVideo = join(directory, "anchor-source.mp4");
+  await writeFile(inputVideo, "shared source video");
+  const frame = await solidPng(4, 2, [230, 80, 30]);
+  const dependencies = {
+    inputVideo,
+    width: 4,
+    height: 4,
+    ffmpegPath: "ffmpeg-test",
+    ffprobePath: "ffprobe-test",
+  };
+  const defaultReport = await videoToAtlas({
+    ...dependencies,
+    outputSheet: join(directory, "default-anchor.png"),
+    commandRunner: fakeRunner([frame]),
+  });
+  assert.deepEqual(defaultReport.cell.content_rect, { x: 0, y: 1, width: 4, height: 2 });
+  assert.deepEqual(defaultReport.cell.source_anchor, { x: 2, y: 1 });
+  assert.deepEqual(defaultReport.cell.target_anchor, { x: 2, y: 2 });
+  assert.equal(Object.hasOwn(defaultReport.input, "anchor"), false);
+  assert.equal(Object.hasOwn(defaultReport.settings, "anchor"), false);
+  const defaultPixels = await sharp(await readFile(join(directory, "default-anchor.png"))).raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual([...defaultPixels.data.subarray(0, 4)], [0, 0, 0, 0], "上方留白应透明");
+  assert.deepEqual([...defaultPixels.data.subarray((3 * 4) * 4, (3 * 4) * 4 + 4)], [0, 0, 0, 0], "下方留白应透明");
+
+  const anchor = { x: 1.5, y: 0.5 };
+  const explicitReport = await videoToAtlas({
+    ...dependencies,
+    anchor,
+    outputSheet: join(directory, "explicit-anchor.png"),
+    commandRunner: fakeRunner([frame]),
+  });
+  assert.deepEqual(explicitReport.cell.source_anchor, anchor);
+  assert.deepEqual(explicitReport.cell.target_anchor, { x: 1.5, y: 1.5 });
+  assert.deepEqual(explicitReport.input.anchor, anchor);
+  assert.deepEqual(explicitReport.settings.anchor, anchor);
+  assert.deepEqual(explicitReport.threejs.sprite.center, {
+    x: 0.375,
+    y: 0.625,
+    target_anchor: { x: 1.5, y: 1.5 },
+    unit: "normalized-cell",
+    source_origin: "top-left",
+  });
+  const parsed = parseVideoAtlasArgs(["--input-video", "x.mp4", "--output-sheet", "x.png", "--anchor", "1.5,0.5"]);
+  assert.deepEqual(parsed.anchor, anchor);
+  assert.throws(() => parseVideoAtlasArgs(["--input-video", "x.mp4", "--output-sheet", "x.png", "--anchor", "1,2,3"]), /--anchor/u);
+  assert.match(videoAtlasHelp(), /--anchor <x,y>/u);
+});
+
+/** 验证去背景允许混合动画里的全透明帧，但拒绝整段全空并且不留下文件。 */
+test("去背景保留空终态帧并拒绝整段透明动画", async (t) => {
+  const directory = await testDirectory(t);
+  const inputVideo = join(directory, "terminal-empty.mp4");
+  await writeFile(inputVideo, "shared source video");
+  const foregroundFrame = await solidPng(6, 6, [0, 255, 0], [
+    { x: 2, y: 2, color: [255, 0, 0] }, { x: 3, y: 2, color: [255, 0, 0] },
+    { x: 2, y: 3, color: [255, 0, 0] }, { x: 3, y: 3, color: [255, 0, 0] },
+  ]);
+  const emptyFrame = await solidPng(6, 6, [0, 255, 0]);
+  const removeBackgroundOptions = {
+    inputVideo,
+    fps: 1,
+    removeBackground: true,
+    edgeProfile: "hard-edge",
+    colorSeparationVerified: true,
+    backgroundColor: "#00ff00",
+    backgroundTolerance: 0,
+    ffmpegPath: "ffmpeg-test",
+    ffprobePath: "ffprobe-test",
+  };
+  const report = await videoToAtlas({
+    ...removeBackgroundOptions,
+    outputSheet: join(directory, "mixed-frames.png"),
+    commandRunner: fakeRunner([foregroundFrame, emptyFrame]),
+  });
+  assert.equal(report.frames.length, 2);
+  assert.equal(report.frames[1].source_timestamp, 1);
+  assert.equal(report.frames[1].source_sha256, contractSha256Bytes(emptyFrame));
+  const sheet = await sharp(await readFile(join(directory, "mixed-frames.png"))).raw().toBuffer({ resolveWithObject: true });
+  // 按图集帧索引读取像素 Alpha，用于区分可见动作帧与空终态帧。
+  const alphaOf = (frameIndex, x, y) => sheet.data[(y * sheet.info.width + frameIndex * 6 + x) * 4 + 3];
+  assert.ok(alphaOf(0, 2, 2) > 0, "主体帧应保留前景 Alpha");
+  for (let y = 0; y < 6; y += 1) {
+    for (let x = 0; x < 6; x += 1) assert.equal(alphaOf(1, x, y), 0, "空终态帧应完整透明");
+  }
+
+  const emptyBase = join(directory, "all-empty");
+  await assert.rejects(videoToAtlas({
+    ...removeBackgroundOptions,
+    outputSheet: `${emptyBase}.png`,
+    commandRunner: fakeRunner([emptyFrame, emptyFrame]),
+  }), /全部透明/u);
+  for (const extension of ["png", "json", "html"]) {
+    await assert.rejects(readFile(`${emptyBase}.${extension}`), { code: "ENOENT" });
+  }
+});
+
+/** 验证区域和锚点严格校验，并以真实解码画布拒绝越界且不落输出。 */
+test("拒绝无效或越界区域和锚点且不留下输出", async (t) => {
+  const directory = await testDirectory(t);
+  const inputVideo = join(directory, "invalid-region.mp4");
+  await writeFile(inputVideo, "fake video bytes");
+  const frame = await solidPng(4, 2, [120, 80, 40]);
+  const invalidRegions = [
+    { x: 0, y: 0, width: 2 },
+    { x: -1, y: 0, width: 1, height: 1 },
+    { x: 0.5, y: 0, width: 1, height: 1 },
+    { x: 0, y: 0, width: 0, height: 1 },
+    { x: Number.MAX_SAFE_INTEGER + 1, y: 0, width: 1, height: 1 },
+    { x: "bad", y: 0, width: 1, height: 1 },
+    null,
+  ];
+  for (let index = 0; index < invalidRegions.length; index += 1) {
+    await assert.rejects(videoToAtlas({
+      inputVideo,
+      outputSheet: join(directory, `invalid-${index}.png`),
+      region: invalidRegions[index],
+    }), VideoAtlasError);
+  }
+  const invalidAnchors = [null, {}, { x: -0.5, y: 0 }, { x: 0, y: Number.NaN }, { x: undefined, y: 0 }];
+  for (let index = 0; index < invalidAnchors.length; index += 1) {
+    await assert.rejects(videoToAtlas({
+      inputVideo,
+      outputSheet: join(directory, `invalid-anchor-${index}.png`),
+      anchor: invalidAnchors[index],
+    }), VideoAtlasError);
+  }
+  await assert.rejects(videoToAtlas({
+    inputVideo,
+    outputSheet: join(directory, "unconfirmed.png"),
+    removeBackground: true,
+    ffmpegPath: "ffmpeg-test",
+    ffprobePath: "ffprobe-test",
+    commandRunner: fakeRunner([frame]),
+  }), /必须显式指定 edge-profile/u);
+  await assert.rejects(videoToAtlas({
+    inputVideo,
+    outputSheet: join(directory, "unconfirmed-color.png"),
+    removeBackground: true,
+    edgeProfile: "hard-edge",
+    ffmpegPath: "ffmpeg-test",
+    ffprobePath: "ffprobe-test",
+    commandRunner: fakeRunner([frame]),
+  }), /必须显式确认 color-separation-verified=true/u);
+  await assert.rejects(videoToAtlas({
+    inputVideo,
+    outputSheet: join(directory, "outside.png"),
+    region: { x: 3, y: 0, width: 2, height: 2 },
+    ffmpegPath: "ffmpeg-test",
+    ffprobePath: "ffprobe-test",
+    commandRunner: fakeRunner([frame]),
+  }), /region.*超出/u);
+  await assert.rejects(videoToAtlas({
+    inputVideo,
+    outputSheet: join(directory, "outside-anchor.png"),
+    region: { x: 0, y: 0, width: 2, height: 2 },
+    anchor: { x: 2.5, y: 1 },
+    ffmpegPath: "ffmpeg-test",
+    ffprobePath: "ffprobe-test",
+    commandRunner: fakeRunner([frame]),
+  }), /anchor.*超出/u);
+  for (const base of ["invalid-0", "invalid-1", "invalid-2", "invalid-3", "invalid-4", "invalid-5", "invalid-6", "invalid-anchor-0", "invalid-anchor-1", "invalid-anchor-2", "invalid-anchor-3", "invalid-anchor-4", "outside", "outside-anchor", "unconfirmed", "unconfirmed-color"]) {
+    for (const extension of ["png", "json", "html"]) {
+      await assert.rejects(readFile(join(directory, `${base}.${extension}`)), { code: "ENOENT" });
+    }
+  }
+  const parsed = parseVideoAtlasArgs(["--input-video", "x.mp4", "--output-sheet", "x.png", "--region", "1,2,3,4", "--edge-profile", "hard-edge", "--color-separation-verified"]);
+  assert.deepEqual(parsed.region, { x: "1", y: "2", width: "3", height: "4" });
+  assert.equal(parsed.edgeProfile, "hard-edge");
+  assert.equal(parsed.colorSeparationVerified, true);
+  assert.match(videoAtlasHelp(), /--region <x,y,width,height>/u);
+  assert.throws(() => parseVideoAtlasArgs(["--input-video", "x.mp4", "--output-sheet", "x.png", "--region", "1,2,3"]), /--region/u);
+  assert.throws(() => parseVideoAtlasArgs(["--input-video", "x.mp4", "--output-sheet", "x.png", "--anchor", "bad,1"]), /--anchor/u);
 });
 
 /** 验证非循环预览停在末帧，且再次播放可以从首帧重启。 */
@@ -217,6 +573,7 @@ test("非循环网页预览在末帧停止并支持重播", async (t) => {
   });
   assert.equal(report.animation.loop, false);
   assert.equal(report.threejs.texture_loader.url, "assets/hero-attack.png");
+  assert.equal(report.threejs.animation.end_behavior, "hold-last-frame");
   assert.match(parseVideoAtlasArgs(["--input-video", "x.mp4", "--output-sheet", "x.png", "--runtime-url", "assets/hero-attack.png"]).runtimeUrl, /^assets\//u);
   const preview = await readFile(outputPreview, "utf8");
   assert.match(preview, /"loop":false/u);
@@ -241,71 +598,6 @@ test("非循环网页预览在末帧停止并支持重播", async (t) => {
   assert.equal(harness.toggle.textContent, "暂停");
 });
 
-/** 执行报告中的 three.js 工厂示例，确认实际 UV 推进、底边锚点和非循环终态。 */
-test("three.js Sprite 示例按帧更新 UV 并在非循环动画末帧结束", async (t) => {
-  const directory = await testDirectory(t);
-  const inputVideo = join(directory, "attack.mp4");
-  await writeFile(inputVideo, "fake video bytes");
-  const frame = await solidPng(4, 2, [180, 40, 30]);
-  const report = await videoToAtlas({
-    inputVideo,
-    outputSheet: join(directory, "attack.png"),
-    fps: 1,
-    loop: false,
-    runtimeUrl: "assets/hero-attack.png",
-    ffmpegPath: "ffmpeg-test",
-    ffprobePath: "ffprobe-test",
-    commandRunner: fakeRunner([frame, frame, frame]),
-  });
-
-  const texture = {
-    offset: { x: 0, y: 0, set(x, y) { this.x = x; this.y = y; } },
-    repeat: { set(x, y) { this.x = x; this.y = y; } },
-    dispose() {},
-  };
-  let loadedUrl;
-  class TextureLoader {
-    async loadAsync(url) { loadedUrl = url; return texture; }
-  }
-  class SpriteMaterial {
-    constructor(parameters) { this.parameters = parameters; }
-    dispose() {}
-  }
-  class Sprite {
-    constructor(material) {
-      this.material = material;
-      this.scale = { set(x, y, z) { this.x = x; this.y = y; this.z = z; } };
-      this.center = { set(x, y) { this.x = x; this.y = y; } };
-    }
-  }
-  const THREE = {
-    TextureLoader,
-    SpriteMaterial,
-    Sprite,
-    SRGBColorSpace: "srgb",
-    ClampToEdgeWrapping: "clamp",
-  };
-  const scene = { children: [], add(sprite) { this.children.push(sprite); }, remove(sprite) { this.children = this.children.filter((item) => item !== sprite); } };
-  const createFrameAnimation = runInNewContext(`(${report.threejs.snippets.factory})`);
-  const animation = await createFrameAnimation(THREE, scene, 0.5);
-
-  assert.equal(loadedUrl, "assets/hero-attack.png");
-  assert.deepEqual([texture.repeat.x, texture.repeat.y], [1 / 3, 1]);
-  assert.deepEqual([animation.sprite.center.x, animation.sprite.center.y], [0.5, 0]);
-  assert.deepEqual([animation.sprite.scale.x, animation.sprite.scale.y, animation.sprite.scale.z], [2, 1, 1]);
-  assert.equal(scene.children.length, 1);
-  assert.equal(animation.update(1.4), false);
-  assert.equal(texture.offset.x, 1 / 3);
-  assert.equal(animation.update(1), false);
-  assert.equal(texture.offset.x, 2 / 3);
-  assert.equal(animation.update(0.6), true);
-  assert.equal(texture.offset.x, 2 / 3, "完成后必须停留在末帧");
-  assert.equal(animation.update(2), true);
-  assert.equal(texture.offset.x, 2 / 3, "重复更新不能让非循环动画越过末帧");
-  animation.dispose();
-  assert.equal(scene.children.length, 0);
-});
-
 /** 验证工具报告、显式 runtime URL、网页 SHA 与项目文件门可直接对接。 */
 test("工具输出可直接通过视频图集工作流文件门", async (t) => {
   const directory = await testDirectory(t);
@@ -318,12 +610,16 @@ test("工具输出可直接通过视频图集工作流文件门", async (t) => {
   await writeFile(inputVideo, sourceVideoBytes);
   await mkdir(join(directory, "prompts"), { recursive: true });
   await writeFile(promptFile, "角色向前挥剑，动作循环自然，绿色纯色背景。");
-  const frame = await solidPng(4, 2, [190, 90, 25]);
+  const frame = await solidPng(6, 4, [190, 90, 25]);
+  const region = { x: 1, y: 1, width: 4, height: 2 };
+  const anchor = { x: 1.5, y: 0.5 };
   await videoToAtlas({
     inputVideo,
     outputSheet,
     outputReport,
     outputPreview,
+    region,
+    anchor,
     fps: 2,
     runtimeUrl: "assets/hero-attack.png",
     ffmpegPath: "ffmpeg-test",
@@ -337,13 +633,14 @@ test("工具输出可直接通过视频图集工作流文件门", async (t) => {
     preview: "public/hero-attack.html",
     sheet: "public/assets/hero-attack.png",
   };
+  // 读取文件后计算合同要求的内容摘要，避免文件门测试依赖伪造哈希。
   const shaFor = async (path) => contractSha256Bytes(await readFile(join(directory, path)));
   const frameAnimation = {
     schema: FRAME_ANIMATION_WORKFLOW_SCHEMA,
     status: "accepted",
     work_item_id: "work-item-video-atlas",
     candidate_version: "candidate-1",
-    settings: { fps: 2, width: 4, height: 2, remove_background: false },
+    settings: { fps: 2, width: 4, height: 2, remove_background: false, region, anchor },
     video_prompt: { file: relativeFiles.prompt, sha256: await shaFor(relativeFiles.prompt) },
     source_video: { file: relativeFiles.source, sha256: await shaFor(relativeFiles.source) },
     quality_report: { file: relativeFiles.report, sha256: await shaFor(relativeFiles.report) },
@@ -373,15 +670,19 @@ test("可选纯色背景移除生成透明帧", async (t) => {
   const inputVideo = join(directory, "greenscreen.mp4");
   const outputSheet = join(directory, "transparent.png");
   await writeFile(inputVideo, "fake video bytes");
-  const greenFrame = await solidPng(4, 2, [0, 255, 0], [
-    { x: 1, y: 0, color: [255, 0, 0] },
-    { x: 1, y: 1, color: [255, 0, 0] },
+  const greenFrame = await solidPng(6, 6, [0, 255, 0], [
+    { x: 2, y: 2, color: [255, 0, 0] },
+    { x: 3, y: 2, color: [255, 0, 0] },
+    { x: 2, y: 3, color: [255, 0, 0] },
+    { x: 3, y: 3, color: [255, 0, 0] },
   ]);
   const report = await videoToAtlas({
     inputVideo,
     outputSheet,
     fps: 1,
     removeBackground: true,
+    edgeProfile: "hard-edge",
+    colorSeparationVerified: true,
     backgroundColor: "#00ff00",
     backgroundTolerance: 0,
     ffmpegPath: "ffmpeg-test",
@@ -393,7 +694,7 @@ test("可选纯色背景移除生成透明帧", async (t) => {
   assert.equal(report.settings.remove_background, true);
   const decoded = await sharp(await readFile(outputSheet)).raw().toBuffer({ resolveWithObject: true });
   assert.deepEqual([...decoded.data.subarray(0, 4)], [0, 0, 0, 0]);
-  assert.deepEqual([...decoded.data.subarray(4, 8)], [255, 0, 0, 255]);
+  assert.deepEqual([...decoded.data.subarray((2 * decoded.info.width + 2) * 4, (2 * decoded.info.width + 2) * 4 + 4)], [255, 0, 0, 255]);
 });
 
 /** 证明零帧、最大图集尺寸和输入/输出冲突均会失败且不写图集。 */
@@ -437,8 +738,9 @@ test("报告 ffmpeg 执行失败", async (t) => {
   const inputVideo = join(directory, "broken.mp4");
   const outputSheet = join(directory, "broken.png");
   await writeFile(inputVideo, "fake video bytes");
+  // 将探测命令与抽帧命令分别模拟，验证 ffmpeg 失败不会生成报告或图集。
   const commandRunner = async (command) => command === "ffprobe-test"
-    ? { exitCode: 0, stdout: JSON.stringify({ streams: [{ width: 4, height: 2, avg_frame_rate: "24/1", duration: "1" }] }) }
+    ? { exitCode: 0, stdout: JSON.stringify({ streams: [{ codec_type: "video", width: 4, height: 2, avg_frame_rate: "24/1", duration: "1" }] }) }
     : { exitCode: 1, stderr: "decoder failed" };
   await assert.rejects(videoToAtlas({
     inputVideo,

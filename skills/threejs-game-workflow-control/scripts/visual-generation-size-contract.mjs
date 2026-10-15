@@ -3,11 +3,12 @@
  * 图像生成 单图最小尺寸合同。
  *
  * 该模块只计算机器可确定的输出尺寸，不承载人工审阅字段；视觉方向
- * 只由 V2 唯一拆解确认冻结，V3/V5 继续执行机器证据门。尺寸按逻辑像素、最大运行缩放和
+ * 只由 V2 唯一拆解确认冻结，V3/V4 继续执行机器证据门。尺寸按逻辑像素、最大运行缩放和
  * 图片生产基线 DPR 计算，并强制画布不额外添加 padding；运行时实际 DPR
  * 由设备动态解析，不能反向改变生产尺寸合同。
  */
 import { normalizeComponentInventory } from "./visual-component-contract.mjs";
+import { isNineSliceStretch, equalNineSliceContracts, validateNineSliceContract, validateNineSliceTargetBounds } from "../../threejs-game-ui-layout/scripts/nine-slice-contract.mjs";
 import { resolveOutputMetadata } from "./visual-raster-contract.mjs";
 import { IMAGE_PRODUCTION_DPR, imageProductionDprError, isImageProductionDpr } from "./workflow-dpr-contract.mjs";
 
@@ -53,7 +54,7 @@ function sizeError(context, message, details = {}) {
   const expected = details.expected === undefined ? "?" : JSON.stringify(details.expected);
   const actual = details.actual === undefined ? "?" : JSON.stringify(details.actual);
   const missing = details.missing ? ` 缺失=${details.missing}` : "";
-  const returnStage = details.returnStage ?? (stage === "V1" || stage === "V2" ? "V1/PROPOSAL" : stage === "V4" ? "VALIDATING" : stage);
+  const returnStage = details.returnStage ?? (stage === "V1" || stage === "V2" ? "V1/PROPOSAL" : stage);
   return `[${stage}] annotation_number=${annotation} region_id=${region} component_id=${component} state_id=${state} asset_id=${asset} expected_method=image-generation observed_method=${context.observedMethod ?? "image-generation"} 根因=${details.rootCause ?? "图像生成 单图尺寸合同问题"} expected=${expected} actual=${actual}${missing} ${message} 应退回阶段=${returnStage}`;
 }
 
@@ -71,7 +72,15 @@ function validPlacementBounds(bounds) {
 function resolveInventory(region, options = {}) {
   const raw = region?.component_inventory ?? region?.componentInventory
     ?? options.region?.component_inventory ?? options.region?.componentInventory;
-  return normalizeComponentInventory(raw ?? {});
+  const normalized = normalizeComponentInventory(raw ?? {});
+  const rawComponents = Array.isArray(raw?.components) ? raw.components : [];
+  return {
+    ...normalized,
+    components: normalized.components.map((component) => {
+      const source = rawComponents.find((item) => (item?.component_id ?? item?.componentId) === component.component_id);
+      return source?.nine_slice === undefined ? component : { ...component, nine_slice: source.nine_slice };
+    }),
+  };
 }
 
 /** 计算组件所有 placements 的最大逻辑显示宽高。 */
@@ -133,12 +142,47 @@ export function validateImageGenerationSizeContract(asset, contract, context = {
   errors.push(...display.errors);
   if (!display.displaySize || !isObject(scale) || !positiveNumber(scale.max) || !isImageProductionDpr(maxDpr)) return errors;
 
+  const component = display.inventory.components.find((item) => item.component_id === componentId);
+  let nineSlice;
+  try {
+    nineSlice = expectedAsset.nine_slice === undefined ? undefined : validateNineSliceContract(expectedAsset.nine_slice, "expected_assets.nine_slice");
+  } catch (error) {
+    errors.push(sizeError(local, `expected_assets.nine_slice 无效：${error.message}`, { missing: "expected_assets.nine_slice" }));
+  }
+  let componentNineSlice;
+  try {
+    componentNineSlice = component?.nine_slice === undefined ? undefined : validateNineSliceContract(component.nine_slice, `component ${componentId}.nine_slice`);
+  } catch (error) {
+    errors.push(sizeError(local, `component_inventory.nine_slice 无效：${error.message}`, { component_id: componentId }));
+  }
+  if (!equalNineSliceContracts(componentNineSlice, nineSlice)) {
+    errors.push(sizeError(local, "component_inventory 与 expected_assets 的 nine_slice 决策必须完全一致"));
+  }
+  if (isNineSliceStretch(nineSlice)) {
+    for (const [index, placement] of (component?.placements ?? []).entries()) {
+      try {
+        validateNineSliceTargetBounds(nineSlice, placement.bounds, `component ${componentId}.placements[${index}].bounds`);
+      } catch (error) {
+        errors.push(sizeError(local, `九宫格 placement[${index}] 尺寸无效：${error.message}`, { component_id: componentId }));
+      }
+    }
+    // 裁切会改变冻结的角边内容；尺寸相同也不能把裁角结果当作完整九宫格源帧。
+    for (const [label, candidate] of [["asset", asset], ["actual_assets", options.actualAsset]]) {
+      if (candidate?.normalization_record?.operation === "crop-and-resize-to-contract") {
+        errors.push(sizeError(local, `${label} normalization_record.operation 不得为 crop-and-resize-to-contract；九宫格必须保留完整源帧`, { component_id: componentId }));
+      }
+    }
+  }
+
   const singleComponent = display.inventory.components.length === 1;
   if (singleComponent && isObject(displaySizeValue) && (displaySizeValue.width !== display.displaySize.width || displaySizeValue.height !== display.displaySize.height)) {
     errors.push(sizeError(local, "单组件场景 target_display_size 必须与 placement 最大逻辑尺寸一致", { expected: display.displaySize, actual: displaySizeValue }));
   }
-  // 生产位图固定按图片生产基线计算，避免运行时设备值改变已冻结的资产尺寸。
-  const minimum = { width: Math.ceil(display.displaySize.width * scale.max * IMAGE_PRODUCTION_DPR), height: Math.ceil(display.displaySize.height * scale.max * IMAGE_PRODUCTION_DPR) };
+  // 生产位图以 1:1 覆盖最大约定显示尺寸，只计业务缩放，不再叠加设备 DPR 的倍率。
+  // 九宫格源图就是逻辑像素切片基线；仅中心区域伸缩，边角保持本地尺寸，不叠加最大业务缩放。
+  const minimum = isNineSliceStretch(nineSlice)
+    ? { ...nineSlice.source_size }
+    : { width: Math.ceil(display.displaySize.width * scale.max * IMAGE_PRODUCTION_DPR), height: Math.ceil(display.displaySize.height * scale.max * IMAGE_PRODUCTION_DPR) };
   const expectedSize = { width: expectedAsset.width, height: expectedAsset.height };
   if (expectedAsset.width !== minimum.width || expectedAsset.height !== minimum.height) {
     errors.push(sizeError(local, `expected_assets 必须精确使用机器计算的最小尺寸（按逻辑像素×最大缩放×图片生产基线 ${IMAGE_PRODUCTION_DPR} 向上取整）`, { expected: minimum, actual: expectedSize }));
@@ -149,7 +193,7 @@ export function validateImageGenerationSizeContract(asset, contract, context = {
   }
   if (options.actualAsset) {
     const actual = resolveOutputMetadata(options.actualAsset);
-    if (actual.width !== minimum.width || actual.height !== minimum.height) errors.push(sizeError(local, "V4 actual_assets 实际输出尺寸漂移，必须精确等于最小尺寸", { expected: minimum, actual: { width: actual.width, height: actual.height } }));
+    if (actual.width !== minimum.width || actual.height !== minimum.height) errors.push(sizeError(local, "V3 actual_assets 实际输出尺寸漂移，必须精确等于最小尺寸", { expected: minimum, actual: { width: actual.width, height: actual.height } }));
   }
   return errors;
 }
@@ -164,7 +208,7 @@ function sceneUsageForRegion(manifest, region, unit) {
   return { region: { ...region, ...(reconstructionRegion ?? {}) }, unit, sceneAssetUsage: unit?.scene_asset_usage ?? unit?.sceneAssetUsage };
 }
 
-/** 对完整 visual manifest 执行 V3 expected、V4 actual 的 图像生成 尺寸门。 */
+/** 对完整 visual manifest 执行 V2 expected、V3 actual 的 图像生成 尺寸门。 */
 export function validateImageGenerationSizeManifest(manifest, options = {}) {
   const errors = [];
   const regions = Array.isArray(manifest?.coverage_audit?.regions) ? manifest.coverage_audit.regions : [];

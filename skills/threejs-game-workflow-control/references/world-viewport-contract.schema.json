@@ -20,47 +20,110 @@
     "validationScope"
   ],
   "properties": {
-    "schemaVersion": { "const": "world-viewport/1.0" },
-    "renderSpace": { "const": "world-3d" },
-    "renderer": { "enum": ["webgl2", "webgpu"] },
+    "schemaVersion": {
+      "const": "world-viewport/1.0"
+    },
+    "renderSpace": {
+      "const": "world-3d"
+    },
+    "renderer": {
+      "enum": [
+        "webgl2",
+        "webgpu"
+      ]
+    },
     "cssLogicalRect": {
       "type": "object",
-      "required": ["coordinateSpace", "origin", "source", "fill"],
+      "required": [
+        "coordinateSpace",
+        "origin",
+        "source",
+        "fill"
+      ],
       "properties": {
-        "coordinateSpace": { "const": "css-pixel" },
-        "origin": { "const": "top-left" },
-        "source": { "const": "canvas.getBoundingClientRect" },
-        "fill": { "const": "viewport" }
+        "coordinateSpace": {
+          "const": "css-pixel"
+        },
+        "origin": {
+          "const": "top-left"
+        },
+        "source": {
+          "const": "canvas.getBoundingClientRect"
+        },
+        "fill": {
+          "const": "viewport"
+        }
       },
       "additionalProperties": false
     },
     "canvasBackingPolicy": {
       "type": "object",
-      "required": ["method", "rounding", "updateStyle", "pixelRatioSource"],
+      "required": [
+        "method",
+        "rounding",
+        "updateStyle",
+        "pixelRatioSource"
+      ],
       "properties": {
-        "method": { "const": "threejs-renderer-setSize" },
-        "rounding": { "const": "floor" },
-        "updateStyle": { "const": false },
-        "pixelRatioSource": { "const": "effectiveDevicePixelRatio" }
+        "method": {
+          "const": "threejs-renderer-setSize"
+        },
+        "rounding": {
+          "const": "floor"
+        },
+        "updateStyle": {
+          "const": false
+        },
+        "pixelRatioSource": {
+          "const": "effectiveDevicePixelRatio"
+        }
       },
       "additionalProperties": false
     },
     "runtimeDprPolicy": {
       "type": "object",
-      "required": ["source", "dynamic", "invalidFallback", "maximum", "updatesOn"],
+      "required": [
+        "source",
+        "dynamic",
+        "invalidFallback",
+        "maximum",
+        "updatesOn"
+      ],
       "properties": {
-        "source": { "const": "window.devicePixelRatio" },
-        "dynamic": { "const": true },
-        "invalidFallback": { "const": 1 },
-        "maximum": { "const": 2 },
+        "source": {
+          "const": "window.devicePixelRatio"
+        },
+        "dynamic": {
+          "const": true
+        },
+        "invalidFallback": {
+          "const": 1
+        },
+        "maximum": {
+          "const": 2
+        },
         "updatesOn": {
           "type": "array",
           "minItems": 2,
           "uniqueItems": true,
-          "items": { "enum": ["resize", "orientation-change", "display-density-change"] },
+          "items": {
+            "enum": [
+              "resize",
+              "orientation-change",
+              "display-density-change"
+            ]
+          },
           "allOf": [
-            { "contains": { "const": "resize" } },
-            { "contains": { "const": "display-density-change" } }
+            {
+              "contains": {
+                "const": "resize"
+              }
+            },
+            {
+              "contains": {
+                "const": "display-density-change"
+              }
+            }
           ]
         }
       },
@@ -68,71 +131,180 @@
     },
     "cameraPolicy": {
       "type": "object",
-      "required": ["type", "near", "far", "projectionUpdate"],
+      "required": [
+        "type",
+        "near",
+        "far",
+        "projectionUpdate"
+      ],
       "properties": {
-        "type": { "enum": ["perspective", "orthographic"] },
-        "near": { "type": "number", "minimum": 0 },
-        "far": { "type": "number", "exclusiveMinimum": 0 },
-        "projectionUpdate": { "const": "updateProjectionMatrix-on-resize" },
+        "type": {
+          "enum": [
+            "perspective",
+            "orthographic"
+          ]
+        },
+        "near": {
+          "type": "number",
+          "minimum": 0
+        },
+        "far": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "projectionUpdate": {
+          "const": "updateProjectionMatrix-on-resize"
+        },
         "perspective": {
           "type": "object",
-          "required": ["fovDegrees", "aspectSource"],
+          "required": [
+            "fovDegrees",
+            "aspectSource"
+          ],
           "properties": {
-            "fovDegrees": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 180 },
-            "aspectSource": { "const": "cssLogicalRect" }
+            "fovDegrees": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 180
+            },
+            "aspectSource": {
+              "const": "cssLogicalRect"
+            }
           },
           "additionalProperties": false
         },
         "orthographic": {
           "type": "object",
-          "required": ["verticalSpan", "horizontalSpan"],
+          "required": [
+            "verticalSpan",
+            "horizontalSpan"
+          ],
           "properties": {
-            "verticalSpan": { "type": "number", "exclusiveMinimum": 0 },
-            "horizontalSpan": { "const": "derive-from-css-aspect" }
+            "verticalSpan": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "horizontalSpan": {
+              "const": "derive-from-css-aspect"
+            }
           },
           "additionalProperties": false
         }
       },
       "allOf": [
         {
-          "if": { "properties": { "type": { "const": "perspective" } } },
-          "then": { "required": ["perspective"], "not": { "required": ["orthographic"] } }
+          "if": {
+            "properties": {
+              "type": {
+                "const": "perspective"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "perspective"
+            ],
+            "not": {
+              "required": [
+                "orthographic"
+              ]
+            }
+          }
         },
         {
-          "if": { "properties": { "type": { "const": "orthographic" } } },
-          "then": { "required": ["orthographic"], "not": { "required": ["perspective"] } }
+          "if": {
+            "properties": {
+              "type": {
+                "const": "orthographic"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "orthographic"
+            ],
+            "not": {
+              "required": [
+                "perspective"
+              ]
+            }
+          }
         },
         {
-          "if": { "properties": { "type": { "const": "perspective" } } },
-          "then": { "properties": { "near": { "exclusiveMinimum": 0 } } }
+          "if": {
+            "properties": {
+              "type": {
+                "const": "perspective"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "near": {
+                "exclusiveMinimum": 0
+              }
+            }
+          }
         },
         {
-          "if": { "properties": { "type": { "const": "orthographic" } } },
-          "then": { "properties": { "near": { "minimum": 0 } } }
+          "if": {
+            "properties": {
+              "type": {
+                "const": "orthographic"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "near": {
+                "minimum": 0
+              }
+            }
+          }
         }
       ],
       "additionalProperties": false
     },
     "inputCoordinatePolicy": {
       "type": "object",
-      "required": ["from", "to", "raycaster", "mapping"],
+      "required": [
+        "from",
+        "to",
+        "raycaster",
+        "mapping"
+      ],
       "properties": {
-        "from": { "const": "css-client-pixel" },
-        "to": { "const": "ndc" },
-        "raycaster": { "const": "THREE.Raycaster" },
-        "mapping": { "const": "canvas-local-to-ndc" }
+        "from": {
+          "const": "css-client-pixel"
+        },
+        "to": {
+          "const": "ndc"
+        },
+        "raycaster": {
+          "const": "THREE.Raycaster"
+        },
+        "mapping": {
+          "const": "canvas-local-to-ndc"
+        }
       },
       "additionalProperties": false
     },
     "orientation": {
       "type": "object",
-      "required": ["allowed"],
+      "required": [
+        "allowed"
+      ],
       "properties": {
         "allowed": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "enum": ["portrait", "landscape"] }
+          "items": {
+            "enum": [
+              "portrait",
+              "landscape"
+            ]
+          }
         }
       },
       "additionalProperties": false
@@ -142,15 +314,30 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["id", "cssLogicalRect"],
+        "required": [
+          "id",
+          "cssLogicalRect"
+        ],
         "properties": {
-          "id": { "type": "string", "minLength": 1 },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
           "cssLogicalRect": {
             "type": "object",
-            "required": ["width", "height"],
+            "required": [
+              "width",
+              "height"
+            ],
             "properties": {
-              "width": { "type": "number", "exclusiveMinimum": 0 },
-              "height": { "type": "number", "exclusiveMinimum": 0 }
+              "width": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "height": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
             },
             "additionalProperties": false
           }
@@ -160,48 +347,141 @@
     },
     "performanceBudget": {
       "type": "object",
-      "required": ["maxDrawCalls", "maxTriangles", "maxGeometries", "maxTextures", "maxFrameTimeMs"],
+      "required": [
+        "maxDrawCalls",
+        "maxTriangles",
+        "maxGeometries",
+        "maxTextures",
+        "maxFrameTimeMs"
+      ],
       "properties": {
-        "maxDrawCalls": { "type": "number", "minimum": 0 },
-        "maxTriangles": { "type": "number", "minimum": 0 },
-        "maxGeometries": { "type": "number", "minimum": 0 },
-        "maxTextures": { "type": "number", "minimum": 0 },
-        "maxFrameTimeMs": { "type": "number", "minimum": 0 }
+        "maxDrawCalls": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maxTriangles": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maxGeometries": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maxTextures": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maxFrameTimeMs": {
+          "type": "number",
+          "minimum": 0
+        }
       },
       "additionalProperties": false
     },
     "requiredRuntimeEvidence": {
       "type": "array",
-      "minItems": 16,
+      "minItems": 15,
       "uniqueItems": true,
       "items": {
         "enum": [
-          "capturedAt", "measurementSource", "viewportId", "canvasCssRect", "canvasBackingSize",
-          "rawDevicePixelRatio", "effectiveDevicePixelRatio", "camera", "inputHitResults",
-          "resizeTrajectory", "rendererMetrics", "screenshot", "sceneId", "stateId",
-          "candidateSha256", "pageReloaded"
+          "capturedAt",
+          "measurementSource",
+          "viewportId",
+          "canvasCssRect",
+          "canvasBackingSize",
+          "rawDevicePixelRatio",
+          "effectiveDevicePixelRatio",
+          "camera",
+          "inputHitResults",
+          "resizeTrajectory",
+          "rendererMetrics",
+          "screenshot",
+          "sceneId",
+          "stateId",
+          "pageReloaded"
         ]
       },
       "allOf": [
-        { "contains": { "const": "capturedAt" } },
-        { "contains": { "const": "measurementSource" } },
-        { "contains": { "const": "viewportId" } },
-        { "contains": { "const": "canvasCssRect" } },
-        { "contains": { "const": "canvasBackingSize" } },
-        { "contains": { "const": "rawDevicePixelRatio" } },
-        { "contains": { "const": "effectiveDevicePixelRatio" } },
-        { "contains": { "const": "camera" } },
-        { "contains": { "const": "inputHitResults" } },
-        { "contains": { "const": "resizeTrajectory" } },
-        { "contains": { "const": "rendererMetrics" } },
-        { "contains": { "const": "screenshot" } },
-        { "contains": { "const": "sceneId" } },
-        { "contains": { "const": "stateId" } },
-        { "contains": { "const": "candidateSha256" } },
-        { "contains": { "const": "pageReloaded" } }
+        {
+          "contains": {
+            "const": "capturedAt"
+          }
+        },
+        {
+          "contains": {
+            "const": "measurementSource"
+          }
+        },
+        {
+          "contains": {
+            "const": "viewportId"
+          }
+        },
+        {
+          "contains": {
+            "const": "canvasCssRect"
+          }
+        },
+        {
+          "contains": {
+            "const": "canvasBackingSize"
+          }
+        },
+        {
+          "contains": {
+            "const": "rawDevicePixelRatio"
+          }
+        },
+        {
+          "contains": {
+            "const": "effectiveDevicePixelRatio"
+          }
+        },
+        {
+          "contains": {
+            "const": "camera"
+          }
+        },
+        {
+          "contains": {
+            "const": "inputHitResults"
+          }
+        },
+        {
+          "contains": {
+            "const": "resizeTrajectory"
+          }
+        },
+        {
+          "contains": {
+            "const": "rendererMetrics"
+          }
+        },
+        {
+          "contains": {
+            "const": "screenshot"
+          }
+        },
+        {
+          "contains": {
+            "const": "sceneId"
+          }
+        },
+        {
+          "contains": {
+            "const": "stateId"
+          }
+        },
+        {
+          "contains": {
+            "const": "pageReloaded"
+          }
+        }
       ]
     },
-    "validationScope": { "const": "machine-contract-only" }
+    "validationScope": {
+      "const": "machine-contract-only"
+    }
   },
   "additionalProperties": false
 }

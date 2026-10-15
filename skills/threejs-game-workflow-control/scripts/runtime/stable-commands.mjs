@@ -5,7 +5,7 @@ import { createValidationContext } from './validation-context.mjs';
 import { projectWorkflowView, workflowViewMetadata } from './workflow-view.mjs';
 
 const MAX_SAFE_RUN_STEPS = 16;
-const VISUAL_STAGE_NEXT = Object.freeze({ V2: 'V3', V3: 'V4', V4: 'V5' });
+const VISUAL_STAGE_NEXT = Object.freeze({ V2: 'V3', V3: 'V4' });
 const SAFE_RUN_TARGETS = new Set(['BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING', 'VALIDATING', 'PASSED', 'INTEGRATING', 'COMPLETE']);
 
 /** 创建 run/check/status 三个代理入口，所有依赖通过注入复用既有硬门。 */

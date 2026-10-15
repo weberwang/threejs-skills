@@ -4,18 +4,18 @@
   "title": "原子并行委派批次",
   "type": "object",
   "additionalProperties": false,
-  "required": ["batchId", "workItemId", "packageId", "baselineHash", "parallelGroup", "delegationFiles", "delegationHashes", "executionUnitIds", "assignedAgents", "createdAt", "fingerprint"],
+  "required": ["batchId","workItemId","packageId","parallelGroup","delegationFiles","executionUnitIds","assignedAgents","createdAt"],
   "properties": {
     "batchId": {"type": "string", "minLength": 1},
     "workItemId": {"type": "string", "minLength": 1},
     "packageId": {"type": "string", "minLength": 1},
-    "baselineHash": {"type": "string", "pattern": "^(?:sha256:[a-f0-9]{64}|[a-f0-9]{40}(?:[a-f0-9]{24})?)$"},
+    "baselineHash": {"description":"仅作为可选摘要记录，不参与验收或放行。"},
     "parallelGroup": {"type": "string", "minLength": 1},
     "delegationFiles": {"type": "array", "minItems": 2, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-    "delegationHashes": {"type": "object", "minProperties": 2, "additionalProperties": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}},
+    "delegationHashes": {"description":"仅作为可选摘要记录，不参与验收或放行。"},
     "executionUnitIds": {"type": "array", "minItems": 2, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
     "assignedAgents": {"type": "array", "minItems": 2, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
     "createdAt": {"type": "string", "format": "date-time"},
-    "fingerprint": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+    "fingerprint": {"description":"仅作为可选摘要记录，不参与验收或放行。"}
   }
 }

@@ -57,15 +57,15 @@ test("视觉验收默认 usability，效果图适用性不自动进入 exact", (
 
 test("usability 允许视口内的位置和大小差异，越界仍失败", () => {
   const inside = fidelityFixture({ x: 0, y: 0, width: 40, height: 40 });
-  assert.deepEqual(validateStructuredFidelityCases([inside.item], inside.manifest, { stage: "V5" }), []);
+  assert.deepEqual(validateStructuredFidelityCases([inside.item], inside.manifest, { stage: "V4" }), []);
   const outside = fidelityFixture({ x: 70, y: 0, width: 40, height: 40 });
-  assert.ok(validateStructuredFidelityCases([outside.item], outside.manifest, { stage: "V5" }).some((error) => error.includes("越界")));
+  assert.ok(validateStructuredFidelityCases([outside.item], outside.manifest, { stage: "V4" }).some((error) => error.includes("越界")));
 });
 
 test("exact 必须提供精确差异材料且覆盖全部矩阵", () => {
   const fixture = fidelityFixture({ x: 0, y: 0, width: 40, height: 40 });
   fixture.manifest.visual_validation = { mode: "exact" };
-  const errors = validateStructuredFidelityCases([fixture.item], fixture.manifest, { stage: "V5" });
+  const errors = validateStructuredFidelityCases([fixture.item], fixture.manifest, { stage: "V4" });
   assert.ok(errors.some((error) => error.includes("normalization_equivalence")));
   assert.ok(errors.some((error) => error.includes("tolerance")));
   const matrix = evaluateMatrixCoverage(
@@ -84,7 +84,7 @@ test("usability 至少保留关键布局节点的实际测量", () => {
   const layoutInfo = { nodes: [node("critical", true), node("secondary")], nodeById: new Map([["critical", node("critical", true)], ["secondary", node("secondary")]]) };
   const contract = { target_conditions: { viewport: { width: 100, height: 100 } }, coverage_regions: [{ id: "region" }] };
   const errors = [];
-  validateLayoutGeometryFacts(contract, { layout_geometry: { node_measurements: [{ layout_node_id: "secondary", target_bounds: { x: 0, y: 0, width: 40, height: 40 }, actual_bounds: { x: 0, y: 0, width: 40, height: 40 }, result: "passed", evidence: "layout.png" }] } }, "V5", errors, layoutInfo, { visual_validation: { mode: "usability" } });
+  validateLayoutGeometryFacts(contract, { layout_geometry: { node_measurements: [{ layout_node_id: "secondary", target_bounds: { x: 0, y: 0, width: 40, height: 40 }, actual_bounds: { x: 0, y: 0, width: 40, height: 40 }, result: "passed", evidence: "layout.png" }] } }, "V4", errors, layoutInfo, { visual_validation: { mode: "usability" } });
   assert.ok(errors.some((error) => error.includes("关键 layout node")));
 });
 
@@ -105,11 +105,11 @@ test("可用性负向事实不能由 approved exception 或 PASS 结果掩盖", 
   result.target_measurement = { bounds: { x: 0, y: 0, width: 40, height: 40 }, readable: true, occluded: false };
   result.candidate_measurement = { bounds: { x: 0, y: 0, width: 40, height: 40 }, readable: false, occluded: true };
   result.exception_ids = ["known-visual-change"];
-  const errors = validateStructuredFidelityCases([fixture.item], fixture.manifest, { stage: "V5" });
+  const errors = validateStructuredFidelityCases([fixture.item], fixture.manifest, { stage: "V4" });
   assert.ok(errors.some((error) => error.includes("可用性负向事实")));
 
   result.target_measurement = "readable";
   result.candidate_measurement = "unreadable";
   delete result.exception_ids;
-  assert.ok(validateStructuredFidelityCases([fixture.item], fixture.manifest, { stage: "V5" }).some((error) => error.includes("可用性负向事实")));
+  assert.ok(validateStructuredFidelityCases([fixture.item], fixture.manifest, { stage: "V4" }).some((error) => error.includes("可用性负向事实")));
 });

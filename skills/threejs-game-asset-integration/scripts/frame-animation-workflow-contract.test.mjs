@@ -66,12 +66,18 @@ function buildFixtureFiles() {
       video_sha256: sha256Bytes(video),
       fps,
       remove_background: true,
-      source_width: 1920,
-      source_height: 1080,
+      width: 4,
+      height: 4,
+      display_width: 4,
+      display_height: 4,
       source_fps: 30,
       duration_seconds: 1,
     },
-    cell: { width: 4, height: 4, target_anchor: { x: 2, y: 4 }, layout: "horizontal" },
+    cell: {
+      width: 4, height: 4, source_anchor: { x: 2, y: 3 },
+      content_rect: { x: 0, y: 0, width: 4, height: 4 },
+      target_anchor: { x: 2, y: 3 }, layout: "horizontal",
+    },
     frames,
     animation: { key: "hero-run", texture_key: "hero-texture", frame_rate: fps, loop: true },
     threejs: {
@@ -93,7 +99,7 @@ function buildFixtureFiles() {
       sprite: {
         material_class: "THREE.SpriteMaterial",
         object_class: "THREE.Sprite",
-        center: { x: 0.5, y: 0, target_anchor: { x: 2, y: 4 }, unit: "normalized-cell", source_origin: "top-left" },
+        center: { x: 0.5, y: 0.25, target_anchor: { x: 2, y: 3 }, unit: "normalized-cell", source_origin: "top-left" },
       },
       animation: {
         key: "hero-run",
@@ -104,7 +110,7 @@ function buildFixtureFiles() {
         end_behavior: "wrap-to-first-frame",
       },
       snippets: {
-        factory: "async function createFrameAnimation(THREE, scene) { const texture = await new THREE.TextureLoader().loadAsync('assets/hero.png'); const material = new THREE.SpriteMaterial({ map: texture }); const sprite = new THREE.Sprite(material); sprite.scale.set(4, 4, 1); sprite.center.set(0.5, 0); texture.offset.x = frameIndex / frameCount; return { sprite }; }",
+        factory: "async function createFrameAnimation(THREE, scene) { const texture = await new THREE.TextureLoader().loadAsync('assets/hero.png'); const material = new THREE.SpriteMaterial({ map: texture, transparent: true }); const sprite = new THREE.Sprite(material); sprite.scale.set(4, 4, 1); sprite.center.set(0.5, 0.25); texture.repeat.set(1 / 4, 1); texture.offset.x = frameIndex / frameCount; return { sprite, update(deltaSeconds) {} }; }",
         usage: "animation.update(deltaSeconds);",
       },
     },
@@ -179,6 +185,42 @@ async function writeReport(root, fixture) {
   fixture.asset.frame_animation.quality_report.sha256 = sha256Bytes(bytes);
 }
 
+/** 绑定共享视频中的固定动画区域，输出 cell 尺寸独立于源区域尺寸。 */
+function bindFixtureRegion(fixture) {
+  const region = { x: 80, y: 24, width: 160, height: 96 };
+  fixture.asset.frame_animation.settings.region = { ...region };
+  fixture.report.input.region = { ...region };
+  fixture.report.input.display_width = 1366;
+  fixture.report.input.display_height = 768;
+  fixture.report.settings = { ...fixture.asset.frame_animation.settings, region: { ...region } };
+  fixture.report.cell.source_anchor = { x: region.width / 2, y: region.height - 1 };
+  fixture.report.cell.content_rect = { x: 0, y: 1, width: 4, height: 2 };
+  const targetAnchor = { x: 2, y: 1 + (region.height - 1) * 2 / region.height };
+  fixture.report.cell.target_anchor = targetAnchor;
+  fixture.report.threejs.sprite.center = {
+    x: targetAnchor.x / 4,
+    y: 1 - targetAnchor.y / 4,
+    target_anchor: { ...targetAnchor },
+    unit: "normalized-cell",
+    source_origin: "top-left",
+  };
+}
+
+/** 模拟源区域等比缩放后上下留白，根锚点须跟随实际内容矩形变换。 */
+function bindFixtureAnchor(fixture) {
+  bindFixtureRegion(fixture);
+  const anchor = { x: 80, y: 48 };
+  fixture.asset.frame_animation.settings.anchor = { ...anchor };
+  fixture.report.input.anchor = { ...anchor };
+  fixture.report.settings.anchor = { ...anchor };
+  fixture.report.cell.source_anchor = { ...anchor };
+  fixture.report.cell.content_rect = { x: 0, y: 1, width: 4, height: 2 };
+  fixture.report.cell.target_anchor = { x: 2, y: 2 };
+  fixture.report.threejs.sprite.center = {
+    x: 0.5, y: 0.5, target_anchor: { x: 2, y: 2 }, unit: "normalized-cell", source_origin: "top-left",
+  };
+}
+
 test("缺少视频抽帧合同或设置时静态合同失败", () => {
   assert(validateFrameAnimationWorkflowContract(undefined).some((message) => message.includes("必须是对象")));
   const { asset } = buildFixtureFiles();
@@ -205,29 +247,38 @@ test("质量报告必须声明 PASS", async () => {
   });
 });
 
-test("所有绑定文件的实际 SHA 都必须匹配", async () => {
+test("摘要缺失、格式错误或陈旧不阻断实际工件验收", async () => {
   await withFixture(async (root, fixture) => {
-    await writeFile(join(root, fixture.asset.frame_animation.preview.file), "<html>changed</html>");
-    const errors = await runGate(root, fixture.asset);
-    assert(errors.some((message) => message.includes("preview.sha256 与文件不一致")));
-  });
-});
+    const contract = fixture.asset.frame_animation;
+    const variants = [
+      ["缺失", undefined],
+      ["格式错误", "not-a-sha"],
+      ["陈旧", "sha256:" + "0".repeat(64)],
+    ];
 
-test("更新 manifest 视频 SHA 也不能掩盖源视频被替换", async () => {
-  await withFixture(async (root, fixture) => {
-    const replacement = Buffer.from("replacement video bytes");
-    await writeFile(join(root, fixture.asset.frame_animation.source_video.file), replacement);
-    fixture.asset.frame_animation.source_video.sha256 = sha256Bytes(replacement);
-    const errors = await runGate(root, fixture.asset);
-    assert(errors.some((message) => message.includes("input.video_sha256 与 source_video 文件 SHA 不一致")));
-  });
-});
+    for (const [label, digest] of variants) {
+      // 将各处追踪值一起改为同一场景，验证它们不会遮蔽真实结构与文件检查。
+      const setOptionalDigest = (target, field) => {
+        if (digest === undefined) delete target[field];
+        else target[field] = digest;
+      };
+      for (const key of ["video_prompt", "source_video", "quality_report", "preview", "spritesheet"]) {
+        setOptionalDigest(contract[key], "sha256");
+      }
+      setOptionalDigest(fixture.report.input, "video_sha256");
+      for (const frame of fixture.report.frames) setOptionalDigest(frame, "source_sha256");
+      setOptionalDigest(fixture.report.artifacts.sheet, "sha256");
 
-test("只篡改源视频 manifest SHA 会被文件门拒绝", async () => {
-  await withFixture(async (root, fixture) => {
-    fixture.asset.frame_animation.source_video.sha256 = "sha256:" + "0".repeat(64);
-    const errors = await runGate(root, fixture.asset);
-    assert(errors.some((message) => message.includes("source_video.sha256 与文件不一致")));
+      const meta = digest === undefined ? "" : `<meta name="threejs-atlas-sha256" content="${digest}">`;
+      const preview = Buffer.from(`<!doctype html><html><head>${meta}</head><body>hero</body></html>\n`);
+      await writeFile(join(root, contract.preview.file), preview);
+      setOptionalDigest(contract.preview, "sha256");
+      await writeReport(root, fixture);
+      // 报告重写器会更新报告文件追踪值，再统一覆盖为本轮测试的摘要状态。
+      setOptionalDigest(contract.quality_report, "sha256");
+      const errors = await runGate(root, fixture.asset);
+      assert.deepEqual(errors, [], `${label} 摘要不能阻断文件门`);
+    }
   });
 });
 
@@ -252,6 +303,7 @@ test("实际抽帧 FPS 必须绑定 manifest 设置与 ThreeJS 播放帧率", as
 test("抽帧 cell 尺寸必须匹配设置且 PNG 尺寸必须匹配帧数", async () => {
   await withFixture(async (root, fixture) => {
     fixture.report.cell.width = 8;
+    fixture.report.threejs.atlas_uv.repeat.x = 1 / 4;
     await writeReport(root, fixture);
     const settingErrors = await runGate(root, fixture.asset);
     assert(settingErrors.some((message) => message.includes("cell.width 必须等于 settings.width")));
@@ -262,6 +314,7 @@ test("抽帧 cell 尺寸必须匹配设置且 PNG 尺寸必须匹配帧数", asy
     fixture.report.artifacts.sheet.width = 20;
     fixture.report.artifacts.sheet.sha256 = sha256Bytes(wrongSizeSheet);
     fixture.report.cell.width = 4;
+    fixture.report.threejs.atlas_uv.repeat.x = 1 / 4;
     await writeReport(root, fixture);
     const pngErrors = await runGate(root, fixture.asset);
     assert(pngErrors.some((message) => message.includes("spritesheet 宽度必须等于 cell.width 乘帧数")));
@@ -282,12 +335,11 @@ test("是否移除背景必须是布尔值并与合同设置一致", async () =>
   });
 });
 
-test("质量报告中的图集 SHA 必须匹配实际 PNG", async () => {
+test("质量报告中的陈旧图集 SHA 仅作为追踪信息", async () => {
   await withFixture(async (root, fixture) => {
-    fixture.report.artifacts.sheet.sha256 = "sha256:" + "1".repeat(64);
+    fixture.report.artifacts.sheet.sha256 = "stale";
     await writeReport(root, fixture);
-    const errors = await runGate(root, fixture.asset);
-    assert(errors.some((message) => message.includes("artifacts.sheet.sha256 与真实 spritesheet 不一致")));
+    assert.deepEqual(await runGate(root, fixture.asset), []);
   });
 });
 
@@ -296,7 +348,25 @@ test("Three.js UV 与动画帧范围必须覆盖完整图集", async () => {
     fixture.report.threejs.animation.frames.end = 2;
     await writeReport(root, fixture);
     const errors = await runGate(root, fixture.asset);
-    assert(errors.some((message) => message.includes("threejs.animation.frames 与实际帧范围不一致")));
+    assert(errors.some((message) => message.includes("animation.frames 与实际帧范围不一致")));
+  });
+});
+
+test("水平 UV repeat 必须由完整图集帧数推导", async () => {
+  await withFixture(async (root, fixture) => {
+    fixture.report.threejs.atlas_uv.repeat.x = 1 / 3;
+    await writeReport(root, fixture);
+    const errors = await runGate(root, fixture.asset);
+    assert(errors.some((message) => message.includes("atlas_uv 的 UV repeat/offset/wrapping")));
+  });
+});
+
+test("Sprite.center 必须把左上像素锚点转换为左下归一化坐标", async () => {
+  await withFixture(async (root, fixture) => {
+    fixture.report.threejs.sprite.center.y = 0.75;
+    await writeReport(root, fixture);
+    const errors = await runGate(root, fixture.asset);
+    assert(errors.some((message) => message.includes("sprite.center 必须按左上角像素锚点转换")));
   });
 });
 
@@ -346,15 +416,6 @@ test("Three.js TextureLoader URL 必须严格等于 spritesheet runtime_url", as
   });
 });
 
-test("Sprite.center 必须把左上角锚点转换为 Three.js 左下归一化坐标", async () => {
-  await withFixture(async (root, fixture) => {
-    fixture.report.threejs.sprite.center.y = 1;
-    await writeReport(root, fixture);
-    const errors = await runGate(root, fixture.asset);
-    assert(errors.some((message) => message.includes("sprite.center 必须按左上角像素锚点转换")));
-  });
-});
-
 test("报告相对工件路径必须匹配 manifest，绝对路径作为诊断信息放行", async () => {
   await withFixture(async (root, fixture) => {
     fixture.report.artifacts.preview.file = "reports/other-preview.html";
@@ -370,12 +431,157 @@ test("报告相对工件路径必须匹配 manifest，绝对路径作为诊断�
   });
 });
 
-test("网页预览必须通过 meta 绑定实际图集 SHA", async () => {
+test("网页预览中的陈旧 SHA meta 不阻断有效 HTML", async () => {
   await withFixture(async (root, fixture) => {
     const badPreview = Buffer.from("<html><head><meta name=\"threejs-atlas-sha256\" content=\"sha256:" + "0".repeat(64) + "\"></head></html>");
     await writeFile(join(root, fixture.asset.frame_animation.preview.file), badPreview);
     fixture.asset.frame_animation.preview.sha256 = sha256Bytes(badPreview);
-    const errors = await runGate(root, fixture.asset);
-    assert(errors.some((message) => message.includes("preview 内嵌图集 SHA 与 spritesheet 文件不一致")));
+    assert.deepEqual(await runGate(root, fixture.asset), []);
   });
+});
+
+/** 区域必须使用完整的安全整数像素，避免越界和隐式坐标修正。 */
+test("静态合同拒绝缺项、负数、零尺寸和非整数区域", () => {
+  const invalidRegions = [
+    null,
+    {},
+    { x: 0, y: 0, width: 4 },
+    { x: -1, y: 0, width: 4, height: 4 },
+    { x: 0, y: 0.5, width: 4, height: 4 },
+    { x: 0, y: 0, width: 0, height: 4 },
+    { x: 0, y: 0, width: "4", height: 4 },
+    { x: Number.MAX_SAFE_INTEGER + 1, y: 0, width: 4, height: 4 },
+  ];
+  for (const region of invalidRegions) {
+    const { asset } = buildFixtureFiles();
+    asset.frame_animation.settings.region = region;
+    assert(validateFrameAnimationWorkflowContract(asset.frame_animation).some((message) => message.includes("settings.region")));
+  }
+});
+
+/** 同一视频的裁剪区域可以远大于输出 cell，文件门核对各自职责。 */
+test("区域坐标、源尺寸与独立输出尺寸一致时通过文件门", async () => {
+  await withFixture(async (root, fixture) => {
+    bindFixtureRegion(fixture);
+    await writeReport(root, fixture);
+    assert.deepEqual(await runGate(root, fixture.asset), []);
+  });
+});
+
+/** 共享视频的 SHA 相同不足以区分动画，区域也必须与清单绑定一致。 */
+test("文件门拒绝清单、输入报告与抽帧设置的区域不一致", async () => {
+  for (const target of ["input", "settings"]) {
+    await withFixture(async (root, fixture) => {
+      bindFixtureRegion(fixture);
+      fixture.report[target].region.x += 1;
+      await writeReport(root, fixture);
+      const errors = await runGate(root, fixture.asset);
+      assert(errors.some((message) => message.includes(target + ".region") && message.includes("settings.region")));
+    });
+  }
+});
+
+/** 任一侧有裁剪时都要完整记录，防止遗漏区域后冒用另一动画的产物。 */
+test("区域模式不能遗漏清单或报告的区域绑定", async () => {
+  for (const target of ["manifest", "input", "settings"]) {
+    await withFixture(async (root, fixture) => {
+      bindFixtureRegion(fixture);
+      if (target === "manifest") delete fixture.asset.frame_animation.settings.region;
+      else delete fixture.report[target].region;
+      await writeReport(root, fixture);
+      const errors = await runGate(root, fixture.asset);
+      assert(errors.some((message) => message.includes("region")));
+    });
+  }
+});
+
+/** 裁剪框以自动旋转后的显示画布为准，不能套用编码前宽高。 */
+test("区域必须位于报告的真实显示画布内", async () => {
+  for (const mutation of [
+    (fixture) => { fixture.report.input.display_width = 200; },
+    (fixture) => { fixture.report.input.display_height = 100; },
+    (fixture) => { delete fixture.report.input.display_width; },
+    (fixture) => { fixture.report.input.region.height = 0; },
+  ]) {
+    await withFixture(async (root, fixture) => {
+      bindFixtureRegion(fixture);
+      mutation(fixture);
+      await writeReport(root, fixture);
+      const errors = await runGate(root, fixture.asset);
+      assert(errors.some((message) => message.includes("input.region") || message.includes("display_")));
+    });
+  }
+});
+
+/** 动画根可位于区域中心或半像素位置，但必须是有限且完整的局部坐标。 */
+test("静态合同拒绝无效局部锚点", () => {
+  for (const anchor of [null, {}, { x: -1, y: 0 }, { x: 1, y: Infinity }, { x: "1", y: 2 }]) {
+    const { asset } = buildFixtureFiles();
+    asset.frame_animation.settings.anchor = anchor;
+    assert(validateFrameAnimationWorkflowContract(asset.frame_animation).some((message) => message.includes("settings.anchor")));
+  }
+});
+
+/** 用坐标变换验收锚点，避免文件格式通过而 ThreeJS 绑定留白边缘。 */
+test("文件门检查局部锚点与缩放留白的实际变换", async () => {
+  await withFixture(async (root, fixture) => {
+    bindFixtureAnchor(fixture);
+    await writeReport(root, fixture);
+    assert.deepEqual(await runGate(root, fixture.asset), []);
+    fixture.report.cell.target_anchor.y = 4;
+    fixture.report.threejs.sprite.center.y = 0;
+    fixture.report.threejs.sprite.center.target_anchor.y = 4;
+    await writeReport(root, fixture);
+    assert((await runGate(root, fixture.asset)).some((message) => message.includes("target_anchor") && message.includes("变换")));
+  });
+});
+
+/** 清单、报告和实际内容矩形均参与绑定，不能单独改声明隐藏锚点漂移。 */
+test("局部锚点绑定不能缺失、越界或与缩放内容不一致", async () => {
+  for (const mutation of [
+    (fixture) => { fixture.report.input.anchor.x += 1; },
+    (fixture) => { delete fixture.report.settings.anchor; },
+    (fixture) => { delete fixture.asset.frame_animation.settings.anchor; },
+    (fixture) => { fixture.report.cell.source_anchor.y = 100; },
+    (fixture) => { fixture.report.cell.content_rect.height = 5; },
+    (fixture) => { delete fixture.report.cell.source_anchor; },
+  ]) {
+    await withFixture(async (root, fixture) => {
+      bindFixtureAnchor(fixture);
+      mutation(fixture);
+      await writeReport(root, fixture);
+      assert((await runGate(root, fixture.asset)).some((message) => message.includes("anchor") || message.includes("content_rect")));
+    });
+  }
+});
+
+/** 每份报告都须记录缩放布局，不能删掉字段绕过默认根点的变换校验。 */
+test("整画布和区域报告均不能省略源锚点及内容矩形", async () => {
+  for (const useRegion of [false, true]) {
+    await withFixture(async (root, fixture) => {
+      if (useRegion) bindFixtureRegion(fixture);
+      delete fixture.report.cell.source_anchor;
+      delete fixture.report.cell.content_rect;
+      await writeReport(root, fixture);
+      const errors = await runGate(root, fixture.asset);
+      assert(errors.some((message) => message.includes("source_anchor")));
+      assert(errors.some((message) => message.includes("content_rect")));
+    });
+  }
+});
+
+/** 未声明自定义根点时，即使目标点和 ThreeJS origin 自洽也不能替换默认根点。 */
+test("默认源锚点必须绑定区域或整画布的底部中心", async () => {
+  for (const useRegion of [false, true]) {
+    await withFixture(async (root, fixture) => {
+      if (useRegion) bindFixtureRegion(fixture);
+      fixture.report.cell.source_anchor.y = 0;
+      const target = fixture.report.cell.target_anchor;
+      target.y = fixture.report.cell.content_rect.y;
+      fixture.report.threejs.sprite.center.y = 1 - target.y / fixture.report.cell.height;
+      fixture.report.threejs.sprite.center.target_anchor.y = target.y;
+      await writeReport(root, fixture);
+      assert((await runGate(root, fixture.asset)).some((message) => message.includes("source_anchor") && message.includes("默认")));
+    });
+  }
 });

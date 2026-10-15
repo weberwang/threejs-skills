@@ -2,7 +2,7 @@
 const SNAPSHOT_FIELDS = Object.freeze([
   ['promptContextId', 'pendingApprovalId'], ['pendingState', 'pendingApprovalState'], ['pendingContext', 'pendingApprovalContext'],
   ['workItemId', 'workItemId'], ['explicitObject', 'pendingApprovalObject'], ['stageId', 'pendingApprovalStage'],
-  ['moduleIds', 'moduleIds'], ['baselineVersion', 'baselineVersion'], ['baselineHash', 'baselineHash'],
+  ['moduleIds', 'moduleIds'], ['baselineVersion', 'baselineVersion'],
   ['actionType', 'pendingApprovalActionType'], ['actionLevel', 'pendingApprovalActionLevel'], ['impactSummary', 'pendingApprovalImpactSummary'],
   ['fileScope', 'pendingApprovalFileScope'], ['services', 'pendingApprovalServices'], ['externalTargets', 'pendingApprovalExternalTargets'],
   ['allowServiceStart', 'pendingApprovalAllowServiceStart'], ['allowDelete', 'pendingApprovalAllowDelete'],

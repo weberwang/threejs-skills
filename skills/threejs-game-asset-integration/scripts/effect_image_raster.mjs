@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { deflateSync, inflateSync } from "node:zlib";
 import { EFFECT_IMAGE_FONT_CELL_SIZE, EFFECT_IMAGE_FONT_DATA_BASE64, EFFECT_IMAGE_FONT_KEYS } from "./effect_image_font.mjs";
+import { validateNineSliceContract } from "../../threejs-game-ui-layout/scripts/nine-slice-contract.mjs";
 
 /** 判断值是否为普通对象，用于检查复用计划而不接受数组或空值。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -94,9 +95,19 @@ export function deriveVisibleAnnotationRows(regions = [], metadata = {}) {
     rows.push({ kind: "summary", region_id: region.id, annotation_number: region.annotation_number, text: visibleSummaryText(region.implementation_plan?.summary, { annotation_number: region.annotation_number }) });
     // 标签只保留用户能直接理解的中文，不把 production_method 等合同字段暴露到图示。
     rows.push({ kind: "label", region_id: region.id, annotation_number: region.annotation_number, label: production.label, text: production.label });
+    const elements = metadata.regions?.find((item) => item.region_id === region.id)?.decomposition_elements ?? [];
+    for (const [index, element] of elements.entries()) {
+      if (element.nine_slice === undefined) continue;
+      const decision = validateNineSliceContract(element.nine_slice, "拆解部件 nine_slice");
+      // 直接把适用决策放入阶段 A 人工确认图，不能只藏在技术 JSON 中留到 V4 实现时再试切片。
+      const description = decision.mode === "stretch"
+        ? `九宫格 源图${decision.source_size.width}×${decision.source_size.height} 边宽 左${decision.borders.left} 右${decision.borders.right} 上${decision.borders.top} 下${decision.borders.bottom}`
+        : "九宫格不适用";
+      rows.push({ kind: "nine-slice", region_id: region.id, annotation_number: region.annotation_number, element_id: element.element_id, text: `${region.annotation_number}.${index + 1} ${description}；${decision.reason}` });
+    }
   }
-  // 只对可能出现长中文的用户摘要换行；标签保持一行，便于人工快速扫描。
-  return rows.flatMap((row) => row.kind === "summary" ? wrapVisibleAnnotationRow(row) : [row]);
+  // 用户摘要和切片说明可换行；标签保持一行，便于人工快速扫描。
+  return rows.flatMap((row) => row.kind !== "label" ? wrapVisibleAnnotationRow(row) : [row]);
 }
 
 /** 将稳定编号和中文摘要合成为右栏首要说明，不显示任何技术数量或 ID。 */

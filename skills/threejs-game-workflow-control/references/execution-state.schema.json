@@ -5,19 +5,19 @@
   "description": "由 unit-check 原子更新的当前实施单元和下一任务状态；状态必须绑定 Work Item、Implementation Package、基线和 executionUnits 数组顺序。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "stateId", "workItemId", "packageId", "baselineVersion", "baselineHash", "stageId", "visualStage", "visualStageState", "executionUnitIds", "executionPlanFingerprint", "units", "unitSequenceState", "workflowState", "nextTask", "updatedAt", "lastTransition"],
+  "required": ["schemaVersion","stateId","workItemId","packageId","baselineVersion","stageId","visualStage","visualStageState","executionUnitIds","units","unitSequenceState","workflowState","nextTask","updatedAt","lastTransition"],
   "properties": {
     "schemaVersion": {"const": "threejs-execution-state/1.0"},
     "stateId": {"type": "string", "minLength": 1},
     "workItemId": {"type": "string", "minLength": 1},
     "packageId": {"type": "string", "minLength": 1},
     "baselineVersion": {"type": "string", "minLength": 1},
-    "baselineHash": {"type": "string", "pattern": "^(?:sha256:[a-f0-9]{64}|[a-f0-9]{40}(?:[a-f0-9]{24})?)$"},
+    "baselineHash": {"description":"仅作为可选摘要记录，不参与验收或放行。"},
     "stageId": {"type": "string", "minLength": 1},
-    "visualStage": {"type": ["string", "null"], "enum": ["V0", "V1", "V2", "V3", "V4", "V5", null]},
+    "visualStage": {"type": ["string", "null"], "enum": ["V0", "V1", "V2", "V3", "V4", null]},
     "visualStageState": {"type": ["string", "null"], "minLength": 1},
     "executionUnitIds": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-    "executionPlanFingerprint": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "executionPlanFingerprint": {"description":"仅作为可选摘要记录，不参与验收或放行。"},
     "units": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/unitState"}},
     "unitSequenceState": {"enum": ["IN_PROGRESS", "COMPLETE"]},
     "workflowState": {"enum": ["IN_PROGRESS", "BLOCKED", "COMPLETE"]},
@@ -29,7 +29,7 @@
     "unitState": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["unitId", "order", "parallelMode", "parallelGroup", "state", "resultId", "resultPath", "resultFingerprint", "startedAt", "completedAt"],
+      "required": ["unitId","order","parallelMode","parallelGroup","state","resultId","resultPath","startedAt","completedAt"],
       "properties": {
         "unitId": {"type": "string", "minLength": 1},
         "order": {"type": "integer", "minimum": 0},
@@ -38,7 +38,7 @@
         "state": {"enum": ["PENDING", "IN_PROGRESS", "COMPLETE"]},
         "resultId": {"type": ["string", "null"], "minLength": 1},
         "resultPath": {"type": ["string", "null"], "minLength": 1},
-        "resultFingerprint": {"type": ["string", "null"], "pattern": "^sha256:[a-f0-9]{64}$"},
+        "resultFingerprint": {"description":"仅作为可选摘要记录，不参与验收或放行。"},
         "startedAt": {"type": ["string", "null"], "format": "date-time"},
         "completedAt": {"type": ["string", "null"], "format": "date-time"}
       }

@@ -84,7 +84,6 @@
     "screenshot",
     "sceneId",
     "stateId",
-    "candidateSha256",
     "pageReloaded"
   ],
   "validationScope": "machine-contract-only"

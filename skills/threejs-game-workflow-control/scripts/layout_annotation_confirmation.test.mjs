@@ -66,15 +66,18 @@ test("布局确认拒绝空 ID、文件、schema、时间和非正尺寸", () =>
   assert(errors.some((item) => item.includes("必须是正整数")));
 });
 
-test("布局确认 SHA 或上游身份漂移时 fail closed", () => {
-  const changed = confirmation({ user_original_text: "改过的位置" }); const errors = []; validateLayoutAnnotationConfirmation(changed, context, errors); assert(errors.some((item) => item.includes("confirmation_sha256 复算失败") || item.includes("user_message_sha256")));
+test("布局确认摘要缺失或错误不阻断，但上游业务身份漂移仍失败", () => {
+  const changed = confirmation({ confirmation_sha256: "stale", user_message_sha256: "missing-or-stale", layout_annotation_sha256: undefined });
+  const errors = []; validateLayoutAnnotationConfirmation(changed, context, errors); assert.deepEqual(errors, []);
   const drift = []; validateLayoutAnnotationConfirmation(confirmation(), { ...context, decompositionConfirmationId: "decomp-drift" }, drift); assert(drift.some((item) => item.includes("上游身份")));
 });
 
-test("布局确认文件门拒绝伪造 decision、receipt 或审阅页", async () => {
+test("布局确认文件门拒绝伪造 decision，同时不以审阅页摘要变化阻断", async () => {
   const value = await fileBackedConfirmation();
-  const decision = JSON.parse(await readFile(join(value.projectRoot, value.decisionFile), "utf8")); decision.author_role = "system"; await writeFile(join(value.projectRoot, value.decisionFile), JSON.stringify(decision)); const decisionErrors = []; validateLayoutAnnotationConfirmation(value.record, value.context, decisionErrors); assert(decisionErrors.some((item) => item.includes("decision_record") && (item.includes("user") || item.includes("SHA-256"))));
-  const review = await readFile(join(value.projectRoot, value.record.layout_review_file)); await writeFile(join(value.projectRoot, value.record.layout_review_file), Buffer.concat([review, Buffer.from("\n<!-- drift -->\n")])); const reviewErrors = []; validateLayoutAnnotationConfirmation(value.record, value.context, reviewErrors); assert(reviewErrors.some((item) => item.includes("layout_review") && (item.includes("SHA") || item.includes("重建") || item.includes("数据块"))));
+  const decision = JSON.parse(await readFile(join(value.projectRoot, value.decisionFile), "utf8")); decision.author_role = "system"; await writeFile(join(value.projectRoot, value.decisionFile), JSON.stringify(decision)); const decisionErrors = []; validateLayoutAnnotationConfirmation(value.record, value.context, decisionErrors); assert(decisionErrors.some((item) => item.includes("decision_record") && item.includes("必须是 user 解除")));
+  const fresh = await fileBackedConfirmation();
+  const review = await readFile(join(fresh.projectRoot, fresh.record.layout_review_file)); await writeFile(join(fresh.projectRoot, fresh.record.layout_review_file), Buffer.concat([review, Buffer.from("\n<!-- harmless formatting change -->\n")]));
+  const reviewErrors = []; validateLayoutAnnotationConfirmation(fresh.record, fresh.context, reviewErrors); assert.deepEqual(reviewErrors, []);
 });
 
 test("布局确认文件门拒绝伪造 user receipt 和空 JSON", async () => {

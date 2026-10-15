@@ -20,16 +20,11 @@ export const GLOBAL_VISUAL_STYLE_DRIFT_POLICY = "forbid";
 /** 生成记录中 origin 的有限集合；provided 不得伪造生成记录。 */
 export const GLOBAL_VISUAL_ORIGINS = new Set(["provided", "generated"]);
 
-const SHA_PATTERN = /^sha256:[a-f0-9]{64}$/;
-
 /** 判断是否为普通对象。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 
 /** 判断字符串是否具备合同内容。 */
 export function nonEmptyString(value) { return typeof value === "string" && value.trim().length > 0; }
-
-/** 判断是否为标准 sha256 身份。 */
-export function isGlobalVisualSha256(value) { return typeof value === "string" && SHA_PATTERN.test(value); }
 
 /** 规范化项目相对路径，只用于稳定身份比较，不替代文件门的真实读取。 */
 export function normalizeGlobalVisualPath(value) {
@@ -44,34 +39,25 @@ function readEvidencePath(value) {
   return value.path ?? value.file ?? value.evidence ?? value.evidence_path ?? "";
 }
 
-/** 读取证据对象中的 SHA，统一落到 snake_case 合同字段。 */
-function readEvidenceSha(value) {
-  if (!isObject(value)) return "";
-  return value.sha256 ?? value.evidence_sha256 ?? "";
-}
-
 /**
  * 将 baseline.anchor_evidence 规范化为可比对的锚点身份。
- * 字符串形式保留用于项目尚未补齐 SHA 的结构阶段；生成硬门会要求
- * style_reference_inputs 记录实际 SHA，文件门再用真实字节复算该身份。
+ * 锚点按路径与顺序识别，最终人工验收负责确认文件的实际视觉内容。
  */
 export function normalizeGlobalAnchorEvidence(baseline) {
   const values = Array.isArray(baseline?.anchor_evidence) ? baseline.anchor_evidence : [];
   return values.map((value, index) => ({
     index,
     path: readEvidencePath(value),
-    sha256: readEvidenceSha(value),
     raw: value,
   }));
 }
 
-/** 读取 style_reference_inputs 的稳定路径和内容 SHA。 */
+/** 读取 style_reference_inputs 的稳定来源路径。 */
 export function normalizeGlobalStyleReferenceInputs(inputs) {
   if (!Array.isArray(inputs)) return [];
   return inputs.map((value, index) => ({
     index,
     path: readEvidencePath(value),
-    sha256: readEvidenceSha(value),
     raw: value,
   }));
 }
@@ -93,15 +79,14 @@ export function globalVisualBaselineIdentity(baseline) {
 }
 
 /**
- * 校验全局视觉基线本身；该函数不读取文件，真实正文/锚点 SHA 由文件门复算。
+ * 校验全局视觉基线本身；该函数不读取文件，正文和锚点由来源文件门读取。
  */
 export function validateGlobalVisualBaseline(baseline, options = {}) {
   const errors = [];
   const label = options.label ?? "visual_baseline";
   if (!isObject(baseline)) return [`${label} 必须是对象`];
-  for (const field of ["id", "version", "style_fingerprint", "document"]) if (!nonEmptyString(baseline[field])) errors.push(`${label}.${field} 必须是非空字符串`);
+  for (const field of ["id", "version", "document"]) if (!nonEmptyString(baseline[field])) errors.push(`${label}.${field} 必须是非空字符串`);
   if (nonEmptyString(baseline.document) && baseline.document !== GLOBAL_VISUAL_BASELINE_DOCUMENT) errors.push(`${label}.document 必须为 ${GLOBAL_VISUAL_BASELINE_DOCUMENT}`);
-  if (nonEmptyString(baseline.style_fingerprint) && !isGlobalVisualSha256(baseline.style_fingerprint)) errors.push(`${label}.style_fingerprint 必须是 sha256: 后接 64 位小写十六进制`);
   if (baseline.status !== GLOBAL_VISUAL_BASELINE_STATUS) errors.push(`${label}.status 必须为 ${GLOBAL_VISUAL_BASELINE_STATUS}；该状态不代表 V2`);
   const anchors = normalizeGlobalAnchorEvidence(baseline);
   if (anchors.length === 0 && options.requireAnchors !== false) errors.push(`${label}.anchor_evidence 必须声明全部全局视觉锚点`);
@@ -111,7 +96,6 @@ export function validateGlobalVisualBaseline(baseline, options = {}) {
     if (!nonEmptyString(anchor.path)) errors.push(`${label}.anchor_evidence[${index}] 必须包含非空路径`);
     if (seen.has(path)) errors.push(`${label}.anchor_evidence 不得重复同一锚点路径：${anchor.path}`);
     if (path) seen.add(path);
-    if (isObject(anchor.raw) && nonEmptyString(anchor.sha256) && !isGlobalVisualSha256(anchor.sha256)) errors.push(`${label}.anchor_evidence[${index}].sha256 格式无效`);
   }
   return [...new Set(errors)];
 }
@@ -151,7 +135,6 @@ export function validateGlobalStyleReferenceInputs(inputs, baseline, options = {
     return errors;
   }
   if (actual.some((item) => !nonEmptyString(item.path))) errors.push(`${label} 每项必须包含非空 path`);
-  if (actual.some((item) => !isGlobalVisualSha256(item.sha256))) errors.push(`${label} 每项必须包含真实 sha256`);
   if (actual.length !== expected.length) errors.push(`${label} 必须与全局锚点数量完全一致（预期 ${expected.length}，实际 ${actual.length}）`);
   const expectedPaths = expected.map((item) => normalizeGlobalVisualPath(item.path));
   const actualPaths = actual.map((item) => normalizeGlobalVisualPath(item.path));
@@ -161,18 +144,11 @@ export function validateGlobalStyleReferenceInputs(inputs, baseline, options = {
     if (seen.has(item.path)) errors.push(`${label} 不得重复锚点：${item.path}`);
     if (item.path) seen.add(item.path);
   }
-  expected.forEach((item, index) => {
-    const actualItem = actual[index];
-    if (!actualItem) return;
-    if (nonEmptyString(item.sha256) && actualItem.sha256 !== item.sha256) errors.push(`${label}[${index}] 未绑定当前锚点 SHA`);
-  });
   return [...new Set(errors)];
 }
 
 /**
- * 校验 generated effect image 的全局生成身份。
- * target_sha256 表示本次生成所依赖的冻结目标，output_sha256 表示实际输出；
- * 对 scene master 而言两者可以相同，对原子资产/上下文图则通常不同。
+ * 校验 generated effect image 的全局生成身份和实际发送的约束。
  */
 export function validateGlobalVisualGenerationRecord(record, context = {}) {
   const errors = [];
@@ -182,14 +158,14 @@ export function validateGlobalVisualGenerationRecord(record, context = {}) {
   if (record.origin !== "generated") errors.push(`${label}.generation_record.origin 必须为 generated`);
   errors.push(...validateGlobalVisualBaseline(baseline, { label: `${label}.visual_baseline` }).map((item) => `全局视觉基线：${item}`));
   const identity = globalVisualBaselineIdentity(baseline);
-  for (const [field, expected] of [["visual_baseline_id", identity.id], ["visual_baseline_version", identity.version], ["style_fingerprint", identity.style_fingerprint], ["baseline_document", GLOBAL_VISUAL_BASELINE_DOCUMENT]]) {
+  for (const [field, expected] of [["visual_baseline_id", identity.id], ["visual_baseline_version", identity.version], ["baseline_document", GLOBAL_VISUAL_BASELINE_DOCUMENT]]) {
     if (!nonEmptyString(record[field])) errors.push(`${label}.generation_record.${field} 缺失`);
     else if (nonEmptyString(expected) && record[field] !== expected) errors.push(`${label}.generation_record.${field} 未绑定当前全局视觉基线`);
   }
   errors.push(...validateGlobalStyleReferenceInputs(record.style_reference_inputs, baseline, { label: `${label}.generation_record.style_reference_inputs` }));
   if (record.actual_style_reference_inputs !== undefined) {
-    const expectedInputs = normalizeGlobalStyleReferenceInputs(record.style_reference_inputs).map((item) => ({ path: normalizeGlobalVisualPath(item.path), sha256: item.sha256 }));
-    const actualInputs = normalizeGlobalStyleReferenceInputs(record.actual_style_reference_inputs).map((item) => ({ path: normalizeGlobalVisualPath(item.path), sha256: item.sha256 }));
+    const expectedInputs = normalizeGlobalStyleReferenceInputs(record.style_reference_inputs).map((item) => normalizeGlobalVisualPath(item.path));
+    const actualInputs = normalizeGlobalStyleReferenceInputs(record.actual_style_reference_inputs).map((item) => normalizeGlobalVisualPath(item.path));
     if (JSON.stringify(actualInputs) !== JSON.stringify(expectedInputs)) errors.push(`${label}.generation_record.actual_style_reference_inputs 必须与实际发送的全局锚点输入一致`);
   }
   if (record.global_visual_consistency_prompt !== GLOBAL_VISUAL_CONSISTENCY_PROMPT) errors.push(`${label}.generation_record.global_visual_consistency_prompt 必须使用 canonical 全局一致性提示词`);
@@ -203,17 +179,7 @@ export function validateGlobalVisualGenerationRecord(record, context = {}) {
   if (record.consistency_status !== "passed") errors.push(`${label}.generation_record.consistency_status 必须为 passed`);
   const evidence = record.consistency_evidence;
   const evidencePath = readEvidencePath(evidence);
-  const evidenceSha = readEvidenceSha(evidence);
   if (!nonEmptyString(evidencePath)) errors.push(`${label}.generation_record.consistency_evidence 必须包含路径`);
-  if (!isGlobalVisualSha256(evidenceSha)) errors.push(`${label}.generation_record.consistency_evidence 必须包含 sha256`);
-  const expectedTarget = context.target_sha256 ?? context.targetSha;
-  if (nonEmptyString(expectedTarget)) {
-    if (record.target_sha256 !== expectedTarget) errors.push(`${label}.generation_record.target_sha256 未绑定当前冻结目标`);
-    if (!isGlobalVisualSha256(record.target_sha256)) errors.push(`${label}.generation_record.target_sha256 格式无效`);
-  }
-  const expectedOutput = context.output_sha256 ?? context.outputSha;
-  if (!isGlobalVisualSha256(record.output_sha256)) errors.push(`${label}.generation_record.output_sha256 必须记录实际输出 SHA`);
-  else if (nonEmptyString(expectedOutput) && record.output_sha256 !== expectedOutput) errors.push(`${label}.generation_record.output_sha256 未绑定当前输出`);
   if (record.allow_style_transfer === true || record.allow_redesign === true || record.style_drift_policy !== GLOBAL_VISUAL_STYLE_DRIFT_POLICY) errors.push(`${label}.generation_record 不得允许风格迁移或重新设计`);
   return [...new Set(errors)];
 }
@@ -234,15 +200,15 @@ export function validateVisualEffectImageOrigin(value, context = {}) {
   return [...new Set(errors)];
 }
 
-/** 收集生成记录需要由文件门复算的全局锚点、提示一致性证据和输出身份。 */
+/** 收集生成记录需要由文件门确认存在的全局锚点、一致性证据和输出文件。 */
 export function collectGlobalVisualConsistencyEvidencePaths(record, label = "generation_record") {
   if (!isObject(record)) return [];
   const paths = [];
-  for (const [index, item] of normalizeGlobalStyleReferenceInputs(record.style_reference_inputs).entries()) if (nonEmptyString(item.path)) paths.push({ field: `${label}.style_reference_inputs[${index}]`, path: item.path, sha256: item.sha256 });
+  for (const [index, item] of normalizeGlobalStyleReferenceInputs(record.style_reference_inputs).entries()) if (nonEmptyString(item.path)) paths.push({ field: `${label}.style_reference_inputs[${index}]`, path: item.path });
   const evidencePath = readEvidencePath(record.consistency_evidence);
-  if (nonEmptyString(evidencePath)) paths.push({ field: `${label}.consistency_evidence`, path: evidencePath, sha256: readEvidenceSha(record.consistency_evidence) });
+  if (nonEmptyString(evidencePath)) paths.push({ field: `${label}.consistency_evidence`, path: evidencePath });
   const outputPath = readEvidencePath(record.output_file ?? record.output ?? record.actual_output);
-  if (nonEmptyString(outputPath)) paths.push({ field: `${label}.output`, path: outputPath, sha256: record.output_sha256 });
+  if (nonEmptyString(outputPath)) paths.push({ field: `${label}.output`, path: outputPath });
   return paths;
 }
 

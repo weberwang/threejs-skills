@@ -110,12 +110,18 @@ test("CLI 接受自包含 GLB，并明确标注只检查 accessor 元数据", as
   assert.equal(result.output.verification.geometryCounts, "accessor-metadata-only");
 });
 
-test("CLI 拒绝不匹配的冻结 SHA", async (t) => {
+test("CLI 不以缺失、错误或变化的摘要阻断有效模型验收", async (t) => {
   const project = await createProject(t);
-  await saveManifest(project, (manifest) => { manifest.asset.sha256 = `sha256:${"0".repeat(64)}`; });
-  const result = runValidator(project);
-  assert.equal(result.status, 1);
-  assert.ok(result.output.issues.some((issue) => issue.path === "asset.sha256"));
+  // 依次覆盖三种摘要状态，确保模型与二维资源使用相同的实际内容验收规则。
+  for (const value of [undefined, "错误格式", `sha256:${"0".repeat(64)}`]) {
+    await saveManifest(project, (manifest) => {
+      if (value === undefined) delete manifest.asset.sha256;
+      else manifest.asset.sha256 = value;
+    });
+    const result = runValidator(project);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.output.status, "passed");
+  }
 });
 
 test("CLI 拒绝 GLB 头部声明长度与文件实际长度不一致", async (t) => {

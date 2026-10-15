@@ -1,9 +1,9 @@
 /**
  * 效果图还原中的文本拆解、实现路线和运行时测量合同。
  *
- * 文本既可能是 DOM HUD 或项目的 Canvas/SDF 字体渲染器，也可能是固定图片字标；如果只把
+ * 文本既可能是 DOM 或项目文本适配器，也可能是固定图片字标；如果只把
  * 文本当成 coverage region 的附属事实，区域 bounds 通过仍然无法说明字形、
- * 基线和字体是否一致。本模块把可观察文本事实与 V3/V3/V5 的实现证据
+ * 基线和字体是否一致。本模块把可观察文本事实与 V3/V3/V4 的实现证据
  * 绑定在同一个 text_node 上，并只由 scene reconstruction 合同调用。
  */
 
@@ -93,7 +93,7 @@ function contractError(stage, contract, node, message, details = {}) {
   const expected = details.expected ?? "完整文本拆解事实与运行时证据";
   const actual = details.actual ?? "missing";
   const returnStage = details.returnStage ?? (stage === "V1" || stage === "V2" ? "V1/PROPOSAL" : stage);
-  const rootCause = details.rootCause ?? (returnStage === "V1/PROPOSAL" ? "方案缺失" : stage === "V3" ? "执行问题" : stage === "V5" || stage === "VALIDATING" ? "验收问题" : "方案缺失");
+  const rootCause = details.rootCause ?? (returnStage === "V1/PROPOSAL" ? "方案缺失" : stage === "V3" ? "执行问题" : stage === "V4" || stage === "VALIDATING" ? "验收问题" : "方案缺失");
   return `[${stage}] scene/state=${scene}/${state} annotation_number=${annotation} region_id=${regionId} 根因=${rootCause} ${message}${missing} 预期证据=${expected} 实际证据=${actual} 应退回阶段=${returnStage}`;
 }
 
@@ -106,12 +106,12 @@ function pushPlanError(errors, stage, contract, node, message, details = {}) {
   }));
 }
 
-/** 记录 V3/V5 运行时错误，避免把执行或验收问题错误退回素材规划。 */
+/** 记录 V3/V4 运行时错误，避免把执行或验收问题错误退回素材规划。 */
 function pushRuntimeError(errors, stage, contract, node, message, details = {}) {
   errors.push(contractError(stage, contract, node, message, {
     ...details,
-    returnStage: details.returnStage ?? (stage === "V5" || stage === "VALIDATING" ? "VALIDATING" : "V3/V5"),
-    rootCause: details.rootCause ?? (stage === "V5" || stage === "VALIDATING" ? "验收问题" : "执行问题"),
+    returnStage: details.returnStage ?? (stage === "V4" || stage === "VALIDATING" ? "VALIDATING" : "V3/V4"),
+    rootCause: details.rootCause ?? (stage === "V4" || stage === "VALIDATING" ? "验收问题" : "执行问题"),
   }));
 }
 
@@ -156,7 +156,7 @@ function regionIndex(contract, regions) {
   return result;
 }
 
-/** 读取预声明容差定义，V5 不允许文本节点自行发明数值阈值。 */
+/** 读取预声明容差定义，V4 不允许文本节点自行发明数值阈值。 */
 function toleranceIndex(contract, definitions) {
   if (definitions instanceof Map) return definitions;
   const source = definitions ?? field(contract, "predeclared_tolerances", "predeclaredTolerances", "tolerance_set", "toleranceSet", "tolerances");
@@ -207,20 +207,19 @@ function nonNumericFactsDiffer(target, candidate) {
   return JSON.stringify(target) !== JSON.stringify(candidate);
 }
 
-/** 读取资源对象中统一的 kind/path/SHA 视图。 */
+/** 读取资源对象中统一的 kind/path 视图；内容摘要只作可选追踪信息。 */
 function resourceFact(resource) {
-  if (!isObject(resource)) return { kind: "", path: undefined, sha256: undefined };
+  if (!isObject(resource)) return { kind: "", path: undefined };
   return {
     kind: String(field(resource, "kind", "resource_type", "resourceType", "role", "purpose", "type", "asset_type", "assetType") ?? "").toLowerCase(),
     path: field(resource, "path", "file", "asset", "asset_path", "assetPath", "source_file", "sourceFile"),
-    sha256: field(resource, "sha256", "asset_sha256", "assetSha256", "resource_sha256", "resourceSha256"),
   };
 }
 
-/** 判断资源是否绑定了合法 sha256；路径缺失也不能称为资源消费。 */
+/** 判断资源是否绑定了实际路径；摘要存在与否不改变资源映射结论。 */
 function validResource(resource) {
-  const { path, sha256 } = resourceFact(resource);
-  return nonEmptyString(path) && typeof sha256 === "string" && /^sha256:[a-f0-9]{64}$/.test(sha256);
+  const { path } = resourceFact(resource);
+  return nonEmptyString(path);
 }
 
 /** 将直接资产字段纳入路线检查，canonical 路径仍建议使用 required_resources。 */
@@ -235,17 +234,17 @@ function resourceMatches(resource, matcher) {
   return validResource(resource) && matcher(fact.kind, resource);
 }
 
-/** 判断资源 kind 是否是可被 ThreeJS Text 消费的字体资产。 */
+/** 判断资源 kind 是否是可被 项目文本适配器 消费的字体资产。 */
 function isFontResource(resource) {
   return resourceMatches(resource, (kind) => ["font", "font-file", "font_asset", "font-asset", "typeface"].includes(kind));
 }
 
-/** 判断资源 kind 是否是 位图字体描述文件。 */
+/** 判断资源 kind 是否是 BitmapText 描述文件。 */
 function isBitmapDescriptor(resource) {
   return resourceMatches(resource, (kind) => ["bitmap-font-descriptor", "bitmap_descriptor", "bitmap-font-data", "font-descriptor", "fnt"].includes(kind));
 }
 
-/** 判断资源 kind 是否是 位图字体纹理。 */
+/** 判断资源 kind 是否是 BitmapText 纹理。 */
 function isBitmapTexture(resource) {
   return resourceMatches(resource, (kind) => ["bitmap-font-texture", "bitmap_texture", "font-texture", "texture"].includes(kind));
 }
@@ -369,7 +368,7 @@ function validateImplementationRoute(node, contract, stage, errors, { typography
   const rawResources = field(node, "required_resources", "requiredResources", "resources");
   const resources = Array.isArray(rawResources) ? rawResources : [];
   if (!Array.isArray(rawResources) || resources.length === 0) pushPlanError(errors, stage, contract, node, "text_node 缺少非空 required_resources", { missing: "required_resources" });
-  for (const [index, resource] of resources.entries()) if (!validResource(resource)) pushPlanError(errors, stage, contract, node, `required_resources[${index}] 必须包含路径和合法 SHA-256`, { missing: `required_resources[${index}].path/sha256`, actual: JSON.stringify(resource) });
+  for (const [index, resource] of resources.entries()) if (!validResource(resource)) pushPlanError(errors, stage, contract, node, `required_resources[${index}] 必须包含资源路径`, { missing: `required_resources[${index}].path`, actual: JSON.stringify(resource) });
 
   const directFont = directResource(node, ["font_asset", "fontAsset", "font_resource", "fontResource"]);
   const directDescriptor = directResource(node, ["bitmap_font_descriptor", "bitmapFontDescriptor", "descriptor_resource", "descriptorResource"]);
@@ -380,10 +379,10 @@ function validateImplementationRoute(node, contract, stage, errors, { typography
   const hasTexture = Boolean(directTexture && validResource(directTexture)) || resources.some(isBitmapTexture);
   const hasImage = Boolean(directImage && validResource(directImage)) || resources.some(isImageResource);
 
-  if (route === "threejs-text" && !hasFont) pushPlanError(errors, stage, contract, node, "threejs-text 必须绑定字体资产及 SHA-256", { missing: "required_resources[kind=font].sha256" });
-  if (route === "bitmap-text" && (!hasDescriptor || !hasTexture)) pushPlanError(errors, stage, contract, node, "bitmap-text 必须同时绑定描述文件和字体纹理及 SHA-256", { missing: "bitmap-font-descriptor/bitmap-font-texture resources" });
+  if (route === "threejs-text" && !hasFont) pushPlanError(errors, stage, contract, node, "threejs-text 必须绑定字体资产路径", { missing: "required_resources[kind=font].path" });
+  if (route === "bitmap-text" && (!hasDescriptor || !hasTexture)) pushPlanError(errors, stage, contract, node, "bitmap-text 必须同时绑定描述文件和字体纹理路径", { missing: "bitmap-font-descriptor/bitmap-font-texture resources" });
   if (route === "image-text") {
-    if (!hasImage) pushPlanError(errors, stage, contract, node, "image-text 必须绑定图片资产及 SHA-256", { missing: "required_resources[kind=image].sha256" });
+    if (!hasImage) pushPlanError(errors, stage, contract, node, "image-text 必须绑定图片资产路径", { missing: "required_resources[kind=image].path" });
     const accessible = field(node, "accessible_semantic", "accessibleSemantic", "accessibility", "semantic_text", "semanticText");
     if (!hasStructuredValue(accessible)) pushPlanError(errors, stage, contract, node, "image-text 必须保留可访问语义", { missing: "accessible_semantic" });
   }
@@ -403,8 +402,8 @@ function validateImplementationRoute(node, contract, stage, errors, { typography
   return route;
 }
 
-/** 验证 V3/V5 的实际 renderer、字体加载、bounds、基线、测试 ID 和证据。 */
-function validateRuntimeVerification(node, contract, stage, errors, route, region, toleranceDefinitions, isV5Runtime) {
+/** 验证 V3/V4 的实际 renderer、字体加载、bounds、基线、测试 ID 和证据。 */
+function validateRuntimeVerification(node, contract, stage, errors, route, region, toleranceDefinitions, isV4Runtime) {
   const raw = field(node, "runtime_verification", "runtimeVerification", "runtime_measurement", "runtimeMeasurement", "measurement");
   if (!isObject(raw)) {
     pushRuntimeError(errors, stage, contract, node, "text_node 缺少 runtime_verification/measurement", { missing: "runtime_verification" });
@@ -437,7 +436,7 @@ function validateRuntimeVerification(node, contract, stage, errors, route, regio
     if (!hasEvidence(read("semantic_evidence", "semanticEvidence", "accessible_semantic_evidence", "accessibleSemanticEvidence"))) pushRuntimeError(errors, stage, contract, node, "image-text 必须提供可访问语义证据", { missing: "runtime_verification.semantic_evidence" });
   }
 
-  if (!isV5Runtime) return;
+  if (!isV4Runtime) return;
   const comparison = field(raw, "comparison", "fidelity", "fidelity_measurement", "fidelityMeasurement") ?? {};
   const compare = (...names) => read(...names) ?? field(comparison, ...names);
   const targetBounds = compare("target_bounds", "targetBounds");
@@ -446,13 +445,13 @@ function validateRuntimeVerification(node, contract, stage, errors, route, regio
   const nodeTolerance = field(node, "tolerance_reference", "toleranceReference", "tolerance_id", "toleranceId")
     ?? field(region, "tolerance_reference", "toleranceReference", "tolerance_id", "toleranceId");
   const toleranceReference = compare("tolerance_reference", "toleranceReference", "tolerance_id", "toleranceId") ?? nodeTolerance;
-  if (!validBounds(targetBounds)) pushRuntimeError(errors, stage, contract, node, "V5 文本验证缺少 target_bounds", { missing: "runtime_verification.target_bounds" });
-  if (!validBounds(candidateBounds)) pushRuntimeError(errors, stage, contract, node, "V5 文本验证缺少 candidate_bounds", { missing: "runtime_verification.candidate_bounds" });
+  if (!validBounds(targetBounds)) pushRuntimeError(errors, stage, contract, node, "V4 文本验证缺少 target_bounds", { missing: "runtime_verification.target_bounds" });
+  if (!validBounds(candidateBounds)) pushRuntimeError(errors, stage, contract, node, "V4 文本验证缺少 candidate_bounds", { missing: "runtime_verification.candidate_bounds" });
   const frozenBounds = field(node, "target_bounds", "targetBounds", "bounds");
-  if (validBounds(targetBounds) && !sameBounds(targetBounds, frozenBounds)) pushRuntimeError(errors, stage, contract, node, "V5 文本 target_bounds 未绑定冻结节点", { expected: JSON.stringify(frozenBounds), actual: JSON.stringify(targetBounds) });
-  if (validBounds(candidateBounds) && validBounds(actualBounds) && !sameBounds(candidateBounds, actualBounds)) pushRuntimeError(errors, stage, contract, node, "V5 文本 candidate_bounds 与 actual_bounds 不一致", { expected: JSON.stringify(actualBounds), actual: JSON.stringify(candidateBounds) });
-  if (!hasStructuredValue(delta)) pushRuntimeError(errors, stage, contract, node, "V5 文本验证缺少 delta", { missing: "runtime_verification.delta" });
-  if (!nonEmptyString(toleranceReference) || !toleranceDefinitions.has(toleranceReference)) pushRuntimeError(errors, stage, contract, node, "V5 文本验证必须引用预声明 tolerance", { missing: "runtime_verification.tolerance_reference", actual: String(toleranceReference ?? "missing") });
+  if (validBounds(targetBounds) && !sameBounds(targetBounds, frozenBounds)) pushRuntimeError(errors, stage, contract, node, "V4 文本 target_bounds 未绑定冻结节点", { expected: JSON.stringify(frozenBounds), actual: JSON.stringify(targetBounds) });
+  if (validBounds(candidateBounds) && validBounds(actualBounds) && !sameBounds(candidateBounds, actualBounds)) pushRuntimeError(errors, stage, contract, node, "V4 文本 candidate_bounds 与 actual_bounds 不一致", { expected: JSON.stringify(actualBounds), actual: JSON.stringify(candidateBounds) });
+  if (!hasStructuredValue(delta)) pushRuntimeError(errors, stage, contract, node, "V4 文本验证缺少 delta", { missing: "runtime_verification.delta" });
+  if (!nonEmptyString(toleranceReference) || !toleranceDefinitions.has(toleranceReference)) pushRuntimeError(errors, stage, contract, node, "V4 文本验证必须引用预声明 tolerance", { missing: "runtime_verification.tolerance_reference", actual: String(toleranceReference ?? "missing") });
 
   const typography = typographyOf(node);
   const targetGlyphBounds = compare("target_glyph_bounds", "targetGlyphBounds") ?? textFact(node, typography, ["target_glyph_bounds", "targetGlyphBounds", "glyph_bounds", "glyphBounds"]);
@@ -462,7 +461,7 @@ function validateRuntimeVerification(node, contract, stage, errors, route, regio
   const targetFacts = compare("target_measurement", "targetMeasurement", "target_fact", "targetFact") ?? { bounds: targetBounds, glyph_bounds: targetGlyphBounds, baseline: targetBaseline };
   const candidateFacts = compare("candidate_measurement", "candidateMeasurement", "candidate_fact", "candidateFact") ?? { bounds: candidateBounds, glyph_bounds: candidateGlyphBounds, baseline: candidateBaseline };
   const limit = toleranceLimit(toleranceDefinitions.get(toleranceReference));
-  if (limit === null) pushPlanError(errors, stage, contract, node, "V5 文本验证引用的 tolerance 缺少可执行数值规则", { missing: `${toleranceReference}.rules.value` });
+  if (limit === null) pushPlanError(errors, stage, contract, node, "V4 文本验证引用的 tolerance 缺少可执行数值规则", { missing: `${toleranceReference}.rules.value` });
   const declaredDelta = numericDeltas(delta);
   const computedDelta = numericFactDeltas(targetFacts, candidateFacts);
   const exceeds = limit !== null && [...declaredDelta, ...computedDelta].some((value) => value > limit);
@@ -475,22 +474,22 @@ function validateRuntimeVerification(node, contract, stage, errors, route, regio
     ...(Array.isArray(regionExceptions) ? regionExceptions : nonEmptyString(regionExceptions) ? [regionExceptions] : []),
     ...(Array.isArray(nodeExceptions) ? nodeExceptions : nonEmptyString(nodeExceptions) ? [nodeExceptions] : []),
   ].filter(nonEmptyString));
-  if (exceptionIds.some((id) => !approved.has(id))) pushRuntimeError(errors, stage, contract, node, "V5 文本验证 exception ID 未被合同批准", { expected: [...approved].join(",") || "approved_exception_ids", actual: exceptionIds.join(",") });
+  if (exceptionIds.some((id) => !approved.has(id))) pushRuntimeError(errors, stage, contract, node, "V4 文本验证 exception ID 未被合同批准", { expected: [...approved].join(",") || "approved_exception_ids", actual: exceptionIds.join(",") });
   const hasApprovedException = exceptionIds.length > 0 && exceptionIds.every((id) => approved.has(id));
-  if (exceeds && !hasApprovedException) pushRuntimeError(errors, stage, contract, node, "V5 文本 target/candidate 差异超出预声明 tolerance", { expected: `<=${limit}`, actual: JSON.stringify({ delta, computedDelta }) });
-  if (factsDiffer && !hasApprovedException) pushRuntimeError(errors, stage, contract, node, "V5 文本存在未解释的非数值事实差异", { missing: "approved exception_id" });
-  if (passed && (exceeds || factsDiffer) && !hasApprovedException) pushRuntimeError(errors, stage, contract, node, "V5 文本 PASS 不能掩盖超容差或未批准差异", { expected: "差异在 tolerance 内或有精确批准例外" });
+  if (exceeds && !hasApprovedException) pushRuntimeError(errors, stage, contract, node, "V4 文本 target/candidate 差异超出预声明 tolerance", { expected: `<=${limit}`, actual: JSON.stringify({ delta, computedDelta }) });
+  if (factsDiffer && !hasApprovedException) pushRuntimeError(errors, stage, contract, node, "V4 文本存在未解释的非数值事实差异", { missing: "approved exception_id" });
+  if (passed && (exceeds || factsDiffer) && !hasApprovedException) pushRuntimeError(errors, stage, contract, node, "V4 文本 PASS 不能掩盖超容差或未批准差异", { expected: "差异在 tolerance 内或有精确批准例外" });
 }
 
-/** 验证单个 text_node 的稳定身份、目标事实、引用完整性和 V3/V3/V5 规则。 */
+/** 验证单个 text_node 的稳定身份、目标事实、引用完整性和 V3/V3/V4 规则。 */
 export function validateTextNode(node, context = {}) {
-  const { contract, stage = "V1", regions, layoutInfo, toleranceDefinitions, isV5Runtime = false } = context;
+  const { contract, stage = "V1", regions, layoutInfo, toleranceDefinitions, isV4Runtime = false } = context;
   const errors = [];
   const regionMap = regionIndex(contract, regions);
   const layoutMap = layoutIndex(contract, layoutInfo);
   const toleranceMap = toleranceIndex(contract, toleranceDefinitions);
   const stageName = String(stage).toUpperCase();
-  const routeRequired = ["V3", "V5", "VALIDATING"].includes(stageName);
+  const routeRequired = ["V3", "V4", "VALIDATING"].includes(stageName);
   if (!isObject(node)) {
     pushPlanError(errors, stage, contract, node, "text_node 必须是对象", { missing: "text_nodes[]" });
     return errors;
@@ -532,9 +531,9 @@ export function validateTextNode(node, context = {}) {
   const typographyResult = validateTypography(node, contract, stage, errors);
   let route;
   if (routeRequired) route = validateImplementationRoute(node, contract, stage, errors, typographyResult);
-  if (["V5", "VALIDATING"].includes(stageName)) {
-    // 显式 V5 也必须执行 target/candidate/tolerance 比较，不能只在 VALIDATING 别名下开启验收分支。
-    validateRuntimeVerification(node, contract, stage, errors, route, region, toleranceMap, isV5Runtime || stageName === "V5" || stageName === "VALIDATING");
+  if (["V4", "VALIDATING"].includes(stageName)) {
+    // 显式 V4 也必须执行 target/candidate/tolerance 比较，不能只在 VALIDATING 别名下开启验收分支。
+    validateRuntimeVerification(node, contract, stage, errors, route, region, toleranceMap, isV4Runtime || stageName === "V4" || stageName === "VALIDATING");
   }
   return errors;
 }

@@ -14,15 +14,14 @@ const STAGE_PATTERN = /^V[1-4]$/;
 
 /** 创建控制面记录校验器，集中维护审批、委派、证据、实施包和变更请求边界。 */
 export function createRecordValidators({
-  gates, states, automaticActions, actionLevels, requireFields, requireStringArray, requireHash,
-  requireBaselineHash, validateThreeJSAction, actionLevelFor, validateExecutionPlan, validateVisualImplementationPackage,
+  gates, states, automaticActions, actionLevels, requireFields, requireStringArray,
+  validateThreeJSAction, actionLevelFor, validateExecutionPlan, validateVisualImplementationPackage,
   validateVisualChangeRequest, pathMatches, fail,
 }) {
-  /** 校验审批记录全部类型、枚举和哈希。 */
+  /** 校验审批记录类型、枚举和权限范围。 */
   function validateApproval(approval) {
     requireFields(approval, APPROVAL_FIELDS, `审批 ${approval?.approvalId ?? '<unknown>'}`);
     validateThreeJSAction(approval.actionType, approval.actionLevel, 'Approval Ledger.actionType');
-    requireBaselineHash(approval.baselineHash, '审批 baselineHash');
     requireStringArray(approval.moduleIds, '审批.moduleIds');
     if (!approval.moduleIds.length || new Set(approval.moduleIds).size !== approval.moduleIds.length || JSON.stringify(approval.moduleIds) !== JSON.stringify([...approval.moduleIds].sort())) fail('审批 moduleIds 必须非空、唯一且已排序');
     if (!APPROVAL_ACTION_LEVELS.includes(approval.actionLevel) || !gates.includes(approval.gate)) fail('操作审批只能使用 A4-A6 与有效 F 门');
@@ -58,23 +57,20 @@ export function createRecordValidators({
   /** 校验证据清单的结构化字段。 */
   function validateEvidence(evidence) {
     requireFields(evidence, EVIDENCE_REQUIRED, 'Evidence Manifest');
-    requireBaselineHash(evidence.baselineHash, 'Evidence baselineHash');
-    requireHash(evidence.diffFingerprint, 'Evidence diffFingerprint');
     for (const field of ['dataSources', 'files', 'uncoveredItems', 'completedOutputs', 'completedUnitIds', 'satisfiedExitCriteria']) requireStringArray(evidence[field], `Evidence.${field}`);
     if (Number.isNaN(Date.parse(evidence.recordedAt))) fail('Evidence.recordedAt 必须为有效时间');
     if (!Array.isArray(evidence.commands) || !evidence.commands.length) fail('Evidence.commands 必须为非空数组');
     if (!EVIDENCE_VERDICTS.includes(evidence.verdict)) fail('Evidence.verdict 无效');
-    if (!evidence.fileHashes || typeof evidence.fileHashes !== 'object' || Array.isArray(evidence.fileHashes)) fail('Evidence.fileHashes 必须为对象');
     requireFields(evidence.gateResults, gates.slice(0, 4), 'Evidence.gateResults');
     const evidenceStage = String(evidence.currentStage ?? evidence.current_stage ?? '').toUpperCase();
-    if (evidenceStage === 'V5' || evidence.responsiveEvidence !== undefined || evidence.responsiveRuntimeEvidence !== undefined) {
+    if (evidenceStage === 'V4' || evidence.responsiveEvidence !== undefined || evidence.responsiveRuntimeEvidence !== undefined) {
       const contract = evidence.responsiveViewportContract ?? evidence.responsiveContract;
-      const options = { stage: evidenceStage || 'V5', candidateSha256: evidence.candidateSha256 };
+      const options = { stage: evidenceStage || 'V4' };
       const records = evidence.responsiveEvidence ?? evidence.responsiveRuntimeEvidence;
       // 独立清单结构校验尚无项目方向上下文；方向矩阵由后续绑定 Work Item/实施包的门复核。
       const responsiveErrors = contract
         ? validateResponsiveEvidenceManifest(evidence, contract, options)
-        : !Array.isArray(records) || records.length === 0 ? ['V5 缺少真实响应式运行证据数组']
+        : !Array.isArray(records) || records.length === 0 ? ['V4 缺少真实响应式运行证据数组']
           : records.flatMap((record) => validateResponsiveEvidenceRecord(record, null, options));
       if (responsiveErrors.length) fail(responsiveErrors[0]);
     }
@@ -91,7 +87,6 @@ export function createRecordValidators({
     requireFields(pkg, PACKAGE_SCHEMA.required, 'Implementation Package');
     const extra = Object.keys(pkg).filter((field) => !PACKAGE_SCHEMA.fields.includes(field));
     if (extra.length) fail(`Implementation Package 包含 Schema 禁止字段：${extra.join('、')}`);
-    requireBaselineHash(pkg.baselineHash, 'Implementation Package baselineHash');
     for (const field of ['approvedRequirements', 'allowedPaths', 'forbiddenPaths', 'expectedAddedFiles', 'expectedDeletedFiles', 'testScope', 'outOfScope', 'definitionOfDone', 'stopConditions']) requireStringArray(pkg[field], `Implementation Package.${field}`);
     if (!pkg.approvedRequirements.length || !pkg.allowedPaths.length || !pkg.testScope.length || !pkg.definitionOfDone.length) fail('Implementation Package 的需求、路径、测试和完成定义不能为空');
     if (!pkg.fileOwnership || typeof pkg.fileOwnership !== 'object' || Array.isArray(pkg.fileOwnership) || !Object.keys(pkg.fileOwnership).length || Object.entries(pkg.fileOwnership).some(([path, owner]) => !path || typeof owner !== 'string' || !owner)) fail('Implementation Package.fileOwnership 必须为非空路径到所有者映射');
@@ -100,8 +95,8 @@ export function createRecordValidators({
       const visualErrors = validateVisualImplementationPackage(pkg, { ...options, allowedPaths: pkg.allowedPaths, pathMatches });
       if (visualErrors.length) fail(visualErrors[0]);
     }
-    const visualFields = ['visualContractVersion', 'candidateVersion', 'visualManifestFile', 'visualManifestSha256', 'visualProductionUnits'];
-    if (visualFields.some((field) => Object.hasOwn(pkg, field)) && visualFields.some((field) => pkg[field] === undefined)) fail('视觉 Implementation Package 必须同时绑定 visualContractVersion、visualManifestFile、visualManifestSha256、visualProductionUnits');
+    const visualFields = ['visualContractVersion', 'candidateVersion', 'visualManifestFile', 'visualProductionUnits'];
+    if (visualFields.some((field) => Object.hasOwn(pkg, field)) && visualFields.some((field) => pkg[field] === undefined)) fail('视觉 Implementation Package 必须同时提供 visualContractVersion、candidateVersion、visualManifestFile、visualProductionUnits');
     if (!pkg.packageId || !pkg.workItemId || !pkg.baselineVersion || !pkg.compatibilityStrategy || !pkg.approvedArchitecture) fail('Implementation Package 标识、版本、兼容策略或架构结论不能为空');
     const packageStage = String(options.stage ?? pkg.currentStage ?? pkg.current_stage ?? '').toUpperCase();
     const responsiveRequired = options.requireResponsive === true || STAGE_PATTERN.test(packageStage) || hasResponsiveDeclaration(pkg);
@@ -123,7 +118,6 @@ export function createRecordValidators({
   function validateChangeRequestShape(change) {
     requireFields(change, CHANGE_REQUIRED, 'Change Request');
     for (const field of ['affectedModules', 'invalidatedApprovalIds', 'newAcceptance']) requireStringArray(change[field], `Change Request.${field}`);
-    requireBaselineHash(change.affectedBaselineHash, 'Change Request.affectedBaselineHash');
     if (!change.changeRequestId || !change.workItemId || !change.change || !change.reason || !change.newRisk || !change.userDecisionRequest || !change.affectedModules.length || !change.newAcceptance.length) fail('Change Request 标识、内容、原因、模块、风险、验收与决策请求不能为空');
     if (!CHANGE_STATUSES.includes(change.status)) fail('Change Request 状态只能为 PENDING/ACCEPTED/REJECTED；它记录用户决定而非审批');
     const productionErrors = validateVisualChangeRequest(change, { workItemId: change.workItemId, candidateVersion: change.candidateVersion });

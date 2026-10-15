@@ -16,11 +16,12 @@ import {
 
 test("统一真源区分运行时封顶与图片生产基线", () => {
   assert.equal(RUNTIME_MAX_DPR, 2);
-  assert.equal(IMAGE_PRODUCTION_DPR, 2);
+  assert.equal(IMAGE_PRODUCTION_DPR, 1);
   assert.equal(DEFAULT_DPR, 1);
   assert.equal(DPR_POLICY, "dynamic-capped-2");
+  assert.equal(isImageProductionDpr(1), true);
   assert.equal(isImageProductionDpr(1.5), false);
-  assert.equal(isImageProductionDpr(2), true);
+  assert.equal(isImageProductionDpr(2), false);
 });
 
 test("运行时设备 DPR 动态解析并封顶", () => {
@@ -44,6 +45,7 @@ test("有效 DPR 声明只允许正有限数且不超过 2", () => {
 test("原始设备值与图片生产基线校验职责分离", () => {
   assert.equal(isDeviceDprInput(3), true);
   assert.equal(isDeviceDprInput(0), false);
-  assert.equal(validateImageProductionDpr(2), null);
-  assert.match(validateImageProductionDpr(1.5), /图片生产基线 2/);
+  assert.equal(validateImageProductionDpr(1), null);
+  assert.match(validateImageProductionDpr(1.5), /图片生产基线 1/);
+  assert.match(validateImageProductionDpr(2), /图片生产基线 1/);
 });

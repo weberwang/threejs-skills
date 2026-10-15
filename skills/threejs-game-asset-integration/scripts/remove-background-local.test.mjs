@@ -35,11 +35,17 @@ async function writeImage(root, name, image) {
   return file;
 }
 
+/** 明确标记仅用于纯色硬边样例的去背授权事实。 */
+function hardEdgeRemoval(options = {}) {
+  return removeBackgroundLocal({ edgeProfile: "hard-edge", colorSeparationVerified: true, requireSolidBackground: true, ...options });
+}
+
 /** 创建收集 CLI 输出的最小 console 替身。 */
 function outputCollector() {
   const logs = [];
   const errors = [];
-  return { logs, errors, log: (value) => logs.push(value), error: (value) => errors.push(value) };
+  const warnings = [];
+  return { logs, errors, warnings, log: (value) => logs.push(value), error: (value) => errors.push(value), warn: (value) => warnings.push(value) };
 }
 
 /** 计算测试 PNG 所需的 CRC32，构造器只用于覆盖 RGB+tRNS 解码路径。 */
@@ -148,13 +154,12 @@ test("严格模式验证不透明纯色边界并写入检查证据", async () =>
     const image = solidImage(5, 5, [10, 20, 30, 255]);
     for (let y = 1; y <= 3; y += 1) for (let x = 1; x <= 3; x += 1) setPixel(image, x, y, [240, 40, 50, 255]);
     const source = await writeImage(root, "source.png", image);
-    const record = await removeBackgroundLocal({
+    const record = await hardEdgeRemoval({
       sourceFile: source,
       outputFile: join(root, "output.png"),
       recordFile: join(root, "record.json"),
       backgroundColor: "#0a141e",
       tolerance: 0,
-      requireSolidBackground: true,
     });
     assert.equal(record.status, "PASS");
     assert.deepEqual(record.solid_background_check, {
@@ -174,7 +179,7 @@ test("严格模式验证不透明纯色边界并写入检查证据", async () =>
   }
 });
 
-test("严格模式拒绝棋盘边缘、透明输入和错误颜色且不写文件", async () => {
+test("硬边去背拒绝棋盘边缘、透明输入和错误颜色且不写文件", async () => {
   const cases = [
     {
       name: "checkerboard-edge",
@@ -204,15 +209,14 @@ test("严格模式拒绝棋盘边缘、透明输入和错误颜色且不写文�
       const output = join(root, `${entry.name}.output.png`);
       const recordFile = join(root, `${entry.name}.record.json`);
       await assert.rejects(
-        () => removeBackgroundLocal({
+        () => hardEdgeRemoval({
           sourceFile: source,
           outputFile: output,
           recordFile,
           backgroundColor: "#0a141e",
           tolerance: 0,
-          requireSolidBackground: true,
         }),
-        (error) => error instanceof BackgroundRemovalError && /require_solid_background 检查失败/.test(error.message),
+        (error) => error instanceof BackgroundRemovalError && /(require_solid_background 检查失败|不接受含透明)/.test(error.message),
       );
       await assert.rejects(access(output));
       await assert.rejects(access(recordFile));
@@ -243,27 +247,72 @@ test("缺少显式颜色或非法容差会被参数门拒绝", () => {
   assert.throws(() => removeConnectedBackground(image, { tolerance: 2 }), /background_color/);
   assert.throws(() => removeConnectedBackground(image, { backgroundColor: "#010203" }), /tolerance/);
   assert.throws(() => removeConnectedBackground(image, { backgroundColor: "#010203", tolerance: -1 }), /tolerance/);
-  assert.throws(() => removeConnectedBackground(image, { backgroundColor: "#010203", tolerance: 442 }), /tolerance/);
+  assert.throws(() => removeConnectedBackground(image, { backgroundColor: "#010203", tolerance: 65 }), /0 到 64/);
 });
 
-test("全图被清除和零删除都会生成失败记录", async () => {
+test("颜色阈值路线要求显式硬边与色彩分离确认，并拒绝部分透明输入", async () => {
+  const root = await mkdtemp(join(tmpdir(), "background-removal-edge-profile-"));
+  try {
+    const source = await writeImage(root, "solid.png", solidImage(3, 3, [10, 20, 30, 255]));
+    const base = { sourceFile: source, outputFile: join(root, "output.png"), backgroundColor: "#0a141e", tolerance: 0 };
+    await assert.rejects(() => removeBackgroundLocal(base), /edge_profile='hard-edge'/);
+    await assert.rejects(() => removeBackgroundLocal({ ...base, edgeProfile: "unknown", colorSeparationVerified: true }), /edge_profile='hard-edge'/);
+    await assert.rejects(() => removeBackgroundLocal({ ...base, edgeProfile: "hard-edge", colorSeparationVerified: false }), /color_separation_verified=true/);
+    await assert.rejects(() => removeBackgroundLocal({ ...base, edgeProfile: "hard-edge", colorSeparationVerified: true, tolerance: 65 }), /0 到 64/);
+
+    const partial = solidImage(3, 3, [10, 20, 30, 255]);
+    setPixel(partial, 1, 1, [240, 40, 50, 128]);
+    const partialSource = await writeImage(root, "partial.png", partial);
+    await assert.rejects(() => hardEdgeRemoval({ ...base, sourceFile: partialSource }), /不接受含透明或半透明像素/);
+    await assert.rejects(access(base.outputFile));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("全图清除会被拒绝，且不匹配纯色边界时不会生成失败产物", async () => {
   const root = await mkdtemp(join(tmpdir(), "background-removal-validation-"));
   try {
     const allBackground = await writeImage(root, "all-background.png", solidImage(4, 4, [10, 20, 30, 255]));
-    const allDeleted = await removeBackgroundLocal({ sourceFile: allBackground, outputFile: join(root, "all-deleted.png"), backgroundColor: "#0a141e", tolerance: 0 });
-    assert.equal(allDeleted.status, "FAIL");
-    assert(allDeleted.failures.includes("empty-foreground"));
-    assert.deepEqual(allDeleted.background_removal_attempt.evidence.failures, ["empty-foreground"]);
-    assert.equal(decodePngRgba(await readFile(allDeleted.output_file)).pixels.every((value, index) => index % 4 !== 3 || value === 0), true);
+    await assert.rejects(() => hardEdgeRemoval({ sourceFile: allBackground, outputFile: join(root, "all-deleted.png"), backgroundColor: "#0a141e", tolerance: 0 }), /清除全部主体/);
+    await assert.rejects(access(join(root, "all-deleted.png")));
 
     const mismatch = await writeImage(root, "mismatch.png", solidImage(4, 4, [240, 40, 50, 255]));
-    const noDeletion = await removeBackgroundLocal({ sourceFile: mismatch, outputFile: join(root, "no-deletion.png"), backgroundColor: "#0a141e", tolerance: 0 });
-    assert.equal(noDeletion.status, "FAIL");
-    assert.deepEqual(noDeletion.failures, ["zero-deletion"]);
-    assert.deepEqual(noDeletion.background_removal_attempt.evidence.failures, ["zero-deletion"]);
-    assert.equal(noDeletion.removed_pixels, 0);
-    assert.equal(noDeletion.output_width, 4);
-    assert.equal(noDeletion.output_height, 4);
+    await assert.rejects(() => hardEdgeRemoval({ sourceFile: mismatch, outputFile: join(root, "no-deletion.png"), backgroundColor: "#0a141e", tolerance: 0 }), /require_solid_background 检查失败/);
+    await assert.rejects(access(join(root, "no-deletion.png")));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+/** 帧动画可有合法空终态，但显式允许空帧也不能绕过纯色边界与硬边检查。 */
+test("调用方可显式允许空透明单帧且保留去背景边界约束", async () => {
+  const root = await mkdtemp(join(tmpdir(), "background-removal-empty-frame-"));
+  try {
+    const source = await writeImage(root, "empty-frame.png", solidImage(4, 4, [10, 20, 30, 255]));
+    const output = join(root, "empty-frame-alpha.png");
+    const record = await hardEdgeRemoval({
+      sourceFile: source, outputFile: output, backgroundColor: "#0a141e", tolerance: 0,
+      allowEmptyForeground: true,
+    });
+    assert.equal(record.status, "PASS");
+    assert.equal(record.foreground_pixels, 0);
+    assert.equal(record.transparent_pixels, 16);
+    assert.equal(record.allow_empty_foreground, true);
+    assert.equal(record.background_removal_attempt.evidence.parameters.allow_empty_foreground, true);
+    const image = decodePngRgba(await readFile(output));
+    assert(image.pixels.every((value) => value === 0));
+
+    await assert.rejects(hardEdgeRemoval({
+      sourceFile: source, outputFile: join(root, "bad-option.png"), backgroundColor: "#0a141e", tolerance: 0,
+      allowEmptyForeground: "true",
+    }), /allowEmptyForeground/u);
+    const mismatch = await writeImage(root, "mismatch.png", solidImage(4, 4, [200, 20, 30, 255]));
+    await assert.rejects(hardEdgeRemoval({
+      sourceFile: mismatch, outputFile: join(root, "mismatch-alpha.png"), backgroundColor: "#0a141e", tolerance: 0,
+      allowEmptyForeground: true,
+    }), /require_solid_background/u);
+    await assert.rejects(access(join(root, "mismatch-alpha.png")));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -295,16 +344,16 @@ test("已有透明像素可显式复用且不要求重新指定背景颜色", as
 test("API 拒绝原地覆盖，成功记录保留原尺寸和输入输出哈希", async () => {
   const root = await mkdtemp(join(tmpdir(), "background-removal-paths-"));
   try {
-    const sourceImage = solidImage(2, 2, [10, 20, 30, 255]);
-    setPixel(sourceImage, 0, 0, [240, 40, 50, 255]);
+    const sourceImage = solidImage(4, 4, [10, 20, 30, 255]);
+    setPixel(sourceImage, 1, 1, [240, 40, 50, 255]);
     const source = await writeImage(root, "source.png", sourceImage);
-    await assert.rejects(() => removeBackgroundLocal({ sourceFile: source, outputFile: source, backgroundColor: "#0a141e", tolerance: 0 }), /不得是同一路径/);
+    await assert.rejects(() => hardEdgeRemoval({ sourceFile: source, outputFile: source, backgroundColor: "#0a141e", tolerance: 0 }), /不得是同一路径/);
     const output = join(root, "output.png");
-    const record = await removeBackgroundLocal({ sourceFile: source, outputFile: output, backgroundColor: "#0a141e", tolerance: 0, recordFile: join(root, "record.json") });
-    assert.equal(record.source_width, 2);
-    assert.equal(record.source_height, 2);
-    assert.equal(record.output_width, 2);
-    assert.equal(record.output_height, 2);
+    const record = await hardEdgeRemoval({ sourceFile: source, outputFile: output, backgroundColor: "#0a141e", tolerance: 0, recordFile: join(root, "record.json") });
+    assert.equal(record.source_width, 4);
+    assert.equal(record.source_height, 4);
+    assert.equal(record.output_width, 4);
+    assert.equal(record.output_height, 4);
     assert.match(record.source_sha256, /^sha256:[a-f0-9]{64}$/);
     assert.match(record.output_sha256, /^sha256:[a-f0-9]{64}$/);
     assert.equal(record.source_has_alpha, true);
@@ -314,6 +363,8 @@ test("API 拒绝原地覆盖，成功记录保留原尺寸和输入输出哈希"
     assert.equal(record.background_removal_attempt.source_has_alpha, true);
     assert.equal(record.background_removal_attempt.output_has_alpha, true);
     assert.equal(record.tool_version, "1");
+    assert.deepEqual(record.background_removal_attempt.evidence.parameters, { tolerance: 0, edge_profile: "hard-edge", color_separation_verified: true });
+    assert.equal(record.transparency_preview.inspection.status, "pending");
     assert.equal(JSON.parse(await readFile(join(root, "record.json"), "utf8")).schema, "background-removal-local/1");
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -325,7 +376,7 @@ test("CLI 输出记录、可选深浅底预览并对失败状态返回非零码"
   try {
     const helpCollector = outputCollector();
     assert.equal(await runRemoveBackgroundCli(["--help"], helpCollector), 0);
-    assert.match(helpCollector.logs[0], /--require-solid-background/);
+    assert.match(helpCollector.logs[0], /--edge-profile hard-edge/);
 
     const image = solidImage(3, 3, [10, 20, 30, 255]);
     setPixel(image, 1, 1, [240, 240, 240, 255]);
@@ -336,10 +387,10 @@ test("CLI 输出记录、可选深浅底预览并对失败状态返回非零码"
       "--output", join(root, "output.png"),
       "--background-color", "#0a141e",
       "--tolerance", "0",
-      "--require-solid-background",
+      "--edge-profile", "hard-edge",
+      "--color-separation-verified",
       "--record", join(root, "record.json"),
       "--preview-dir", join(root, "previews"),
-      "--preview",
     ], collector);
     assert.equal(code, 0);
     assert.equal(collector.errors.length, 0);
@@ -347,13 +398,14 @@ test("CLI 输出记录、可选深浅底预览并对失败状态返回非零码"
     assert.equal(cliRecord.status, "PASS");
     assert.equal(cliRecord.solid_background_check.status, "passed");
     assert.equal(cliRecord.output_width, 3);
-    assert.equal(cliRecord.preview_files.light.endsWith("source.light.png"), false);
-    assert.equal((await readFile(cliRecord.preview_files.light)).length > 0, true);
-    assert.equal((await readFile(cliRecord.preview_files.dark)).length > 0, true);
+    assert.equal(cliRecord.transparency_preview.light.file.endsWith("output.light.png"), true);
+    assert.equal((await readFile(cliRecord.transparency_preview.light.file)).length > 0, true);
+    assert.equal((await readFile(cliRecord.transparency_preview.dark.file)).length > 0, true);
+    assert.match(collector.warnings[0], /未绑定 workflow candidate_sha256/);
 
     const failedCollector = outputCollector();
     const failedOutput = join(root, "failed.png");
-    const failedCode = await runRemoveBackgroundCli(["--source", source, "--output", failedOutput, "--background-color", "#f0f0f0", "--tolerance", "0", "--require-solid-background"], failedCollector);
+    const failedCode = await runRemoveBackgroundCli(["--source", source, "--output", failedOutput, "--background-color", "#f0f0f0", "--tolerance", "0", "--edge-profile", "hard-edge", "--color-separation-verified"], failedCollector);
     assert.equal(failedCode, 1);
     assert.equal(failedCollector.logs.length, 0);
     assert.match(JSON.parse(failedCollector.errors[0]).error, /require_solid_background 检查失败/);
@@ -366,9 +418,11 @@ test("CLI 输出记录、可选深浅底预览并对失败状态返回非零码"
 test("深浅底预览路径与源图或记录文件冲突时在写出前拒绝", async () => {
   const root = await mkdtemp(join(tmpdir(), "background-removal-preview-conflict-"));
   try {
-    const source = await writeImage(root, "source.light.png", solidImage(2, 2, [10, 20, 30, 255]));
+    const sourceImage = solidImage(4, 4, [10, 20, 30, 255]);
+    setPixel(sourceImage, 1, 1, [240, 40, 50, 255]);
+    const source = await writeImage(root, "source.light.png", sourceImage);
     const output = join(root, "source.png");
-    await assert.rejects(() => removeBackgroundLocal({ sourceFile: source, outputFile: output, backgroundColor: "#0a141e", tolerance: 0, previewDirectory: root }), /预览文件不得覆盖/);
+    await assert.rejects(() => hardEdgeRemoval({ sourceFile: source, outputFile: output, backgroundColor: "#0a141e", tolerance: 0, previewDirectory: root }), /透明预览路径不得覆盖/);
     await assert.rejects(() => access(output));
   } finally {
     await rm(root, { recursive: true, force: true });

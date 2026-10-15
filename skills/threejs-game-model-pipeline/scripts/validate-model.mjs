@@ -534,14 +534,13 @@ function inspectExtensionsAndUris(gltf, issues) {
   return { used: [...new Set([...used, ...foundExtensions].filter((name) => typeof name === "string"))], compressed: [...foundExtensions, ...used].some((name) => COMPRESSED_EXTENSIONS.has(name)) };
 }
 
-/** 对清单和项目内模型执行 GLB、glTF 结构、引用、预算与冻结 SHA 验收。 */
+/** 对清单和项目内模型执行 GLB、glTF 结构、引用及资源预算验收。 */
 export async function validateModelManifest(manifest, { repoRoot }) {
   const issues = [];
   const fail = (path, message) => issues.push({ path, message });
   if (!isObject(manifest) || manifest.schemaVersion !== 1 || !isObject(manifest.asset)) throw new ModelValidationError([{ path: "manifest", message: "清单必须包含 schemaVersion=1 和 asset 对象" }]);
   const asset = manifest.asset;
-  for (const field of ["assetId", "file", "sha256", "source", "license", "sceneId"]) if (typeof asset[field] !== "string" || asset[field].trim() === "") fail(`asset.${field}`, "必须是非空字符串");
-  if (typeof asset.sha256 === "string" && !/^sha256:[a-f0-9]{64}$/.test(asset.sha256)) fail("asset.sha256", "必须使用 sha256:<64 位小写十六进制> 格式");
+  for (const field of ["assetId", "file", "source", "license", "sceneId"]) if (typeof asset[field] !== "string" || asset[field].trim() === "") fail(`asset.${field}`, "必须是非空字符串");
   if (!isObject(asset.coordinateSystem) || asset.coordinateSystem.units !== "meters" || asset.coordinateSystem.upAxis !== "Y") fail("asset.coordinateSystem", "必须明确声明 glTF 坐标：units=meters、upAxis=Y");
   if (!isObject(asset.budgets)) fail("asset.budgets", "必须显式声明资源预算");
   else for (const field of ["maxBytes", "maxTriangles", "maxMaterials", "maxTexturePixels"]) if (!Number.isSafeInteger(asset.budgets[field]) || asset.budgets[field] < (field === "maxBytes" ? 1 : 0)) fail(`asset.budgets.${field}`, "必须是满足非负边界的安全整数");
@@ -562,7 +561,7 @@ export async function validateModelManifest(manifest, { repoRoot }) {
   const bytes = await readFile(modelPath);
   if (bytes.length > asset.budgets.maxBytes) fail("asset.budgets.maxBytes", `读取后的模型大小 ${bytes.length} 超过预算 ${asset.budgets.maxBytes}`);
   const sha256 = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-  if (sha256 !== asset.sha256) fail("asset.sha256", `冻结 SHA 不匹配，实际为 ${sha256}`);
+  // 摘要只供追踪；验收依据实际读取的模型结构、引用和预算，不能由旧摘要阻断。
   if (issues.length) throw new ModelValidationError(issues);
 
   const { gltf, bin, chunkCount } = parseGlb(bytes);

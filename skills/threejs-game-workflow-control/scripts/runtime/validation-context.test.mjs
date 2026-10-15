@@ -75,6 +75,15 @@ test('Work Item 范围、Implementation Package 或委派变化都会生成新�
   assert.equal(fixture.calls.authority, 4);
 });
 
+test('只有 manifest 摘要字段不会触发视觉 manifest 验收', () => {
+  const fixture = makeFixture();
+  delete fixture.pkg.visualManifestFile;
+  fixture.pkg.visualManifestSha256 = 17;
+
+  fixture.context.validateImplementationPackage(fixture.pkg, fixture.work, [fixture.delegation]);
+  assert.equal(fixture.calls.manifest, 0);
+});
+
 test('replaceJson 和 invalidate 会清理派生校验缓存，旧结果不能继续复用', () => {
   const fixture = makeFixture();
   fixture.context.validateImplementationPackage(fixture.pkg, fixture.work, [fixture.delegation]);

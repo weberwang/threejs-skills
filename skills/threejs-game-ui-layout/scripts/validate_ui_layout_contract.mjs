@@ -12,10 +12,9 @@ import { matchesRepresentativeViewport, measuredOrientation, resolveOrientationC
 import { validateUiInteractionTree, validateUiLayout } from "../../threejs-game-asset-integration/scripts/ui-layout-organization.mjs";
 
 const ROOT_REQUIRED = ["schema_version", "contract_id", "contract_version", "scope", "fidelity", "frozen_visual_target", "logicalViewportSpace", "designResolutionPolicy", "canvasBackingPolicy", "runtimeDprPolicy", "maxRuntimeDpr", "scaleMode", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "representativeViewports", "requiredRuntimeEvidence", "targets", "coordinate_spaces", "regions", "layout_nodes", "content", "platform_insets", "scrolling", "dynamic_content", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "evidence_matrix"];
-const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const REQUIRED_EVIDENCE_AXES = new Set(["breakpoint-neighbors", "width", "height", "orientation", "text-scale", "localization", "safe-area", "action-state", "dpr", "dynamic-values", "scene-lifecycle", "overlay-keyboard-scroll"]);
 const REQUIRED_PROGRAMMATIC_TEXT_LANGUAGES = ["en", "zh-CN", "ja", "ru", "es"];
-const REQUIRED_RUNTIME_EVIDENCE_FIELDS = ["viewportRect", "canvasRect", "designTransform", "logicalSize", "backingSize", "cssDisplaySize", "rawDevicePixelRatio", "effectiveDevicePixelRatio", "logicalToCssScale", "cssToPhysicalScale", "cameraViewport", "cameraZoom", "cameraOrigin", "safeArea", "edgeGaps", "backgroundCoverage", "keyUiRects", "inputHitResults", "resizeTrajectory", "pageReloaded", "screenshot", "sceneId", "stateId", "candidateSha256", "layoutContractVersion", "visualBaselineVersion"];
+const REQUIRED_RUNTIME_EVIDENCE_FIELDS = ["viewportRect", "canvasRect", "designTransform", "logicalSize", "backingSize", "cssDisplaySize", "rawDevicePixelRatio", "effectiveDevicePixelRatio", "logicalToCssScale", "cssToPhysicalScale", "cameraViewport", "cameraZoom", "cameraOrigin", "safeArea", "edgeGaps", "backgroundCoverage", "keyUiRects", "inputHitResults", "resizeTrajectory", "pageReloaded", "screenshot", "sceneId", "stateId", "layoutContractVersion", "visualBaselineVersion"];
 
 /** 判断值是否为合同允许的对象类型。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -123,8 +122,7 @@ function validateFidelityLifecycle(document, errors) {
 /** 验证冻结视觉目标身份，供关键对齐与 parity case 共用。 */
 function validateFrozenVisualTarget(target, errors) {
   if (!isObject(target)) { errors.push("frozen_visual_target 必须是对象"); return; }
-  for (const field of ["candidate_id", "target_sha256", "original_file", "visual_baseline_version"]) if (!isString(target[field])) errors.push(`frozen_visual_target.${field} 必须是非空字符串`);
-  if (isString(target.target_sha256) && !SHA_PATTERN.test(target.target_sha256)) errors.push("frozen_visual_target.target_sha256 格式无效");
+  for (const field of ["candidate_id", "original_file", "visual_baseline_version"]) if (!isString(target[field])) errors.push(`frozen_visual_target.${field} 必须是非空字符串`);
   if (target.status !== "frozen") errors.push("frozen_visual_target.status 必须为 frozen");
 }
 
@@ -138,10 +136,7 @@ function validateSceneReconstructionBinding(document, fidelity, errors) {
     return null;
   }
   if (!isObject(binding)) { errors.push("scene_reconstruction_binding 必须是对象"); return null; }
-  for (const field of ["target_sha256", "scene_id", "state_id", "visual_baseline_version", "reconstruction_contract_version", "layout_contract_sha256", "layout_decomposition_version"]) if (!isString(binding[field])) errors.push(`scene_reconstruction_binding.${field} 必须是非空字符串`);
-  if (isString(binding.target_sha256) && !SHA_PATTERN.test(binding.target_sha256)) errors.push("scene_reconstruction_binding.target_sha256 格式无效");
-  if (isString(binding.layout_contract_sha256) && !SHA_PATTERN.test(binding.layout_contract_sha256)) errors.push("scene_reconstruction_binding.layout_contract_sha256 格式无效");
-  if (document.frozen_visual_target?.target_sha256 && binding.target_sha256 !== document.frozen_visual_target.target_sha256) errors.push("scene_reconstruction_binding.target_sha256 未绑定当前冻结目标；旧布局合同不得回退 V3");
+  for (const field of ["scene_id", "state_id", "visual_baseline_version", "reconstruction_contract_version", "layout_decomposition_version"]) if (!isString(binding[field])) errors.push(`scene_reconstruction_binding.${field} 必须是非空字符串`);
   if (document.frozen_visual_target?.visual_baseline_version && binding.visual_baseline_version !== document.frozen_visual_target.visual_baseline_version) errors.push("scene_reconstruction_binding.visual_baseline_version 未绑定当前冻结目标");
   if (!isObject(binding.target_viewport) || !isNumber(binding.target_viewport.width) || !isNumber(binding.target_viewport.height) || binding.target_viewport.width <= 0 || binding.target_viewport.height <= 0) errors.push("scene_reconstruction_binding.target_viewport 必须包含精确正数尺寸");
   if (binding.legacy_layout_reused === true || binding.uses_generic_layout === true) errors.push("scene_reconstruction_binding 禁止使用与冻结效果图不一致的旧通用布局");
@@ -159,14 +154,17 @@ function validateDelta(value, label, errors) {
 }
 
 /** 验证冻结视觉目标下的关键 UI/HUD 对齐合同。 */
-function validateCriticalAlignments(items, ids, layoutNodes, target, codeCandidate, status, errors, mode = "usability") {
+function validateCriticalAlignments(items, ids, layoutNodes, status, errors, mode = "usability") {
   const exact = mode === "exact";
   if (!Array.isArray(items) || items.length === 0) { errors.push("critical_alignments 必须是非空数组"); return; }
   const alignmentIds = new Set();
   items.forEach((item, index) => {
     const label = `critical_alignments[${index}]`;
     if (!isObject(item)) { errors.push(`${label} 必须是对象`); return; }
-    for (const field of ["id", "layout_node_id", "element_id", "reference_id", "planned_test_id", "target_sha256", "candidate_sha256"]) if (!isString(item[field])) errors.push(`${label}.${field} 必须是非空字符串`);
+    // 可用性模式不自动要求像素矩阵，但项目已声明的关键几何容差必须兑现。
+    const declaredTolerance = Object.hasOwn(item, "tolerance");
+    const enforceGeometry = exact || declaredTolerance;
+    for (const field of ["id", "layout_node_id", "element_id", "reference_id", "planned_test_id"]) if (!isString(item[field])) errors.push(`${label}.${field} 必须是非空字符串`);
     if (isString(item.id)) { if (alignmentIds.has(item.id)) errors.push(`${label}.id 重复：${item.id}`); alignmentIds.add(item.id); }
     if (!ids.has(item.element_id)) errors.push(`${label}.element_id 引用未知 UI ID：${item.element_id}`);
     const layoutNode = isString(item.layout_node_id) ? layoutNodes.nodesById.get(item.layout_node_id) : undefined;
@@ -180,8 +178,8 @@ function validateCriticalAlignments(items, ids, layoutNodes, target, codeCandida
       if (!isObject(relation)) errors.push(`${label}.${axis} 缺少关系`);
       else for (const field of ["type", "element_anchor", "reference_anchor"]) if (!isString(relation[field])) errors.push(`${label}.${axis}.${field} 必须是非空字符串`);
     }
-    if (exact || item.target_measurement != null) validateMeasurement(item.target_measurement, `${label}.target_measurement`, errors);
-    if (exact && layoutNode && item.target_measurement != null && !sameBounds(item.target_measurement, layoutNode.target_bounds)) errors.push(`${label}.target_measurement 与绑定布局节点 target_bounds 不一致，存在目标几何漂移`);
+    if (enforceGeometry || item.target_measurement != null) validateMeasurement(item.target_measurement, `${label}.target_measurement`, errors);
+    if (enforceGeometry && layoutNode && item.target_measurement != null && !sameBounds(item.target_measurement, layoutNode.target_bounds)) errors.push(`${label}.target_measurement 与绑定布局节点 target_bounds 不一致，存在目标几何漂移`);
     if (!Array.isArray(item.target_evidence) || item.target_evidence.length === 0 || !item.target_evidence.every(isString)) errors.push(`${label}.target_evidence 必须是非空字符串数组`);
     const runtimeMeasurement = item.runtime_measurement ?? item.actual_bounds;
     if (status === "verified") {
@@ -190,7 +188,7 @@ function validateCriticalAlignments(items, ids, layoutNodes, target, codeCandida
       validateMeasurement(runtimeMeasurement, `${label}.runtime_measurement`, errors);
       if (exact || item.delta != null) validateDelta(item.delta, `${label}.delta`, errors);
       if (isObject(item.target_measurement) && isObject(runtimeMeasurement) && isObject(item.delta) && ["x", "y", "width", "height"].every((field) => isNumber(item.target_measurement[field]) && isNumber(runtimeMeasurement[field]) && isNumber(item.delta[field]))) {
-        if (exact) for (const field of ["x", "y", "width", "height"]) if (item.delta[field] !== runtimeMeasurement[field] - item.target_measurement[field]) errors.push(`${label}.delta.${field} 必须等于 runtime_measurement 与 target_measurement 的差值`);
+        if (enforceGeometry) for (const field of ["x", "y", "width", "height"]) if (item.delta[field] !== runtimeMeasurement[field] - item.target_measurement[field]) errors.push(`${label}.delta.${field} 必须等于 runtime_measurement 与 target_measurement 的差值`);
       }
       if (item.test_status !== "passed") errors.push(`${label}.test_status 必须为 passed，未执行测试不得通过`);
       if (!Array.isArray(item.runtime_evidence) || item.runtime_evidence.length === 0 || !item.runtime_evidence.every(isString)) errors.push(`${label}.runtime_evidence 必须是非空字符串数组`);
@@ -198,23 +196,40 @@ function validateCriticalAlignments(items, ids, layoutNodes, target, codeCandida
       if (runtimeMeasurement != null) validateMeasurement(runtimeMeasurement, `${label}.runtime_measurement`, errors);
       if (item.delta != null) validateDelta(item.delta, `${label}.delta`, errors);
     }
-    if (exact && (!isObject(item.tolerance) || !isString(item.tolerance.unit) || !isNumber(item.tolerance.value) || item.tolerance.value < 0)) errors.push(`${label}.tolerance 必须是项目定义的 unit 与非负 value`);
-    if (isString(target?.target_sha256) && item.target_sha256 !== target.target_sha256) errors.push(`${label}.target_sha256 与冻结目标不一致`);
-    if (isString(codeCandidate) && item.candidate_sha256 !== codeCandidate) errors.push(`${label}.candidate_sha256 与当前代码候选不一致`);
+    if (enforceGeometry) validateAlignmentTolerance(item, runtimeMeasurement, status, label, errors);
   });
 }
 
+/** 直接比较同坐标空间的实测矩形，不允许手写 passed 或伪造 delta 掩盖关键布局偏差。 */
+function validateAlignmentTolerance(item, runtimeMeasurement, status, label, errors) {
+  const tolerance = item.tolerance;
+  if (!isObject(tolerance) || !isNumber(tolerance.value) || tolerance.value < 0) {
+    errors.push(`${label}.tolerance 必须是项目定义的 unit 与非负 value`);
+    return;
+  }
+  if (!["px", "logical-px", "css-px", "css-logical-px"].includes(tolerance.unit)) {
+    errors.push(`${label}.tolerance.unit 必须是同一布局坐标空间的像素单位`);
+    return;
+  }
+  if (status !== "verified" || !isObject(item.target_measurement) || !isObject(runtimeMeasurement)) return;
+  for (const field of ["x", "y", "width", "height"]) {
+    const targetValue = item.target_measurement[field];
+    const actualValue = runtimeMeasurement[field];
+    if (isNumber(targetValue) && isNumber(actualValue) && Math.abs(actualValue - targetValue) > tolerance.value) {
+      errors.push(`${label}.runtime_measurement.${field} 超出声明容差 ${tolerance.value}${tolerance.unit}`);
+    }
+  }
+}
+
 /** 验证布局 parity case 绑定同一目标、候选和可复现条件。 */
-function validateParityCases(items, target, codeCandidate, scope, contractVersion, errors, mode = "usability", coverage = null) {
+function validateParityCases(items, scope, contractVersion, target, errors, mode = "usability", coverage = null) {
   const exact = mode === "exact";
   if (!Array.isArray(items) || items.length === 0) { if (exact) errors.push("parity_cases 必须是非空数组"); return; }
   const ids = new Set();
   items.forEach((item, index) => {
     const label = `parity_cases[${index}]`;
     if (!isObject(item)) { errors.push(`${label} 必须是对象`); return; }
-    for (const field of ["id", "target_sha256", "candidate_sha256", "scene_id", "state_id", "language", "input_trace", "sample_rule", "layout_contract_version", "visual_baseline_version", "conclusion"]) if (!isString(item[field])) errors.push(`${label}.${field} 必须是非空字符串`);
-    if (item.target_sha256 !== target?.target_sha256) errors.push(`${label}.target_sha256 与冻结目标不一致`);
-    if (item.candidate_sha256 !== codeCandidate) errors.push(`${label}.candidate_sha256 与当前代码候选不一致`);
+    for (const field of ["id", "scene_id", "state_id", "language", "input_trace", "sample_rule", "layout_contract_version", "visual_baseline_version", "conclusion"]) if (!isString(item[field])) errors.push(`${label}.${field} 必须是非空字符串`);
     if (!scope?.scenes?.includes(item.scene_id)) errors.push(`${label}.scene_id 不在 scope.scenes 范围内`);
     if (!scope?.states?.includes(item.state_id)) errors.push(`${label}.state_id 不在 scope.states 范围内`);
     if (item.layout_contract_version !== contractVersion) errors.push(`${label}.layout_contract_version 与根 contract_version 不一致`);
@@ -238,8 +253,7 @@ function validateScope(scope, errors) {
   if (Array.isArray(scope.ui_ids)) { const seen = new Set(); for (const item of scope.ui_ids) { if (!isString(item)) errors.push("scope.ui_ids 只能包含非空字符串"); else if (seen.has(item)) errors.push(`重复 UI ID：${item}`); else seen.add(item); } }
   for (const field of ["owner", "reviewer"]) if (!isString(scope[field])) errors.push(`scope.${field} 必须是非空字符串`);
   if (!isObject(scope.bindings) || Object.keys(scope.bindings).length === 0) errors.push("scope.bindings 必须是非空对象");
-  else for (const field of ["gdd", "tdd", "low_fidelity_candidate", "visual_baseline", "code_candidate"]) if (!isString(scope.bindings[field])) errors.push(`scope.bindings.${field} 必须是非空字符串`);
-  if (isString(scope.bindings?.code_candidate) && !SHA_PATTERN.test(scope.bindings.code_candidate)) errors.push("scope.bindings.code_candidate 必须是 sha256: 后接 64 位小写十六进制");
+  else for (const field of ["gdd", "tdd", "low_fidelity_candidate", "visual_baseline"]) if (!isString(scope.bindings[field])) errors.push(`scope.bindings.${field} 必须是非空字符串`);
 }
 
 /** 确保范围声明与区域集合完全一致。 */
@@ -325,7 +339,7 @@ function validateResponsiveContract(document, errors, coverage) {
     if (backing.backingSpace !== "physical-px") errors.push("canvasBackingPolicy.backingSpace 必须明确为 physical-px");
     for (const field of ["relation", "widthFormula", "heightFormula"]) if (!isString(backing[field]) || !/css|logical/i.test(backing[field]) || !/effective(?:devicepixelratio|dpr)/i.test(backing[field])) errors.push(`canvasBackingPolicy.${field} 必须表达 backing=CSS逻辑尺寸×effectiveDPR`);
     if (backing.effectiveDprSource !== "runtimeDprPolicy") errors.push("canvasBackingPolicy.effectiveDprSource 必须引用 runtimeDprPolicy");
-    if (backing.rounding !== "floor") errors.push("canvasBackingPolicy.rounding 必须为 floor");
+    if (backing.rounding !== "floor") errors.push("canvasBackingPolicy.rounding 必须为 floor，与 three.js renderer.setSize 一致");
     requireResponsiveEvents(backing.updatesOn, "canvasBackingPolicy.updatesOn", ["resize", "dpr-change"], coverage, errors);
     if (backing.physicalPixelLayout !== "forbidden") errors.push("canvasBackingPolicy.physicalPixelLayout 必须为 forbidden，不能用物理像素硬编码布局");
     if (backing.maxBackingSource !== "performanceBudget.maxCanvasBacking") errors.push("canvasBackingPolicy.maxBackingSource 必须引用 performanceBudget.maxCanvasBacking");
@@ -473,7 +487,7 @@ function validateRepresentativeViewports(viewports, coverage, errors) {
   if (!hasCap) errors.push(`representativeViewports 必须包含 rawDpr>${RUNTIME_MAX_DPR} 且 effectiveDpr=${RUNTIME_MAX_DPR} 的封顶证据`);
 }
 
-/** 验证 V4 真实运行证据字段、resize 轨迹和独立 DISPLAY_LAYER 轨迹。 */
+/** 验证正式场景运行证据字段、resize 轨迹和独立 DISPLAY_LAYER 轨迹。 */
 function validateRequiredRuntimeEvidence(evidence, errors) {
   if (!requireObjectFields(evidence, "requiredRuntimeEvidence", ["mode", "requiredFields", "dprAssertions", "resizeAssertions", "displayLayerTrajectory", "evidenceBinding", "missingMeasurement"], errors)) return;
   if (!["usability", "exact"].includes(evidence.mode)) errors.push("requiredRuntimeEvidence.mode 必须为 usability 或 exact");
@@ -499,8 +513,7 @@ function validateRequiredRuntimeEvidence(evidence, errors) {
     for (const field of ["hostSceneState", "independentEvidence", "inheritCssLogicalViewport", "sameEffectiveDpr", "hostPassDoesNotImplyPass"]) if (display[field] !== true) errors.push(`DISPLAY_LAYER 轨迹的 ${field} 必须为 true`);
   }
   const binding = evidence.evidenceBinding;
-  if (requireObjectFields(binding, "requiredRuntimeEvidence.evidenceBinding", ["candidate", "layoutContractVersion", "scene", "state"], errors)) {
-    if (binding.candidate !== "scope.bindings.code_candidate") errors.push("requiredRuntimeEvidence.evidenceBinding.candidate 必须绑定当前候选身份");
+  if (requireObjectFields(binding, "requiredRuntimeEvidence.evidenceBinding", ["layoutContractVersion", "scene", "state"], errors)) {
     if (binding.layoutContractVersion !== "contract_version") errors.push("requiredRuntimeEvidence.evidenceBinding.layoutContractVersion 必须绑定当前布局合同版本");
   }
   if (evidence.missingMeasurement !== "unverified") errors.push("requiredRuntimeEvidence.missingMeasurement 必须为 unverified");
@@ -636,23 +649,15 @@ function validateLayoutAnnotationBinding(document, binding, layoutNodes, errors)
   if (!isEffectImageContract(document)) return;
   const annotation = document.layout_annotation;
   if (!isObject(annotation)) { errors.push("effect-image 必须声明 layout_annotation；布局标注只能后置于拆解确认"); return; }
-  const required = ["layout_annotation_file", "layout_annotation_sha256", "layout_annotation_width", "layout_annotation_height", "layout_annotation_schema", "layout_annotation_layout", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "layout_review_file", "layout_review_sha256", "layout_review_identity_sha256", "layout_nodes_file", "layout_nodes_sha256", "decomposition_confirmation_id", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_file", "layout_decision_sha256", "layout_decision_id", "target_sha256", "scene_id", "state_id"];
+  const required = ["layout_annotation_file", "layout_annotation_width", "layout_annotation_height", "layout_annotation_schema", "layout_annotation_layout", "layout_review_file", "layout_nodes_file", "decomposition_confirmation_id", "layout_decision_file", "layout_decision_id", "scene_id", "state_id"];
   for (const field of required) if (!(field in annotation)) errors.push(`layout_annotation.${field} 必须存在`);
-  for (const field of ["layout_annotation_sha256", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "layout_review_sha256", "layout_review_identity_sha256", "layout_nodes_sha256", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_sha256", "target_sha256"]) if (field in annotation && (!isString(annotation[field]) || !SHA_PATTERN.test(annotation[field]))) errors.push(`layout_annotation.${field} 必须是合法 sha256`);
+  for (const field of ["layout_annotation_file", "layout_review_file", "layout_nodes_file", "layout_decision_file", "decomposition_confirmation_id", "layout_decision_id", "scene_id", "state_id"]) if (!isString(annotation[field])) errors.push(`layout_annotation.${field} 必须是非空字符串`);
   if (annotation.layout_annotation_schema !== "layout-annotation/png/1") errors.push("layout_annotation.layout_annotation_schema 必须为 layout-annotation/png/1");
   if (annotation.layout_annotation_layout !== "image-plus-right-panel") errors.push("layout_annotation.layout_annotation_layout 必须为 image-plus-right-panel");
   for (const field of ["layout_annotation_width", "layout_annotation_height"]) if (!Number.isInteger(annotation[field]) || annotation[field] <= 0) errors.push(`layout_annotation.${field} 必须是正整数`);
-  if (binding && annotation.target_sha256 !== binding.target_sha256) errors.push("layout_annotation.target_sha256 未绑定当前冻结目标");
   if (binding && (annotation.scene_id !== binding.scene_id || annotation.state_id !== binding.state_id)) errors.push("layout_annotation scene/state 未绑定当前场景");
   if (!Array.isArray(annotation.layout_node_ids) || annotation.layout_node_ids.length === 0) errors.push("layout_annotation.layout_node_ids 必须是非空数组");
   else if (JSON.stringify(annotation.layout_node_ids) !== JSON.stringify(layoutNodes.orderedNodeIds)) errors.push("layout_annotation.layout_node_ids 必须按已确认拆解元素原顺序完整绑定");
-}
-
-/** 校验绑定中的布局合同身份哈希，拒绝节点或目标修改后继续复用旧身份。 */
-function validateLayoutContractIdentity(document, binding, errors) {
-  if (!isObject(binding) || !isString(binding.layout_contract_sha256) || !SHA_PATTERN.test(binding.layout_contract_sha256)) return;
-  const expected = computeLayoutContractSha256(document);
-  if (binding.layout_contract_sha256 !== expected) errors.push(`scene_reconstruction_binding.layout_contract_sha256 与当前布局合同身份不一致；预期 ${expected}`);
 }
 
 /** 验证全局几何字段。 */
@@ -739,11 +744,11 @@ function validateProgrammaticTextEvidence(document, errors) {
 export function validateContract(document) {
   const errors = []; const warnings = []; const specialized = []; validateRoot(document, errors); if (!isObject(document)) return { status: "failed", errors, warnings, specialized_review: specialized };
   const mode = resolveVisualValidationMode(document); validateVisualValidationPolicy(errors, "visual_validation", document);
-  validateScope(document.scope, errors); const fidelity = validateFidelityLifecycle(document, errors); const requiresFrozenLayout = fidelity?.applicability === "frozen-target" || isEffectImageContract(document); if (requiresFrozenLayout) validateFrozenVisualTarget(document.frozen_visual_target, errors); const binding = validateSceneReconstructionBinding(document, fidelity, errors); const coverage = resolveOrientationCoverage(document.orientationPolicy); errors.push(...coverage.errors); validateTargets(document.targets, errors, coverage); validateResponsiveContract(document, errors, coverage); const spaces = validateCoordinateSpaces(document.coordinate_spaces, errors); const ids = validateRegions(document, spaces, errors, specialized); validateScopeRegionIds(document.scope, ids, errors); validateReferenceGraph(document, ids, errors); const layoutNodes = validateLayoutNodes(document, fidelity, binding, spaces, ids, errors); validateLayoutAnnotationBinding(document, binding, layoutNodes, errors); validateLayoutContractIdentity(document, binding, errors); validateContent(document.content, errors); validateBreakpoints(document.breakpoints, errors); validatePlatformAndScrolling(document, ids, errors); validateDynamicContent(document.dynamic_content, ids, errors); validateOverlays(document.overlay_rules, ids, errors, specialized); validateOverlayCoverage(document, ids, errors); validateInvariants(document.invariants, ids, errors, mode);
+  validateScope(document.scope, errors); const fidelity = validateFidelityLifecycle(document, errors); const requiresFrozenLayout = fidelity?.applicability === "frozen-target" || isEffectImageContract(document); if (requiresFrozenLayout) validateFrozenVisualTarget(document.frozen_visual_target, errors); const binding = validateSceneReconstructionBinding(document, fidelity, errors); const coverage = resolveOrientationCoverage(document.orientationPolicy); errors.push(...coverage.errors); validateTargets(document.targets, errors, coverage); validateResponsiveContract(document, errors, coverage); const spaces = validateCoordinateSpaces(document.coordinate_spaces, errors); const ids = validateRegions(document, spaces, errors, specialized); validateScopeRegionIds(document.scope, ids, errors); validateReferenceGraph(document, ids, errors); const layoutNodes = validateLayoutNodes(document, fidelity, binding, spaces, ids, errors); validateLayoutAnnotationBinding(document, binding, layoutNodes, errors); validateContent(document.content, errors); validateBreakpoints(document.breakpoints, errors); validatePlatformAndScrolling(document, ids, errors); validateDynamicContent(document.dynamic_content, ids, errors); validateOverlays(document.overlay_rules, ids, errors, specialized); validateOverlayCoverage(document, ids, errors); validateInvariants(document.invariants, ids, errors, mode);
   if (requiresFrozenLayout) {
-    validateCriticalAlignments(document.critical_alignments, ids, layoutNodes, document.frozen_visual_target, document.scope?.bindings?.code_candidate, fidelity?.status, errors, mode);
+    validateCriticalAlignments(document.critical_alignments, ids, layoutNodes, fidelity?.status, errors, mode);
     if (fidelity?.status === "verified") {
-      validateParityCases(document.parity_cases, document.frozen_visual_target, document.scope?.bindings?.code_candidate, document.scope, document.contract_version, errors, mode, coverage);
+      validateParityCases(document.parity_cases, document.scope, document.contract_version, document.frozen_visual_target, errors, mode, coverage);
       if (mode === "exact" && Array.isArray(document.parity_cases) && document.parity_cases.some((item) => item?.conclusion !== "passed")) errors.push("verified 的 parity_cases 必须全部 passed");
     } else if (!Array.isArray(document.parity_cases) || document.parity_cases.length > 0) errors.push("specified 的 parity_cases 必须为空数组");
   }
@@ -774,21 +779,21 @@ export async function checkContractFiles(document, projectRoot) {
     try {
       const file = projectPath(projectRoot, target.original_file);
       if (!await isFile(file)) errors.push(`frozen_visual_target.original_file 文件不存在：${target.original_file}`);
-      else { const digest = createHash("sha256").update(await readFile(file)).digest("hex"); if (target.target_sha256 !== `sha256:${digest}`) errors.push("frozen_visual_target.target_sha256 与原图文件 SHA-256 不一致"); }
+      else await readFile(file);
     } catch (error) { errors.push(`frozen_visual_target.original_file：${error.message}`); }
   }
   if (isObject(document.layout_annotation) && isString(document.layout_annotation.layout_annotation_file)) {
     try {
       const file = projectPath(projectRoot, document.layout_annotation.layout_annotation_file);
       if (!await isFile(file)) errors.push(`layout_annotation.layout_annotation_file 文件不存在：${document.layout_annotation.layout_annotation_file}`);
-      else { const digest = createHash("sha256").update(await readFile(file)).digest("hex"); if (document.layout_annotation.layout_annotation_sha256 !== `sha256:${digest}`) errors.push("layout_annotation.layout_annotation_sha256 与文件 SHA-256 不一致"); }
+      else await readFile(file);
     } catch (error) { errors.push(`layout_annotation.layout_annotation_file：${error.message}`); }
   }
   if (isObject(document.layout_annotation) && isString(document.layout_annotation.layout_decision_file)) {
     try {
       const file = projectPath(projectRoot, document.layout_annotation.layout_decision_file);
       if (!await isFile(file)) errors.push(`layout_annotation.layout_decision_file 文件不存在：${document.layout_annotation.layout_decision_file}`);
-      else { const digest = createHash("sha256").update(await readFile(file)).digest("hex"); if (document.layout_annotation.layout_decision_sha256 !== `sha256:${digest}`) errors.push("layout_annotation.layout_decision_sha256 与文件 SHA-256 不一致"); }
+      else await readFile(file);
     } catch (error) { errors.push(`layout_annotation.layout_decision_file：${error.message}`); }
   }
   for (const [index, item] of (document.critical_alignments ?? []).entries()) {

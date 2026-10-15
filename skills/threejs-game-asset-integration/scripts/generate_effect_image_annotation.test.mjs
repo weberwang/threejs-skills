@@ -34,7 +34,7 @@ function addAtomicVisualContract(region, assetId) {
   region.state_analysis = { status: "complete", phase: "before-component-splitting", evidence: `evidence/${region.id}-state.md`, evidence_sha256: `sha256:${"a".repeat(64)}`, reference_target_sha256: `sha256:${"a".repeat(64)}`, analysis_id: `${region.id}-analysis`, completed_at: "2026-08-15T00:00:00Z", states };
   const layoutNodeId = region.layout_node_ids?.[0] ?? `${region.id}-layout-node`;
   region.layout_node_ids ??= [layoutNodeId];
-  region.decomposition_elements = [{ element_id: layoutNodeId, element_type: "component", role: "visual-component", bounds: { ...region.bounds }, scene_id: region.scene_id, state_id: region.state_id, region_id: region.id, component_id: componentId, placement_id: `${region.id}-placement`, parent_element_id: "viewport", semantic_grouping: { kind: "standalone", rationale: "完整视觉组件在当前区域独立布局" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, empty_container: false }];
+  region.decomposition_elements = [{ element_id: layoutNodeId, element_type: "component", role: "visual-component", bounds: { ...region.bounds }, scene_id: region.scene_id, state_id: region.state_id, region_id: region.id, component_id: componentId, placement_id: `${region.id}-placement`, parent_element_id: "viewport", semantic_grouping: { kind: "standalone", rationale: "完整视觉组件在当前区域独立布局" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, owner_type: region.owner_type, region_layer: region.layer, empty_container: false }];
   region.component_inventory = { granularity: "single-component", component_count: 1, visible_instance_count: 1, delivery_mode: "individual", atlas_allowed: false, created_at: "2026-08-15T00:01:00Z", components: [{ component_id: componentId, atomic_visual_key: atomicKey, role: "visual-component", reusable: true, state_coverage: states, placements: [{ placement_id: `${region.id}-placement`, layout_node_id: layoutNodeId, bounds: { ...region.bounds }, interaction_required: false }] }] };
   region.expected_assets = [{ asset_id: assetId, asset_scope: "atomic-component", atomic_visual_key: atomicKey, component_id: componentId, state_id: "default", source_file: `art/${assetId}.png`, runtime_file: `public/${assetId}.png` }];
   region.interaction_hotspots = [];
@@ -54,7 +54,7 @@ function annotationManifest(targetSha) {
     coverage_audit: {
       canvases: [{ scene_id: "main", state_id: "default", width: 32, height: 24 }],
       regions: [
-        { id: "runtime-background", scene_id: "main", state_id: "default", layout_node_ids: ["runtime-background"], decomposition_elements: [{ element_id: "runtime-background", element_type: "component", role: "background", bounds: { x: 0, y: 0, width: 32, height: 24 }, scene_id: "main", state_id: "default", region_id: "runtime-background", component_id: "runtime-background", placement_id: "runtime-background-placement", parent_element_id: "viewport", semantic_grouping: { kind: "standalone", rationale: "完整背景由运行时独立绘制无需功能容器" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "STRETCH", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "FULL_BLEED", interaction_policy: "NONE" }, empty_container: false }], layer: "background", bounds: { x: 0, y: 0, width: 32, height: 24 }, owner_type: "runtime-rendered", owner_id: "background", ownership_evidence: "evidence/background-review.md", annotation_number: 1, implementation_plan: { mode: "runtime-program", summary: "运行时绘制背景" }, runtime_implementation: { kind: "runtime-program", integration_files: ["src/runtime-background.mjs"], layout_node_ids: ["runtime-background"] } },
+        { id: "runtime-background", scene_id: "main", state_id: "default", layout_node_ids: ["runtime-background"], decomposition_elements: [{ element_id: "runtime-background", element_type: "component", role: "background", bounds: { x: 0, y: 0, width: 32, height: 24 }, scene_id: "main", state_id: "default", region_id: "runtime-background", component_id: "runtime-background", placement_id: "runtime-background-placement", parent_element_id: "viewport", semantic_grouping: { kind: "standalone", rationale: "完整背景由运行时独立绘制无需功能容器" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "STRETCH", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "FULL_BLEED", interaction_policy: "NONE" }, owner_type: "runtime-rendered", region_layer: "background", empty_container: false }], layer: "background", bounds: { x: 0, y: 0, width: 32, height: 24 }, owner_type: "runtime-rendered", owner_id: "background", ownership_evidence: "evidence/background-review.md", annotation_number: 1, implementation_plan: { mode: "runtime-program", summary: "运行时绘制背景" }, runtime_implementation: { kind: "runtime-program", integration_files: ["src/runtime-background.mjs"], layout_node_ids: ["runtime-background"] } },
         { id: "hero", scene_id: "main", state_id: "default", layout_node_ids: ["layout-hero"], layer: "actors", bounds: { x: 4, y: 4, width: 8, height: 8 }, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", expected_assets: ["hero"], asset_id: "hero", owner_id: "art", ownership_evidence: "evidence/hero-review.md", annotation_number: 2, implementation_plan: { mode: "generate-now", summary: "本次生成主角" } },
         { id: "badge", scene_id: "main", state_id: "default", layout_node_ids: ["layout-badge"], layer: "hud", bounds: { x: 20, y: 2, width: 8, height: 6 }, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "reuse", delivery_kind: "existing-asset", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", expected_assets: ["badge"], asset_id: "badge", owner_id: "art", ownership_evidence: "evidence/badge-review.md", annotation_number: 3, reuse_snapshot: { schema: "asset-reuse-snapshot/1.0", source_asset_id: "badge", source_manifest_file: "docs/reuse-snapshot.json", source_manifest_sha256: targetSha, source_file: "badge.png", source_sha256: targetSha, compatibility_evidence_file: "evidence/badge-consistency.json", compatibility_evidence_sha256: targetSha, accepted_at: "2026-08-15T00:00:00Z", source_status: "accepted" }, implementation_plan: { mode: "reuse-existing", summary: "复用既有资源" } },
       ],
@@ -78,27 +78,73 @@ async function addReuseEvidence(root, manifest) {
 test("生成独立效果图标注 PNG、右栏说明和绑定提案", async () => {
   const root = await mkdtemp(join(tmpdir(), "effect-annotation-"));
   const original = minimalPng(32, 24); const targetSha = sha256(original); const manifest = annotationManifest(targetSha);
+  const panelNineSlice = { mode: "stretch", reason: "小型面板源图的四角需要保留原像素尺寸", source_size: { width: 8, height: 8 }, borders: { left: 1, right: 1, top: 1, bottom: 1 } };
+  const heroRegion = manifest.coverage_audit.regions[1];
+  heroRegion.decomposition_elements[0].nine_slice = structuredClone(panelNineSlice);
+  heroRegion.component_inventory.components[0].nine_slice = structuredClone(panelNineSlice);
+  heroRegion.component_inventory.components[0].placements[0].nine_slice = structuredClone(panelNineSlice);
+  heroRegion.expected_assets[0].nine_slice = structuredClone(panelNineSlice);
   const manifestPath = join(root, "visual-assets.json"); await writeFile(join(root, "reference.png"), original); await addReuseEvidence(root, manifest); await writeFile(manifestPath, JSON.stringify(manifest));
   const code = await generateAnnotation([manifestPath, "--project-root", root, "--scene-id", "main", "--state-id", "default", "--output", "evidence/annotation.png", "--proposal", "evidence/annotation-proposal.json", "--proposal-id", "proposal-1"]);
   assert.equal(code, 0);
   const pngBytes = await readFile(join(root, "evidence/annotation.png")); const decoded = decodePngRgba(pngBytes);
   assert.equal(decoded.metadata.schema, "effect-image-annotation/png/1"); assert.equal(decoded.metadata.layout, "image-plus-right-panel"); assert(decoded.width > 32); assert(decoded.height >= 24); assert.equal(decoded.metadata.visible_row_count, decoded.metadata.visible_rows.length);
   const summaryRows = decoded.metadata.visible_rows.filter((row) => row.kind === "summary"); const labelRows = decoded.metadata.visible_rows.filter((row) => row.kind === "label"); const technicalRowKinds = new Set(["production", "region", "mode", "component", "placement", "requirement"]); assert.deepEqual(summaryRows.map((row) => row.text.split(" ", 1)[0]), ["1", "2", "3"]); assert(summaryRows.some((row) => row.text.startsWith("2 本次生成主角"))); assert(summaryRows.some((row) => row.text.includes("运行时绘制背景"))); assert.equal(labelRows.find((row) => row.annotation_number === 1).label, "程序绘制或动态逻辑"); assert.equal(labelRows.find((row) => row.annotation_number === 2).label, "新建图片资产"); assert.equal(labelRows.find((row) => row.annotation_number === 3).label, "复用现有图片"); assert.equal(decoded.metadata.visible_rows.some((row) => technicalRowKinds.has(row.kind)), false); assert(decoded.metadata.visible_rows.every((row) => !/[A-Z_]{3,}/.test(row.text)));
+  const nineSliceRows = decoded.metadata.visible_rows.filter((row) => row.kind === "nine-slice"); assert(nineSliceRows.length > 0); assert(nineSliceRows.every((row) => row.region_id === "hero")); assert.match(nineSliceRows.map((row) => row.text).join(""), /九宫格 源图8×8 边宽 左1 右1 上1 下1/);
   const heroSummary = summaryRows.find((row) => row.annotation_number === 2); const heroPixels = []; for (let y = heroSummary.top; y <= heroSummary.bottom; y += 1) for (let x = 40; x < decoded.width; x += 1) { const index = (y * decoded.width + x) * 4; if (decoded.pixels[index] < 230 || decoded.pixels[index + 1] < 230 || decoded.pixels[index + 2] < 230) heroPixels.push(index); } assert(heroPixels.length > 0, "中文摘要必须真实落入 PNG 像素");
   assert.deepEqual(decoded.metadata.plan_labels, { "generate-now": "新建图片资产", "reuse-existing": "复用现有图片", "runtime-program": "程序绘制或动态逻辑" }); assert.equal(decoded.metadata.regions.length, 3);
   const proposalBytes = await readFile(join(root, "evidence/annotation-proposal.json")); const proposal = JSON.parse(proposalBytes.toString("utf8"));
   const backgroundElement = proposal.decomposition_elements.find((element) => element.element_id === "runtime-background");
   assert.deepEqual(backgroundElement.ui_layout, { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "STRETCH", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "FULL_BLEED", interaction_policy: "NONE" });
+  assert.deepEqual(proposal.decomposition_elements.find((element) => element.element_id === "layout-hero").nine_slice, panelNineSlice);
   assert.equal(proposal.numbered_image_mime, "image/png"); assert.equal(proposal.numbered_image_sha256, sha256(pngBytes)); assert.deepEqual(proposal.region_ids, ["runtime-background", "hero", "badge"]); assert.deepEqual(proposal.layout_node_ids, ["runtime-background", "layout-hero", "layout-badge"]); assert.deepEqual(proposal.decomposition_elements.map((element) => element.element_id), ["runtime-background", "layout-hero", "layout-badge"]); assert.equal(proposal.target_sha256, targetSha); assert.equal(proposal.proposal_kind, "effect-image-decomposition-technical-analysis"); assert.deepEqual(proposal.canvas, { scene_id: "main", state_id: "default", width: 32, height: 24 }); assert.equal(proposal.visual_regions.find((region) => region.region_id === "hero").summary, "本次生成主角"); assert.deepEqual(decoded.metadata.regions.find((region) => region.region_id === "hero").layout_node_ids, ["layout-hero"]); assert.deepEqual(decoded.metadata.regions.find((region) => region.region_id === "hero").placement_layout_node_ids, [{ placement_id: "hero-placement", layout_node_id: "layout-hero" }]);
   const technicalHero = proposal.technical_analysis.regions.find((region) => region.region_id === "hero"); assert.deepEqual(technicalHero.layout_node_ids, ["layout-hero"]); assert.equal(technicalHero.placements[0].layout_node_id, "layout-hero"); assert.deepEqual(technicalHero.bounds, manifest.coverage_audit.regions[1].bounds); assert.deepEqual(technicalHero.components[0].placements[0].bounds, manifest.coverage_audit.regions[1].component_inventory.components[0].placements[0].bounds); assert.equal(technicalHero.state_analysis.states.length, 9); assert.equal(technicalHero.production_contract.production_method, "authored-raster"); assert.equal(technicalHero.resource_mapping.asset_ids[0], "hero"); assert.equal(technicalHero.atomic_image_requirements[0].asset_id, "hero");
+  assert.deepEqual(technicalHero.decomposition_elements[0].nine_slice, panelNineSlice);
+  assert.deepEqual(technicalHero.component_inventory.components[0].nine_slice, panelNineSlice);
+  assert.deepEqual(technicalHero.component_inventory.components[0].placements[0].nine_slice, panelNineSlice);
+  assert.deepEqual(technicalHero.expected_assets[0].nine_slice, panelNineSlice);
   const validErrors = []; validateAnnotatedPng(pngBytes, original, manifest.coverage_audit.regions, proposal, "annotation", validErrors); assert.deepEqual(validErrors, []);
   const tampered = structuredClone(manifest); tampered.coverage_audit.regions[1].bounds.width += 1; const errors = [];
   validateAnnotatedPng(pngBytes, original, tampered.coverage_audit.regions, proposal, "annotation", errors);
-  assert(errors.some((item) => item.includes("区域定义 SHA 不一致") || item.includes("atomic_image_requirements") || item.includes("placement")), "篡改区域后旧标注/提案必须失效");
+  assert(errors.some((item) => item.includes("bounds 不一致") || item.includes("atomic_image_requirements") || item.includes("placement")), "区域几何变化仍需由实际技术内容复核");
+  const nineSliceDrifts = [
+    ["mode", (slice) => ({ mode: "not-applicable", reason: "改为不拉伸" })],
+    ["source_size", (slice) => ({ ...slice, source_size: { ...slice.source_size, width: slice.source_size.width + 1 } })],
+    ["borders", (slice) => ({ ...slice, borders: { ...slice.borders, left: slice.borders.left + 1 } })],
+  ];
+  for (const [field, mutate] of nineSliceDrifts) {
+    const driftedRegions = structuredClone(manifest.coverage_audit.regions);
+    driftedRegions[1].component_inventory.components[0].nine_slice = mutate(driftedRegions[1].component_inventory.components[0].nine_slice);
+    const driftErrors = [];
+    validateAnnotatedPng(pngBytes, original, driftedRegions, proposal, `annotation-nine-slice-${field}`, driftErrors);
+    assert(driftErrors.some((item) => item.includes("technical_definition 与当前区域不一致")), `${field} 变化必须与已确认的实际区域定义不一致`);
+  }
   const alteredProposal = structuredClone(proposal); alteredProposal.technical_analysis.regions.find((region) => region.region_id === "hero").bounds.width += 1; const proposalErrors = []; validateAnnotatedPng(pngBytes, original, manifest.coverage_audit.regions, alteredProposal, "annotation", proposalErrors); assert(proposalErrors.some((item) => item.includes("技术文件") && item.includes("bounds")), "篡改技术 JSON 的坐标尺寸必须被验证器发现");
   const alteredMetadata = structuredClone(decoded.metadata); alteredMetadata.visible_rows.find((row) => row.kind === "summary" && row.annotation_number === 2).text = "2 被篡改的摘要"; const alteredLabel = alteredMetadata.visible_rows.find((row) => row.kind === "label" && row.annotation_number === 2); alteredLabel.text = "复用既有资源"; alteredLabel.label = "复用既有资源"; alteredMetadata.regions.find((region) => region.region_id === "hero").summary = "被篡改的区域摘要"; const alteredPng = encodePngRgba(decoded.width, decoded.height, decoded.pixels, alteredMetadata); const summaryErrors = []; validateAnnotatedPng(alteredPng, original, manifest.coverage_audit.regions, proposal, "annotation", summaryErrors); assert(summaryErrors.some((item) => item.includes("右栏第") && item.includes("未精确呈现")), "删除或修改右栏中文摘要必须被验证器发现"); assert(summaryErrors.some((item) => item.includes("中文摘要与区域合同不一致")), "嵌入区域中文摘要被篡改必须被验证器发现"); assert(summaryErrors.some((item) => item.includes("用户说明")), "用户生产标签被篡改必须被验证器发现");
   const missingKind = structuredClone(proposal); delete missingKind.proposal_kind; const missingKindErrors = []; validateAnnotatedPng(pngBytes, original, manifest.coverage_audit.regions, missingKind, "annotation", missingKindErrors); assert(missingKindErrors.some((item) => item.includes("proposal_kind") && item.includes("技术文件")), "缺少 proposal_kind 必须拒绝正式标注");
   const missingTechnical = structuredClone(proposal); delete missingTechnical.technical_analysis; const missingTechnicalErrors = []; validateAnnotatedPng(pngBytes, original, manifest.coverage_audit.regions, missingTechnical, "annotation", missingTechnicalErrors); assert(missingTechnicalErrors.some((item) => item.includes("technical_analysis")), "缺少 technical_analysis 必须拒绝正式标注");
+});
+
+test("缺失或错误的冻结目标、复用来源和状态分析摘要不阻断有效图像标注", async () => {
+  const root = await mkdtemp(join(tmpdir(), "effect-annotation-stale-digests-"));
+  const original = minimalPng(32, 24);
+  const manifest = annotationManifest("invalid-target-digest");
+  await writeFile(join(root, "reference.png"), original);
+  await addReuseEvidence(root, manifest);
+  const badge = manifest.coverage_audit.regions.find((region) => region.id === "badge");
+  const hero = manifest.coverage_audit.regions.find((region) => region.id === "hero");
+  delete badge.reuse_snapshot.source_sha256;
+  badge.reuse_snapshot.source_manifest_sha256 = { stale: true };
+  badge.reuse_snapshot.compatibility_evidence_sha256 = "bad-digest";
+  delete hero.state_analysis.evidence_sha256;
+  hero.state_analysis.reference_target_sha256 = "old-target";
+  const manifestPath = join(root, "visual-assets.json");
+  await writeFile(manifestPath, JSON.stringify(manifest));
+
+  const code = await generateAnnotation([manifestPath, "--project-root", root, "--scene-id", "main", "--state-id", "default", "--output", "evidence/annotation.png", "--proposal", "evidence/annotation-proposal.json"]);
+  assert.equal(code, 0);
+  const decoded = decodePngRgba(await readFile(join(root, "evidence/annotation.png")));
+  assert.equal(decoded.metadata.schema, "effect-image-annotation/png/1");
 });
 
 test("正式标注生成必须同时输出拆解分析技术文件", async () => {

@@ -384,18 +384,24 @@ test("响应式合同声明允许动态有效值并拒绝非法有效声明", ()
 
 test("报告必须带合法不可变证据身份", () => { const missing = summarizeReport([], { resize: { required: false }, viewports: [] }); assert.equal(missing.responsivePass, false); assert(missing.identityErrors.length > 0); const report = summarizeReport([], { ...contract(), resize: { required: false }, viewports: [] }, { ...identity, target_sha256: `sha256:${"b".repeat(64)}` }); assert.deepEqual(report.identityErrors, []); });
 
-test("V5 响应式证据必须携带已确认草图 SHA", () => { const evidenceContract = { ...contract(), resize: { required: false }, viewports: [] }; const missing = summarizeReport([], evidenceContract, { ...identity, currentStage: "V5" }); assert(missing.identityErrors.some((item) => item.includes("pageSketchSha256"))); const malformed = summarizeReport([], evidenceContract, { ...identity, currentStage: "V5", pageSketchSha256: "sha256:bad" }); assert(malformed.identityErrors.some((item) => item.includes("pageSketchSha256"))); const valid = summarizeReport([], evidenceContract, { ...identity, currentStage: "V5", pageSketchSha256: `sha256:${"f".repeat(64)}` }); assert.deepEqual(valid.identityErrors, []); assert.equal(valid.pageSketchSha256, `sha256:${"f".repeat(64)}`); });
+test("V4 响应式证据直接绑定正式候选身份", () => {
+  const evidenceContract = { ...contract(), resize: { required: false }, viewports: [] };
+  const { candidate_sha256, ...requiredIdentity } = identity;
+  // 正式证据由任务与运行候选定位，不再为独立预览携带额外身份。
+  const report = summarizeReport([], evidenceContract, { ...requiredIdentity, currentStage: "V4", target_sha256: "stale" });
+  assert.deepEqual(report.identityErrors, []);
+});
 
-test("效果图还原报告必须绑定冻结目标 SHA", () => {
+test("效果图还原报告不比较目标摘要，仍复核实际布局合同", () => {
   const { document, targetSha } = effectImageContract();
-  const missing = summarizeReport([], document, identity); assert(missing.identityErrors.some((item) => item.includes("target_sha256")));
-  const wrong = summarizeReport([], document, { ...identity, target_sha256: `sha256:${"c".repeat(64)}` }); assert(wrong.identityErrors.some((item) => item.includes("frozen_visual_target")));
+  const missing = summarizeReport([], document, identity); assert.deepEqual(missing.identityErrors, []);
+  const wrong = summarizeReport([], document, { ...identity, target_sha256: `sha256:${"c".repeat(64)}` }); assert.deepEqual(wrong.identityErrors, []);
   const complete = summarizeReport([], document, { ...identity, target_sha256: targetSha }); assert.deepEqual(complete.identityErrors, []);
 });
 
 test("响应式入口复用效果图父子停靠几何合同", () => { const { document, targetSha } = effectImageContract(); document.layout_nodes[0].relative_position.left += 1; assert.notEqual(computeLayoutContractIdentityHash(document), document.scene_reconstruction_binding.layout_contract_sha256); assert.equal(summarizeReport([], document, { ...identity, target_sha256: targetSha }).responsivePass, false); });
 
-test("报告身份必须与原始 UI 合同交叉绑定", () => { for (const [field, value, message] of [["scene_id", "other", "scope.scenes"], ["state_id", "paused", "scope.states"], ["layout_contract_version", "9.0.0", "contract_version"], ["candidate_sha256", `sha256:${"d".repeat(64)}`, "code_candidate"], ["visual_baseline_version", "2.0.0", "视觉基线"]]) { const report = summarizeReport([], { ...contract(), resize: { required: false }, viewports: [] }, { ...identity, [field]: value }); assert(report.identityErrors.some((item) => item.includes(message)), field); } });
+test("报告身份必须与原始 UI 合同交叉绑定", () => { for (const [field, value, message] of [["scene_id", "other", "scope.scenes"], ["state_id", "paused", "scope.states"], ["layout_contract_version", "9.0.0", "contract_version"], ["visual_baseline_version", "2.0.0", "视觉基线"]]) { const report = summarizeReport([], { ...contract(), resize: { required: false }, viewports: [] }, { ...identity, [field]: value }); assert(report.identityErrors.some((item) => item.includes(message)), field); } });
 
 test("调用方伪造 identityContract 不能自证可信身份", () => { const forged = { resize: { required: false }, viewports: [], identityContract: { schemaVersion: "1.1.0", contractVersion: identity.layout_contract_version, scenes: [identity.scene_id], states: [identity.state_id], codeCandidate: identity.candidate_sha256, visualBaselineVersion: identity.visual_baseline_version } }; const report = summarizeReport([], forged, identity); assert.equal(report.responsivePass, false); assert(report.identityErrors.some((item) => item.includes("原始 UI 合同"))); });
 

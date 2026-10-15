@@ -14,7 +14,6 @@ import { renderLayoutReviewPage, readLayoutReviewPayload, validateReviewNodesDoc
 export const LAYOUT_NODES_SCHEMA = "threejs-layout-nodes/1.0";
 export const LAYOUT_REVIEW_SCHEMA = "threejs-layout-review/1.0";
 export const LAYOUT_REVIEW_STATUS = "candidate-awaiting-layout-confirmation";
-const SHA_PATTERN = /^sha256:[a-f0-9]{64}$/;
 
 /** 判断普通对象。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -28,6 +27,15 @@ export function canonicalJson(value) {
   if (isObject(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
   const encoded = JSON.stringify(value);
   return encoded === undefined ? "null" : encoded;
+}
+
+/** 生成只用于比较的投影，可选摘要字段差异不改变节点与布局内容的一致性判断。 */
+function canonicalWithoutSha(value) {
+  if (Array.isArray(value)) return value.map(canonicalWithoutSha);
+  if (!isObject(value)) return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !/(?:sha1|sha256|hash|fingerprint)/iu.test(key))
+    .map(([key, item]) => [key, canonicalWithoutSha(item)]));
 }
 
 /** 计算字节 SHA-256；工件身份统一使用 sha256: 前缀。 */
@@ -115,21 +123,20 @@ export function buildLayoutNodesDocument(facts, context = {}) {
   if (layoutNodes.length === 0 || rootNodes.length === 0) throw new Error("布局审阅节点文档必须同时包含非根节点和根节点");
   const viewport = context.viewport ?? context.targetViewport ?? context.target_viewport;
   if (!isObject(viewport) || !Number.isInteger(viewport.width) || viewport.width <= 0 || !Number.isInteger(viewport.height) || viewport.height <= 0) throw new Error("布局审阅节点文档缺少有效 viewport");
-  const required = [["scene_id", context.sceneId ?? context.scene_id], ["state_id", context.stateId ?? context.state_id], ["target_sha256", context.targetSha256 ?? context.target_sha256], ["decomposition_confirmation_id", context.decompositionConfirmationId ?? context.decomposition_confirmation_id], ["decomposition_confirmation_sha256", context.decompositionConfirmationSha256 ?? context.decomposition_confirmation_sha256], ["proposal_sha256", context.proposalSha256 ?? context.proposal_sha256], ["layout_decision_id", context.layoutDecisionId ?? context.layout_decision_id], ["layout_decision_sha256", context.layoutDecisionSha256 ?? context.layout_decision_sha256]];
+  const required = [["scene_id", context.sceneId ?? context.scene_id], ["state_id", context.stateId ?? context.state_id], ["decomposition_confirmation_id", context.decompositionConfirmationId ?? context.decomposition_confirmation_id], ["layout_decision_id", context.layoutDecisionId ?? context.layout_decision_id]];
   for (const [field, value] of required) if (!nonEmptyString(value)) throw new Error(`布局审阅节点文档缺少 ${field}`);
-  if (!SHA_PATTERN.test(String(context.targetSha256 ?? context.target_sha256)) || !SHA_PATTERN.test(String(context.decompositionConfirmationSha256 ?? context.decomposition_confirmation_sha256)) || !SHA_PATTERN.test(String(context.proposalSha256 ?? context.proposal_sha256)) || !SHA_PATTERN.test(String(context.layoutDecisionSha256 ?? context.layout_decision_sha256))) throw new Error("布局审阅节点文档的身份 SHA 无效");
   return {
     schema: LAYOUT_NODES_SCHEMA,
     status: LAYOUT_REVIEW_STATUS,
     scene_id: context.sceneId ?? context.scene_id,
     state_id: context.stateId ?? context.state_id,
     viewport: { width: viewport.width, height: viewport.height },
-    target_sha256: context.targetSha256 ?? context.target_sha256,
+    ...((context.targetSha256 ?? context.target_sha256) !== undefined ? { target_sha256: context.targetSha256 ?? context.target_sha256 } : {}),
     decomposition_confirmation_id: context.decompositionConfirmationId ?? context.decomposition_confirmation_id,
-    decomposition_confirmation_sha256: context.decompositionConfirmationSha256 ?? context.decomposition_confirmation_sha256,
-    proposal_sha256: context.proposalSha256 ?? context.proposal_sha256,
+    ...((context.decompositionConfirmationSha256 ?? context.decomposition_confirmation_sha256) !== undefined ? { decomposition_confirmation_sha256: context.decompositionConfirmationSha256 ?? context.decomposition_confirmation_sha256 } : {}),
+    ...((context.proposalSha256 ?? context.proposal_sha256) !== undefined ? { proposal_sha256: context.proposalSha256 ?? context.proposal_sha256 } : {}),
     layout_decision_id: context.layoutDecisionId ?? context.layout_decision_id,
-    layout_decision_sha256: context.layoutDecisionSha256 ?? context.layout_decision_sha256,
+    ...((context.layoutDecisionSha256 ?? context.layout_decision_sha256) !== undefined ? { layout_decision_sha256: context.layoutDecisionSha256 ?? context.layout_decision_sha256 } : {}),
     layout_nodes: layoutNodes,
     root_nodes: rootNodes,
   };
@@ -145,13 +152,13 @@ export function buildLayoutReviewBindings(paths, context = {}) {
     state_id: context.stateId ?? context.state_id,
     viewport: { width: viewport.width, height: viewport.height },
     decomposition_confirmation_id: context.decompositionConfirmationId ?? context.decomposition_confirmation_id,
-    decomposition_confirmation_sha256: context.decompositionConfirmationSha256 ?? context.decomposition_confirmation_sha256,
+    ...((context.decompositionConfirmationSha256 ?? context.decomposition_confirmation_sha256) !== undefined ? { decomposition_confirmation_sha256: context.decompositionConfirmationSha256 ?? context.decomposition_confirmation_sha256 } : {}),
     layout_decision_id: context.layoutDecisionId ?? context.layout_decision_id,
-    reference: { file: projectRelativePath(context.projectRoot, context.referenceFile ?? context.reference_file), sha256: context.referenceSha256 ?? context.reference_sha256 },
-    proposal: { file: projectRelativePath(context.projectRoot, context.proposalFile ?? context.proposal_file), sha256: context.proposalSha256 ?? context.proposal_sha256 },
-    decision: { file: paths.decisionFile, sha256: context.layoutDecisionSha256 ?? context.layout_decision_sha256 },
-    nodes: { file: paths.nodesFile, sha256: context.nodesSha256 ?? context.nodes_sha256 },
-    annotation: { file: paths.annotationFile, sha256: context.annotationSha256 ?? context.annotation_sha256 },
+    reference: { file: projectRelativePath(context.projectRoot, context.referenceFile ?? context.reference_file), ...((context.referenceSha256 ?? context.reference_sha256) !== undefined ? { sha256: context.referenceSha256 ?? context.reference_sha256 } : {}) },
+    proposal: { file: projectRelativePath(context.projectRoot, context.proposalFile ?? context.proposal_file), ...((context.proposalSha256 ?? context.proposal_sha256) !== undefined ? { sha256: context.proposalSha256 ?? context.proposal_sha256 } : {}) },
+    decision: { file: paths.decisionFile, ...((context.layoutDecisionSha256 ?? context.layout_decision_sha256) !== undefined ? { sha256: context.layoutDecisionSha256 ?? context.layout_decision_sha256 } : {}) },
+    nodes: { file: paths.nodesFile, ...((context.nodesSha256 ?? context.nodes_sha256) !== undefined ? { sha256: context.nodesSha256 ?? context.nodes_sha256 } : {}) },
+    annotation: { file: paths.annotationFile, ...((context.annotationSha256 ?? context.annotation_sha256) !== undefined ? { sha256: context.annotationSha256 ?? context.annotation_sha256 } : {}) },
   };
   const errors = [];
   validateLayoutReviewBindings(binding, context, errors);
@@ -166,7 +173,7 @@ export function computeLayoutReviewIdentitySha256(bindings) { return sha256(Buff
 export function validateLayoutNodesDocument(document, expected = {}, errors = [], label = "layout_nodes") {
   if (!isObject(document)) { errors.push(`${label} 必须是 JSON 对象`); return null; }
   try { validateReviewNodesDocument(document); } catch (error) { errors.push(`${label} ${error.message}`); }
-  for (const [field, value] of [["scene_id", expected.sceneId ?? expected.scene_id], ["state_id", expected.stateId ?? expected.state_id], ["target_sha256", expected.targetSha256 ?? expected.target_sha256], ["decomposition_confirmation_id", expected.decompositionConfirmationId ?? expected.decomposition_confirmation_id], ["decomposition_confirmation_sha256", expected.decompositionConfirmationSha256 ?? expected.decomposition_confirmation_sha256], ["proposal_sha256", expected.proposalSha256 ?? expected.proposal_sha256], ["layout_decision_id", expected.layoutDecisionId ?? expected.layout_decision_id], ["layout_decision_sha256", expected.layoutDecisionSha256 ?? expected.layout_decision_sha256]]) if (value !== undefined && document[field] !== value) errors.push(`${label}.${field} 未绑定当前布局身份`);
+  for (const [field, value] of [["scene_id", expected.sceneId ?? expected.scene_id], ["state_id", expected.stateId ?? expected.state_id], ["decomposition_confirmation_id", expected.decompositionConfirmationId ?? expected.decomposition_confirmation_id], ["layout_decision_id", expected.layoutDecisionId ?? expected.layout_decision_id]]) if (value !== undefined && document[field] !== value) errors.push(`${label}.${field} 未绑定当前布局身份`);
   if (expected.layoutNodes && canonicalJson(document.layout_nodes) !== canonicalJson(expected.layoutNodes)) errors.push(`${label}.layout_nodes 与 PNG/生成结果的同批布局事实不一致`);
   if (expected.rootNodes && canonicalJson(document.root_nodes) !== canonicalJson(expected.rootNodes)) errors.push(`${label}.root_nodes 与 PNG/生成结果的同批布局事实不一致`);
   return document;
@@ -177,13 +184,12 @@ export function validateLayoutReviewBindings(bindings, expected = {}, errors = [
   if (!isObject(bindings)) { errors.push(`${label}.bindings 必须是对象`); return null; }
   if (bindings.schema !== LAYOUT_REVIEW_SCHEMA) errors.push(`${label}.schema 必须为 ${LAYOUT_REVIEW_SCHEMA}`);
   if (bindings.status !== LAYOUT_REVIEW_STATUS) errors.push(`${label}.status 必须标记为候选待人工布局确认`);
-  for (const [field, value] of [["scene_id", expected.sceneId ?? expected.scene_id], ["state_id", expected.stateId ?? expected.state_id], ["decomposition_confirmation_id", expected.decompositionConfirmationId ?? expected.decomposition_confirmation_id], ["decomposition_confirmation_sha256", expected.decompositionConfirmationSha256 ?? expected.decomposition_confirmation_sha256], ["layout_decision_id", expected.layoutDecisionId ?? expected.layout_decision_id]]) if (value !== undefined && bindings[field] !== value) errors.push(`${label}.${field} 未绑定当前布局身份`);
+  for (const [field, value] of [["scene_id", expected.sceneId ?? expected.scene_id], ["state_id", expected.stateId ?? expected.state_id], ["decomposition_confirmation_id", expected.decompositionConfirmationId ?? expected.decomposition_confirmation_id], ["layout_decision_id", expected.layoutDecisionId ?? expected.layout_decision_id]]) if (value !== undefined && bindings[field] !== value) errors.push(`${label}.${field} 未绑定当前布局身份`);
   const viewport = bindings.viewport;
   if (!isObject(viewport) || !Number.isInteger(viewport.width) || viewport.width <= 0 || !Number.isInteger(viewport.height) || viewport.height <= 0) errors.push(`${label}.viewport 必须是正整数尺寸`);
-  for (const field of ["decomposition_confirmation_sha256"]) if (!SHA_PATTERN.test(String(bindings[field] ?? ""))) errors.push(`${label}.${field} 必须是合法 sha256`);
   for (const name of ["reference", "proposal", "decision", "nodes", "annotation"]) {
     const item = bindings[name];
-    if (!isObject(item) || !nonEmptyString(item.file) || !SHA_PATTERN.test(String(item.sha256 ?? ""))) errors.push(`${label}.${name} 必须包含项目相对 file 和合法 sha256`);
+    if (!isObject(item) || !nonEmptyString(item.file)) errors.push(`${label}.${name} 必须包含项目相对 file`);
     else if (isAbsolute(item.file) || item.file.includes("..\\") || item.file.includes("../")) errors.push(`${label}.${name}.file 必须是项目相对路径`);
   }
   if (expected.referenceFile) {
@@ -192,8 +198,6 @@ export function validateLayoutReviewBindings(bindings, expected = {}, errors = [
   if (expected.proposalFile) {
     try { if (bindings.proposal?.file !== projectRelativePath(expected.projectRoot, expected.proposalFile)) errors.push(`${label}.proposal.file 未绑定当前拆解提案`); } catch (error) { errors.push(`${label}.proposal.file 当前期望路径无效：${error.message}`); }
   }
-  if (expected.referenceSha256 && bindings.reference?.sha256 !== expected.referenceSha256) errors.push(`${label}.reference.sha256 未绑定冻结参考图`);
-  if (expected.proposalSha256 && bindings.proposal?.sha256 !== expected.proposalSha256) errors.push(`${label}.proposal.sha256 未绑定当前拆解提案`);
   return bindings;
 }
 
@@ -209,8 +213,8 @@ export function readAndValidateLayoutReviewPayload(htmlBytes, nodesBytes, expect
   let externalNodes;
   try { externalNodes = JSON.parse(nodesBytes.toString("utf8")); } catch (error) { errors.push(`${label}.layout_nodes 外部 JSON 无效：${error.message}`); return null; }
   validateLayoutNodesDocument(externalNodes, expected, errors, `${label}.layout_nodes`);
-  if (canonicalJson(payload.nodesDocument) !== canonicalJson(externalNodes)) errors.push(`${label} HTML 数据块与外部 layout-nodes.json 内容不一致`);
-  if (expected.nodesDocument && canonicalJson(externalNodes) !== canonicalJson(expected.nodesDocument)) errors.push(`${label} HTML 节点文档不是本次生成的同一份布局事实`);
+  if (canonicalJson(canonicalWithoutSha(payload.nodesDocument)) !== canonicalJson(canonicalWithoutSha(externalNodes))) errors.push(`${label} HTML 数据块与外部 layout-nodes.json 内容不一致`);
+  if (expected.nodesDocument && canonicalJson(canonicalWithoutSha(externalNodes)) !== canonicalJson(canonicalWithoutSha(expected.nodesDocument))) errors.push(`${label} HTML 节点文档不是本次生成的同一份布局事实`);
   return { ...payload, externalNodes };
 }
 

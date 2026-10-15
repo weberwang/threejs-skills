@@ -4,8 +4,10 @@
  * 该模块集中保存唯一的提示词常量、资产提示词构建器和生成记录门禁，
  * 避免 SKILL、清单校验器与实际发送给生成器的文本各自漂移。
  */
-import { buildSolidBackgroundPrompt, DEFAULT_SOURCE_BACKGROUND_COLOR, expressesSolidBackgroundProduction, TRANSPARENT_BACKGROUND_REMOVAL_PROMPT, normalizeSourceBackgroundColor } from "./visual-transparent-background-contract.mjs";
+import { buildSolidBackgroundPrompt, DEFAULT_SOURCE_BACKGROUND_COLOR, expressesDirectAlphaProduction, expressesSolidBackgroundProduction, TRANSPARENT_BACKGROUND_REMOVAL_PROMPT, normalizeSourceBackgroundColor } from "./visual-transparent-background-contract.mjs";
 import { CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT, GLOBAL_VISUAL_CONSISTENCY_PROMPT, validateGlobalVisualGenerationRecord } from "./global-visual-consistency-contract.mjs";
+import { TRANSPARENT_EDGE_PROFILES } from "./transparent-route-contract.mjs";
+import { isNineSliceStretch, validateNineSliceContract } from "../../threejs-game-ui-layout/scripts/nine-slice-contract.mjs";
 
 /** effect-image 生成记录必须声明的重建模式。 */
 export const EFFECT_IMAGE_RECONSTRUCTION_MODE = "reference-faithful";
@@ -13,7 +15,7 @@ export const EFFECT_IMAGE_RECONSTRUCTION_MODE = "reference-faithful";
 export const EFFECT_IMAGE_REFERENCE_INPUT_MODE = "full-reference-guidance";
 /** 允许重绘像素，但禁止复用参考图像素作为输出。 */
 export const EFFECT_IMAGE_PIXEL_REUSE_POLICY = "forbid-output-reuse";
-/** expected_assets.alpha=true 时必须追加到实际请求中的透明 PNG 交付要求。 */
+/** 仅硬边去背路线追加的纯色源图要求，不能代替其它透明路线。 */
 export const EFFECT_IMAGE_BACKGROUND_REMOVAL_PROMPT = TRANSPARENT_BACKGROUND_REMOVAL_PROMPT;
 /** effect-image 必须与全局视觉基线共同发送的 canonical 一致性段。 */
 export const EFFECT_IMAGE_GLOBAL_VISUAL_CONSISTENCY_PROMPT = GLOBAL_VISUAL_CONSISTENCY_PROMPT;
@@ -92,6 +94,26 @@ export const EFFECT_IMAGE_ASSET_PROMPT_FACTS = Object.freeze({
 /** 判断值是否为可递归读取的对象。 */
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** 将驼峰字段名转为可统一识别的蛇形形式，避免摘要别名参与业务事实比较。 */
+function normalizeSummaryFieldName(value) {
+  return String(value).replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+}
+
+/** 仅匹配独立摘要令牌，避免误删 shadow、share_id 等真实视觉或身份字段。 */
+function isSummaryDigestField(value) {
+  const normalized = normalizeSummaryFieldName(value);
+  return /(^|[_-])(sha(?:1|224|256|384|512)?|hash|checksum|fingerprint|digest|diff_identity)([_-]|$)/.test(normalized);
+}
+
+/** 递归移除仅供追踪的摘要字段，保留输入路径、顺序、裁切与其余实际参数。 */
+function withoutSummaryDigests(value) {
+  if (Array.isArray(value)) return value.map(withoutSummaryDigests);
+  if (!isObject(value)) return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !isSummaryDigestField(key))
+    .map(([key, nested]) => [key, withoutSummaryDigests(nested)]));
 }
 
 /** 判断字符串是否具备合同内容。 */
@@ -184,13 +206,36 @@ export function buildEffectImageAssetPrompt({ region, sceneReconstructionContrac
   return { prompt: lines.join("\n"), facts, missing, identity, region: resolvedRegion };
 }
 
+/** 将 V2 已确认切片事实写入实际生产提示词，避免按整块显示尺寸生成大底板。 */
+export function buildNineSliceProductionPrompt(decision) {
+  if (decision === undefined) return "";
+  const normalized = validateNineSliceContract(decision);
+  if (!isNineSliceStretch(normalized)) return "";
+  const { source_size: size, borders } = normalized;
+  return `九宫格生产合同：最终未裁切源图 ${size.width}×${size.height}px；源帧切片边宽 left=${borders.left}px、right=${borders.right}px、top=${borders.top}px、bottom=${borders.bottom}px。四角固定，左右边仅纵向拉伸，上下边仅横向拉伸，中心双向拉伸。只生产已确认的底板皮肤，中心保持可拉伸；文字、图标与独立装饰另作节点。保留冻结参考的角边、材质和色彩，不按整块显示尺寸扩充源图，不裁掉边框、不新增外侧 padding。切片值以最终源图像素为准。`;
+}
+
 /** 组合实际发送给图像生成器的完整正向/负向提示词，供生成器与记录共用。 */
-export function buildEffectImageFullPrompt({ assetPrompt, statePrompt = "", globalPromptPrefix = EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, globalConsistencyPrompt = GLOBAL_VISUAL_CONSISTENCY_PROMPT, negativePrompt = EFFECT_IMAGE_NEGATIVE_PROMPT, transparentBackground = false, expectedAlpha = false, expectedAsset = null, backgroundColor } = {}) {
-  const needsSolidBackground = transparentBackground === true || expectedAlpha === true || expectedAsset?.alpha === true;
-  // 生图前先确定实际纯色；记录层应复用同一个值，避免模型生成后才发现去背颜色不一致。
-  const resolvedBackgroundColor = backgroundColor ?? expectedAsset?.source_background_color ?? DEFAULT_SOURCE_BACKGROUND_COLOR;
-  const sourceBackgroundPrompt = needsSolidBackground ? buildSolidBackgroundPrompt(resolvedBackgroundColor) : "";
-  return [globalPromptPrefix, globalConsistencyPrompt, assetPrompt, statePrompt, sourceBackgroundPrompt, negativePrompt].filter(nonEmptyString).join("\n\n");
+export function buildEffectImageFullPrompt({ assetPrompt, statePrompt = "", globalPromptPrefix = EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, globalConsistencyPrompt = GLOBAL_VISUAL_CONSISTENCY_PROMPT, negativePrompt = EFFECT_IMAGE_NEGATIVE_PROMPT, transparentBackground = false, expectedAlpha = false, expectedAsset = null, backgroundColor, transparencyStrategy, edgeProfile, colorSeparationVerified = false, capability } = {}) {
+  const needsTransparency = transparentBackground === true || expectedAlpha === true || expectedAsset?.alpha === true;
+  const strategy = transparencyStrategy ?? expectedAsset?.transparency_requirements?.strategy;
+  const edge = edgeProfile ?? expectedAsset?.transparency_requirements?.edge_profile;
+  let sourceBackgroundPrompt = "";
+  if (needsTransparency) {
+    // 透明需求不能推导生成能力，也不能自动选择会损伤复杂边缘的颜色去背。
+    if (!TRANSPARENT_EDGE_PROFILES.includes(edge)) throw new TypeError("透明提示词必须使用已冻结的合法 edgeProfile");
+    if (strategy === "background-removal") {
+      if (edge !== "hard-edge" || colorSeparationVerified !== true) throw new TypeError("颜色去背提示词只允许已验证颜色区分的 hard-edge");
+      sourceBackgroundPrompt = buildSolidBackgroundPrompt(backgroundColor ?? expectedAsset?.source_background_color ?? DEFAULT_SOURCE_BACKGROUND_COLOR);
+    } else if (strategy === "direct-alpha") {
+      if (capability?.supports_true_alpha !== true || !Array.isArray(capability.verified_edge_profiles) || !capability.verified_edge_profiles.includes(edge)) throw new TypeError("真实透明生成缺少当前边缘能力证明，应报告能力缺口");
+      sourceBackgroundPrompt = "输出要求：使用工具真实透明输出能力保留原始 Alpha，包括半透明、辉光、柔和阴影和其他冻结边缘；禁止棋盘格、网格或烘焙底色。输出必须解码验证，提示词不能证明透明。";
+    } else if (strategy === "mask-composition") {
+      sourceBackgroundPrompt = "为已冻结的独立遮罩/人工 Alpha 创作路线生产原始主体，保留半透明、辉光、阴影、毛发或玻璃边缘；禁止颜色阈值硬抠、删除光效和烘焙棋盘格。独立遮罩与合成过程另行记录并验证。";
+    } else throw new TypeError("透明资产必须显式选择已冻结的 transparencyStrategy 和 edgeProfile");
+  }
+  const nineSlicePrompt = buildNineSliceProductionPrompt(expectedAsset?.nine_slice);
+  return [globalPromptPrefix, globalConsistencyPrompt, assetPrompt, statePrompt, nineSlicePrompt, sourceBackgroundPrompt, negativePrompt].filter(nonEmptyString).join("\n\n");
 }
 
 /** 判断一段文本是否确实包含忠实还原语义，而非只提到参考图。 */
@@ -276,29 +321,21 @@ export function hasFullReferenceInput(referenceInputs, originalFile) {
   });
 }
 
-/** 读取候选身份中的 SHA，兼容 manifestEvidenceIdentity 与 generation_record 直写形式。 */
-function identityValue(identity, names) {
-  if (!isObject(identity)) return undefined;
-  for (const name of names) if (nonEmptyString(identity[name])) return identity[name];
-  return undefined;
-}
-
 /** 校验 effect-image 图像生成的结构化字段、提示词与真实输入绑定。 */
 export function validateEffectImagePromptContract(asset, contract, generation, context = {}, options = {}) {
   const errors = [];
   const referenceTarget = context.reference_target ?? context.referenceTarget ?? contract?.reference_target ?? contract?.referenceTarget ?? {};
-  const expectedIdentity = {
-    ...(isObject(context.candidate_identity) ? context.candidate_identity : {}),
-    ...(isObject(context.candidateIdentity) ? context.candidateIdentity : {}),
-    ...(isObject(context.manifestEvidenceIdentity) ? context.manifestEvidenceIdentity : {}),
-    ...(isObject(context.identity) ? context.identity : {}),
-    ...(isObject(options.identity) ? options.identity : {}),
-  };
   const targetFile = options.referenceOriginalFile ?? options.reference_original_file ?? referenceTarget.original_file ?? referenceTarget.originalFile;
   const region = options.region ?? context.region ?? context.coverage_region ?? context.coverageRegion;
   const identity = collectEffectImagePromptFacts(region, options.sceneReconstructionContract).identity;
   const add = (message) => errors.push(message);
   if (!isObject(generation)) return ["effect-image generation_record 必须是对象"];
+  try {
+    const expectedAsset = options.expectedAsset ?? contract?.expected_assets?.find((item) => item.asset_id === (asset?.id ?? asset?.asset_id));
+    const nineSlicePrompt = buildNineSliceProductionPrompt(expectedAsset?.nine_slice);
+    const sentPrompt = ["full_prompt", "actual_prompt", "prompt_sent", "sent_prompt", "positive_prompt", "prompt"].map((key) => generation[key]).find(nonEmptyString);
+    if (nineSlicePrompt && !sentPrompt?.includes(nineSlicePrompt)) add("九宫格生成记录的实际提示词必须包含已冻结的小图尺寸和切片生产段");
+  } catch (error) { add(`九宫格生产提示词无效：${error.message}`); }
   for (const [field, expected] of [["reconstruction_mode", EFFECT_IMAGE_RECONSTRUCTION_MODE], ["reference_input_mode", EFFECT_IMAGE_REFERENCE_INPUT_MODE], ["pixel_reuse_policy", EFFECT_IMAGE_PIXEL_REUSE_POLICY]]) if (generation[field] !== expected) add(`effect-image generation_record.${field} 必须为 ${expected}`);
   if (!hasFullReferenceInput(generation.reference_inputs, targetFile)) add("effect-image generation_record.reference_inputs 必须包含完整冻结效果图 reference_target.original_file");
   if (generation.style_reference_inputs !== undefined && (!Array.isArray(generation.style_reference_inputs) || !generation.style_reference_inputs.every((item) => nonEmptyString(item) || isObject(item)))) add("effect-image style_reference_inputs 只能是补充参考列表");
@@ -334,39 +371,33 @@ export function validateEffectImagePromptContract(asset, contract, generation, c
       for (const [field, prompt] of promptEntries) if (!expressesSolidBackgroundProduction(prompt, backgroundColor)) add(`effect-image generation_record.${field} 必须包含 ${backgroundColor}、不透明纯色背景和棋盘格禁用要求`);
     }
   }
+  if (generation.transparency_strategy === "direct-alpha" && !expressesDirectAlphaProduction(generation.full_prompt)) add("direct-alpha 实际提示词必须请求真实 Alpha 并禁止烘焙棋盘格");
   errors.push(...validateEffectImageAssetPrompt(generation.asset_prompt, region, { sceneReconstructionContract: options.sceneReconstructionContract }));
   const paths = [...collectOutputPaths(asset), ...collectOutputPaths(generation)];
   if (targetFile && paths.some((path) => samePath(path, targetFile))) add("effect-image source_file/runtime_file/output 不得等于冻结效果图");
-  const targetSha = options.referenceTargetSha ?? options.reference_target_sha256 ?? expectedIdentity.target ?? expectedIdentity.targetSha256 ?? expectedIdentity.target_sha256 ?? referenceTarget.target_sha256 ?? referenceTarget.targetSha256;
-  const outputSha = [asset?.sha256, asset?.file_sha256, generation?.sha256, generation?.output?.sha256, generation?.output?.file_sha256, generation?.actual_output?.sha256, generation?.actualOutput?.sha256, generation?.output_metadata?.sha256].find(nonEmptyString);
   // effect-image 的原子资产也必须继承根 visual_baseline 和全部全局锚点；局部冻结图不能替代全局真值。
   const globalBaseline = options.visual_baseline ?? context.visual_baseline ?? contract?.visual_baseline;
   errors.push(...validateGlobalVisualGenerationRecord(generation, {
     label: "effect-image generation_record",
     visual_baseline: globalBaseline,
-    target_sha256: targetSha,
-    output_sha256: options.outputSha256 ?? options.output_sha256 ?? outputSha,
   }));
   if (generation.global_visual_consistency_prompt !== CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT) add("effect-image generation_record.global_visual_consistency_prompt 必须使用 canonical 全局视觉一致性提示词");
   const fullPromptForGlobal = generation.full_prompt ?? generation.actual_full_prompt ?? generation.actual_prompt ?? generation.sent_prompt ?? generation.prompt_sent_text;
   if (nonEmptyString(fullPromptForGlobal) && !fullPromptForGlobal.includes(CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT)) add("effect-image 实际完整提示词缺少全局视觉一致性段");
-  if (targetSha && outputSha && targetSha === outputSha) add("effect-image source/runtime/output 的文件身份不得复用冻结效果图 SHA");
   const operationValues = [generation.operation, generation.operations, generation.source_operation, generation.reference_operation, generation.reference_usage, generation.referenceUsage, generation.pixel_reuse_operation, generation.pixelReuseOperation, generation.postprocess, generation.post_processing, generation.postProcessing, generation.command_or_recipe, generation.actual_operation, generation.actualOperation, generation.output_operation, generation.outputOperation].flatMap((value) => Array.isArray(value) ? value : [value]).filter((value) => nonEmptyString(value) || isObject(value)).map((value) => typeof value === "string" ? value : JSON.stringify(value)).join(" ");
   if (generation.crop_reference === true || generation.reference_crop === true || /crop[-_ ]?reference|裁切参考|裁剪参考|抠图参考|抠取参考|直接复制参考(?:图)?像素|copy(?:ing)?\s+(?:the\s+)?reference(?:\s+image)?\s+pixels|reuse(?:d)?[-_ ]?(?:reference|ref)[-_ ]?pixels/i.test(operationValues)) add("effect-image 禁止裁切、抠图或复用参考图像素作为输出");
-  if (generation.actual_reference_inputs !== undefined && JSON.stringify(generation.actual_reference_inputs) !== JSON.stringify(generation.reference_inputs)) add("effect-image actual_reference_inputs 必须与真实发送的 reference_inputs 一致");
+  if (generation.actual_reference_inputs !== undefined
+    && JSON.stringify(withoutSummaryDigests(generation.actual_reference_inputs)) !== JSON.stringify(withoutSummaryDigests(generation.reference_inputs))) {
+    add("effect-image actual_reference_inputs 必须与真实发送的 reference_inputs 一致");
+  }
   const actualRegionId = generation.region_id ?? generation.regionId;
   if (identity.region_id && actualRegionId !== identity.region_id) add("effect-image generation_record.region_id 未绑定当前冻结 region");
-  const actualTargetSha = generation.target_sha256 ?? generation.targetSha256 ?? generation.reference_target_sha256 ?? generation.referenceTargetSha256;
-  if (targetSha && actualTargetSha !== targetSha) add("effect-image generation_record.target_sha256 未绑定当前冻结目标");
-  const actualCandidateSha = generation.candidate_sha256 ?? generation.candidateSha256 ?? generation.candidate_identity?.sha256 ?? generation.candidateIdentity?.sha256;
   const contractCandidateIdentity = contract?.candidate_identity ?? contract?.candidateIdentity ?? contract?.visual_decomposition_confirmation?.candidate_identity ?? contract?.visualDecompositionConfirmation?.candidateIdentity ?? {};
-  const expectedCandidate = expectedIdentity.candidate ?? expectedIdentity.candidateSha256 ?? expectedIdentity.candidate_sha256 ?? contractCandidateIdentity.sha256 ?? contractCandidateIdentity.candidate_sha256 ?? contractCandidateIdentity.candidateSha256;
-  if (expectedCandidate && actualCandidateSha !== expectedCandidate) add("effect-image generation_record.candidate_sha256 未绑定当前候选");
-  const expectedDiff = expectedIdentity.diff ?? expectedIdentity.diffFingerprint ?? expectedIdentity.diff_fingerprint ?? contractCandidateIdentity.diff_fingerprint ?? contractCandidateIdentity.diffFingerprint;
-  const actualDiff = generation.diff_fingerprint ?? generation.diffFingerprint ?? generation.candidate_identity?.diff_fingerprint ?? generation.candidateIdentity?.diffFingerprint;
-  if (expectedDiff && actualDiff !== expectedDiff) add("effect-image generation_record.diff_fingerprint 未绑定当前候选 diff");
   const expectedCandidateVersion = options.candidateVersion ?? options.candidate_version ?? context.candidateVersion ?? context.candidate_version ?? contract?.candidate_version ?? contract?.candidateVersion;
   if (expectedCandidateVersion && generation.candidate_version !== expectedCandidateVersion && generation.candidateVersion !== expectedCandidateVersion) add("effect-image generation_record.candidate_version 未绑定当前候选版本");
+  const expectedCandidateId = options.candidateId ?? options.candidate_id ?? contractCandidateIdentity.candidate_id ?? contractCandidateIdentity.candidateId ?? contract?.candidateId ?? contract?.candidate_id;
+  const actualCandidateId = generation.candidate_id ?? generation.candidateId ?? generation.candidate_identity?.candidate_id ?? generation.candidateIdentity?.candidateId;
+  if (nonEmptyString(expectedCandidateId) && nonEmptyString(actualCandidateId) && actualCandidateId !== expectedCandidateId) add("effect-image generation_record.candidate_id 未绑定当前候选");
   return [...new Set(errors)];
 }
 

@@ -5,13 +5,14 @@
  *
  * annotation_number 只标识效果图上的审阅区域，不能直接当作资产数量。
  * 该模块把“区域 → 部件 → 状态 → 资产/图集切片”收敛成可验证的映射，
- * 供 V2、V3、Implementation Package、V5 和 F2 共用。
+ * 供 V2、V3、Implementation Package、V4 和 F2 共用。
  */
 import { getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinition } from "../../threejs-game-asset-integration/scripts/effect_image_annotation_core.mjs";
 import { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeAtomicComponents, normalizeAtomicImageRequirements } from "./visual-atomic-contract.mjs";
 import { collectImageGenerationRasterViolations } from "./visual-imagegen-format.mjs";
 import { validateFixedVisualProductionMethod } from "./visual-decomposition-confirmation.mjs";
-import { canonicalJson, isPlainObject as isObject, isSha256, nonEmptyString, normalizeContractPath as normalizeProjectRelativePath } from "./visual-contract-core.mjs";
+import { canonicalJson, isPlainObject as isObject, nonEmptyString, normalizeContractPath as normalizeProjectRelativePath } from "./visual-contract-core.mjs";
+import { equalNineSliceContracts, isNineSliceStretch, isNineSliceStretchTargetAllowed, validateNineSliceContract, validateNineSliceTargetBounds } from "../../threejs-game-ui-layout/scripts/nine-slice-contract.mjs";
 
 export { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeAtomicComponents, normalizeAtomicImageRequirements };
 export { validateFixedVisualProductionMethod } from "./visual-decomposition-confirmation.mjs";
@@ -131,7 +132,11 @@ export function normalizeComponentInventory(value = {}) {
         placement_id: placement?.placement_id ?? placement?.placementId ?? "",
         bounds: isObject(placement?.bounds) ? { x: placement.bounds.x, y: placement.bounds.y, width: placement.bounds.width, height: placement.bounds.height } : null,
         interaction_required: placement?.interaction_required ?? placement?.interactionRequired,
+        ...(placement?.nine_slice !== undefined ? { nine_slice: validateNineSliceContract(placement.nine_slice, `placement ${placement?.placement_id ?? "?"}.nine_slice`) } : {}),
+        ...(Object.hasOwn(placement ?? {}, "nine_slice_decision_required") ? { nine_slice_decision_required: placement.nine_slice_decision_required } : {}),
       })) : null,
+      ...(component?.nine_slice !== undefined ? { nine_slice: validateNineSliceContract(component.nine_slice, `component ${component?.component_id ?? "?"}.nine_slice`) } : {}),
+      ...(Object.hasOwn(component ?? {}, "nine_slice_decision_required") ? { nine_slice_decision_required: component.nine_slice_decision_required } : {}),
     })),
   };
 }
@@ -166,13 +171,13 @@ export function normalizeComponentExpectedAsset(value) {
     mime_type: value.mime_type ?? value.mimeType,
     width: value.width,
     height: value.height,
-    alpha: value.alpha,
-    sha256: value.sha256 ?? value.file_sha256,
+    alpha: value.alpha, transparency_requirements: value.transparency_requirements,
     share_id: value.share_id ?? value.shareId,
     // 比较合同身份时按项目物理路径归一化；非法路径仍保留原值，交由校验器输出具体错误。
     source_file: normalizeProjectRelativePath(sourceFile) ?? sourceFile,
     runtime_file: normalizeProjectRelativePath(runtimeFile) ?? runtimeFile,
     atlas_slice: normalizeAtlasSlice(value.atlas_slice ?? value.atlasSlice),
+    ...(value.nine_slice !== undefined ? { nine_slice: validateNineSliceContract(value.nine_slice, "expected_assets.nine_slice") } : {}),
   };
 }
 
@@ -267,11 +272,8 @@ function validateStateAnalysis(region, context, errors, options = {}) {
   if (analysis.status !== "complete") fail("status 必须为 complete", { missing: "state_analysis.status=complete" });
   if (analysis.phase !== "before-component-splitting") fail("phase 必须为 before-component-splitting，先状态分析再拆解", { missing: "state_analysis.phase" });
   if (!nonEmptyString(analysis.evidence)) fail("缺少分析证据", { missing: "state_analysis.evidence" });
-  for (const field of ["evidence_sha256", "reference_target_sha256", "analysis_id", "completed_at"]) if (!nonEmptyString(analysis[field])) fail(`缺少 ${field}`, { missing: `state_analysis.${field}` });
-  if (nonEmptyString(analysis.evidence_sha256) && !/^sha256:[a-f0-9]{64}$/.test(analysis.evidence_sha256)) fail("evidence_sha256 格式无效", { missing: "state_analysis.evidence_sha256" });
-  if (nonEmptyString(analysis.reference_target_sha256) && !/^sha256:[a-f0-9]{64}$/.test(analysis.reference_target_sha256)) fail("reference_target_sha256 格式无效", { missing: "state_analysis.reference_target_sha256" });
+  for (const field of ["analysis_id", "completed_at"]) if (!nonEmptyString(analysis[field])) fail(`缺少 ${field}`, { missing: `state_analysis.${field}` });
   if (nonEmptyString(analysis.completed_at) && Number.isNaN(Date.parse(analysis.completed_at))) fail("completed_at 必须是可解析时间", { missing: "state_analysis.completed_at" });
-  if (nonEmptyString(options.referenceTargetSha) && analysis.reference_target_sha256 !== options.referenceTargetSha) fail("reference_target_sha256 必须绑定当前冻结目标", { missing: options.referenceTargetSha });
   if (!Array.isArray(analysis.states) || analysis.states.length === 0) {
     fail("states 必须是非空列表，不能只声明 default", { missing: "state_analysis.states" });
     return { analysis, requirements: new Map() };
@@ -297,7 +299,7 @@ function rectangleContains(parent, child) {
 }
 
 /** 校验唯一原子部件、可见实例 placement、数量和图集开关。 */
-function validateInventory(region, context, errors, options = {}) {
+function validateInventory(region, context, errors, options = {}, canonicalRegion = normalizeVisualRegionDefinition(region)) {
   const nested = region.production_contract ?? region.productionContract;
   const raw = region.component_inventory ?? region.componentInventory ?? nested?.component_inventory ?? nested?.componentInventory;
   const inventory = normalizeComponentInventory(raw ?? {});
@@ -333,6 +335,13 @@ function validateInventory(region, context, errors, options = {}) {
     seenAtomicKeys.add(component.atomic_visual_key);
     if (!nonEmptyString(component.role)) componentFail("缺少 role", { missing: `component_inventory.components[${index}].role` });
     if (typeof component.reusable !== "boolean") componentFail("reusable 必须显式为布尔值", { missing: `component_inventory.components[${index}].reusable` });
+    if (component.nine_slice !== undefined && isNineSliceStretch(component.nine_slice)) {
+      // 使用规范化区域的权威视觉路线，保证 V2/V3/V4 判定一致，不按 background 名称子串推断职责。
+      const routeAnalysis = canonicalRegion.visual_route_analysis;
+      const routeElementType = routeAnalysis?.element_type ?? routeAnalysis?.elementType;
+      if (!isNineSliceStretchTargetAllowed({ element_type: "component", role: component.role, region_layer: region.layer, visual_route_element_type: routeElementType })) componentFail("九宫格 stretch 只能用于非背景的叶子图片皮肤，不能用于结构容器");
+      if (region.owner_type !== undefined && region.owner_type !== "fixed-production-visual") componentFail("九宫格 stretch 只能用于 fixed-production-visual 图片资产");
+    }
     const rawComponent = Array.isArray(raw.components) ? raw.components[index] : null;
     if (isObject(rawComponent) && (Object.hasOwn(rawComponent, "interaction_required") || Object.hasOwn(rawComponent, "interactionRequired"))) componentFail("禁止旧的 component-level interaction_required，必须改为 placement.interaction_required");
     if (!Array.isArray(component.state_coverage) || component.state_coverage.length === 0) componentFail("state_coverage 必须显式覆盖区域全部状态", { missing: `component_inventory.components[${index}].state_coverage` });
@@ -347,6 +356,12 @@ function validateInventory(region, context, errors, options = {}) {
       if (!validRectangle(placement.bounds)) placementFail("bounds 必须是合法非负矩形");
       else if (!rectangleContains(regionBounds, placement.bounds)) placementFail("bounds 必须位于 region.bounds 内");
       else if (canvas && !rectangleContains({ x: 0, y: 0, width: canvas.width, height: canvas.height }, placement.bounds)) placementFail("bounds 必须位于画布内");
+      if (placement.nine_slice !== undefined && !equalNineSliceContracts(component.nine_slice, placement.nine_slice)) placementFail("nine_slice 决策必须与同一原子 component 完全一致");
+      const placementNineSlice = placement.nine_slice ?? component.nine_slice;
+      if (isNineSliceStretch(placementNineSlice)) {
+        try { validateNineSliceTargetBounds(placementNineSlice, placement.bounds, `component ${component.component_id}.placements[${placementIndex}].bounds`); }
+        catch (error) { placementFail(`九宫格显示尺寸无效：${error.message}`); }
+      }
       if (typeof placement.interaction_required !== "boolean") placementFail("interaction_required 必须显式为布尔值");
     }
   }
@@ -400,6 +415,7 @@ function validateAssetMappings(region, context, errors, stateInfo, inventoryInfo
     if (!nonEmptyString(componentId) || !componentIds.has(componentId)) assetFail("component_id 必须映射 component_inventory", { missing: `expected_assets[${index}].component_id` });
     if (!stateId || !requirementFor.has(stateId)) assetFail("state_id 必须映射 state_analysis", { missing: `expected_assets[${index}].state_id` });
     const component = inventoryInfo.componentById?.get(componentId);
+    if (component && !equalNineSliceContracts(component.nine_slice, asset.nine_slice)) assetFail("nine_slice 必须与 component_inventory 的冻结决策完全一致");
     if (asset.asset_scope !== "atomic-component") assetFail("asset_scope 必须为 atomic-component，禁止 region-composite/group/composite 输出", { missing: `expected_assets[${index}].asset_scope` });
     if (!nonEmptyString(asset.atomic_visual_key)) assetFail("缺少 atomic_visual_key", { missing: `expected_assets[${index}].atomic_visual_key` });
     else if (component && asset.atomic_visual_key !== component.atomic_visual_key) assetFail("atomic_visual_key 必须匹配唯一 component", { missing: component.atomic_visual_key });
@@ -409,7 +425,6 @@ function validateAssetMappings(region, context, errors, stateInfo, inventoryInfo
     if (canonical.production_method === "image-generation" || canonical.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(rawAsset ?? asset, { requiredMime: true, requiredFileFields: ["source_file", "runtime_file"], fileFields: ["source_file", "runtime_file"] })) assetFail(`${violation.field} ${violation.message}`, { missing: `expected_assets[${index}].${violation.field}` });
     for (const field of ["width", "height"]) if (asset[field] !== undefined && (!Number.isInteger(asset[field]) || asset[field] <= 0)) assetFail(`${field} 必须为正整数`, { missing: `expected_assets[${index}].${field}` });
     if (asset.alpha !== undefined && typeof asset.alpha !== "boolean") assetFail("alpha 必须为布尔值", { missing: `expected_assets[${index}].alpha` });
-    if (asset.sha256 !== undefined && !/^sha256:[a-f0-9]{64}$/.test(asset.sha256)) assetFail("sha256 格式无效", { missing: `expected_assets[${index}].sha256` });
     const key = `${componentId}\0${stateId}`;
     pairs.set(key, (pairs.get(key) ?? 0) + 1);
     duplicateIds.set(asset.asset_id, (duplicateIds.get(asset.asset_id) ?? 0) + 1);
@@ -585,7 +600,7 @@ export function validateVisualComponentContract(region, context = {}, options = 
   // 固定视觉区域必须交付真实图片；程序绘制只负责热区、碰撞和布局等非图片逻辑。
   for (const conflict of getVisualRegionDefinitionAliasConflicts(region)) errors.push(componentError(context, `区域合同别名取值冲突：${conflict.field}`, { missing: conflict.sources.join("/") }));
   const stateInfo = validateStateAnalysis(canonical, context, errors, options);
-  const inventoryInfo = validateInventory(region, context, errors, options);
+  const inventoryInfo = validateInventory(region, context, errors, options, canonical);
   const analysisCompletedAt = Date.parse(stateInfo.analysis.completed_at);
   const inventoryCreatedAt = Date.parse(inventoryInfo.inventory.created_at);
   // 时间顺序是机器门：状态分析完成后才能建立部件清单，避免事后补写分析掩盖拆解粒度错误。
@@ -639,7 +654,7 @@ function resolveAtlasAssetSize(asset) {
   return { width: asset?.width ?? output.width, height: asset?.height ?? output.height };
 }
 
-/** 校验 V5 实际输出是否逐 component×state 覆盖 V3 合同。 */
+/** 校验 V4 实际输出是否逐 component×state 覆盖 V3 合同。 */
 export function validateComponentAuditEvidence(region, auditUnit, context = {}, options = {}) {
   const errors = [];
   const canonical = normalizeVisualRegionDefinition(region);
@@ -705,10 +720,10 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
     if (observed !== 1) errors.push(componentError(context, "V3 actual_assets 必须逐 component×state 一一对应", { componentId: pair.componentId, stateId: pair.stateId, expectedCount: 1, observedCount: observed, missing: observed === 0 ? "actual_assets" : undefined }));
   }
   if (actual.length !== required.length) errors.push(componentError(context, "V3 actual_assets 总数量必须等于所有 required component×state", { expectedCount: required.length, observedCount: actual.length }));
-  // V3 确认资源和组件产物；逐部件 runtime_consumption 只证明 V5 正式 Scene 接入。
-  if (context.stage === "V5") {
+  // V3 确认资源和组件产物；逐部件 runtime_consumption 只证明 V4 正式 Scene 接入。
+  if (context.stage === "V4") {
   const usages = auditUnit?.runtime_consumption?.component_usages ?? auditUnit?.runtime_consumption?.componentUsages;
-  if (!Array.isArray(usages)) errors.push(componentError(context, "V5 runtime_consumption 必须逐部件登记 component_usages", { missing: "runtime_consumption.component_usages" }));
+  if (!Array.isArray(usages)) errors.push(componentError(context, "V4 runtime_consumption 必须逐部件登记 component_usages", { missing: "runtime_consumption.component_usages" }));
   else {
     const usagePairs = new Map();
     usages.forEach((usage, index) => {
@@ -723,19 +738,14 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
       if (!nonEmptyString(assetId)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] 缺少 asset_id，运行时消费不能只绑定 component/state`, { missing: "runtime_consumption.component_usages.asset_id" }));
       else if (expectedAsset && assetId !== expectedAsset.asset_id) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] asset_id 与 V3 expected_assets 不一致`, { missing: expectedAsset.asset_id }));
       const runtimeFile = usage?.runtime_file ?? usage?.runtimeFile ?? "";
-      const runtimeSha = usage?.runtime_sha256 ?? usage?.runtimeSha256 ?? "";
       const expectedPlacementIds = placementIdsByComponent.get(componentId) ?? [];
       const observedPlacementIds = Array.isArray(usage?.placement_ids) ? usage.placement_ids.slice().sort() : (Array.isArray(usage?.placementIds) ? usage.placementIds.slice().sort() : null);
       if (!observedPlacementIds || JSON.stringify(observedPlacementIds) !== JSON.stringify(expectedPlacementIds)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] placement_ids 必须精确覆盖该 component 的全部可见 placement`, { missing: expectedPlacementIds.join(",") || "placement_ids" }));
       if (!nonEmptyString(runtimeFile)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] 缺少 runtime_file`, { missing: "runtime_file" }));
-      if (!isSha256(runtimeSha)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] 缺少合法 runtime_sha256`, { missing: "runtime_sha256" }));
       if (expectedAsset?.runtime_file && !sameProjectPath(runtimeFile, expectedAsset.runtime_file)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] runtime_file 与 V3 expected 不一致`, { missing: expectedAsset.runtime_file }));
       const actualItem = actualByPair.get(key);
       const actualItemFile = actualItem?.file ?? actualItem?.path ?? actualItem?.output_file ?? actualItem?.runtime_file ?? actualItem?.runtimeFile ?? "";
-      const actualItemSha = actualItem?.sha256 ?? actualItem?.file_sha256 ?? "";
       if (actualItem && !sameProjectPath(runtimeFile, actualItemFile)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] runtime_file 与 actual_assets 不一致`, { missing: actualItemFile || "actual_assets.file" }));
-      if (actualItem && !isSha256(actualItemSha)) errors.push(componentError(local, `actual_assets 缺少合法 SHA，无法绑定 runtime_sha256`, { missing: "actual_assets.sha256" }));
-      else if (actualItem && runtimeSha !== actualItemSha) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] runtime_sha256 与 actual_assets SHA 不一致`, { missing: actualItemSha }));
       if (expectedAsset?.atlas_slice) {
         const usageSlice = normalizeAtlasSlice(usage?.atlas_slice ?? usage?.atlasSlice);
         if (!usageSlice) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] 缺少 V3 对应 atlas_slice`, { missing: "atlas_slice" }));

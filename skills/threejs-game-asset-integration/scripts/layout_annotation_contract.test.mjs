@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { decodePngRgba, encodePngRgba } from "./effect_image_raster.mjs";
-import { buildDecompositionElements } from "./decomposition-elements.mjs";
+import { buildDecompositionElements, validateDecompositionElements } from "./decomposition-elements.mjs";
 import { colorForLayoutDepth, computeLayoutAnnotationMetadataSha256, computeLayoutMarkerPlacements, deriveAutomaticLayoutFacts, deriveLayoutAnnotationRows, deriveLayoutNodesFromDecompositionElements, renderLayoutAnnotation, validateLayoutAnnotationPng } from "./layout_annotation_contract.mjs";
 
 const SHA = `sha256:${"a".repeat(64)}`;
@@ -104,6 +104,95 @@ test("同一几何允许不同视觉对齐决策，中心选项不由测量反�
   assert.deepEqual(edged.axis_alignment, { horizontal: "left", vertical: "top" });
   assert.notDeepEqual(centered.offset, edged.offset);
   assert.equal(centered.self_anchor, "center-center");
+});
+
+/** V2 九宫格正反决策穿过拆解、布局节点和人工可见旁栏事实。 */
+test("V2九宫格正反决策在确认旁栏显示源尺寸与四边切片值", () => {
+  const panelNineSlice = { mode: "stretch", reason: "底板四角和描边保持固定尺寸", source_size: { width: 96, height: 64 }, borders: { left: 12, right: 12, top: 10, bottom: 10 } };
+  const iconNineSlice = { mode: "not-applicable", reason: "图标为固定尺寸，不需要拉伸" };
+  const region = {
+      id: "hud", scene_id: "main", state_id: "default", owner_type: "fixed-production-visual", visual_route_analysis: { element_type: "panel" }, bounds: { x: 0, y: 0, width: 96, height: 64 },
+    component_inventory: { components: [
+        { component_id: "panel", role: "background-frame", bounds: { x: 2, y: 2, width: 40, height: 30 }, parent_element_id: "viewport", nine_slice: panelNineSlice, semantic_grouping: { kind: "standalone", rationale: "完整面板底板独立拉伸" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "FULL_BLEED", interaction_policy: "NONE" }, placements: [] },
+      { component_id: "icon", role: "icon", bounds: { x: 50, y: 2, width: 10, height: 10 }, parent_element_id: "viewport", nine_slice: iconNineSlice, semantic_grouping: { kind: "standalone", rationale: "图标按固定比例显示" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, placements: [] },
+    ] },
+  };
+  const elements = buildDecompositionElements([region]);
+  assert.deepEqual(elements.map((item) => item.nine_slice), [panelNineSlice, iconNineSlice]);
+  assert.deepEqual(elements.map((item) => item.nine_slice_decision_required), [true, true]);
+  const canvas = { width: 96, height: 64 };
+  const alignmentDecisions = new Map(elements.map((item) => [item.element_id, { horizontal: "left", vertical: "top" }]));
+  const nodes = deriveLayoutNodesFromDecompositionElements(elements, canvas, { alignmentDecisions });
+  assert.deepEqual(nodes.map((node) => node.nine_slice), [panelNineSlice, iconNineSlice]);
+  const context = { targetSha256: ORIGINAL_SHA, sceneId: "main", stateId: "default", decompositionConfirmationId: "decomp-slice", decompositionConfirmationSha256: SHA, decompositionProposalSha256: SHA };
+  const facts = deriveAutomaticLayoutFacts(nodes, canvas, context);
+  const panelFact = facts.find((fact) => fact.component_id === "panel");
+  const iconFact = facts.find((fact) => fact.component_id === "icon");
+  assert.deepEqual(panelFact.nine_slice, panelNineSlice);
+  assert.deepEqual(iconFact.nine_slice, iconNineSlice);
+  const rows = deriveLayoutAnnotationRows(facts);
+  assert.match(rows.find((row) => row.layout_node_id === panelFact.layout_node_id).text, /九宫格=stretch 源图=96×64 边界\(L\/R\/T\/B\)=12\/12\/10\/10/);
+  assert.match(rows.find((row) => row.layout_node_id === iconFact.layout_node_id).text, /九宫格=not-applicable（图标为固定尺寸，不需要拉伸）/);
+  const source = solidPng(canvas.width, canvas.height);
+  const renderContext = { ...context, targetSha256: sha256(source) };
+  const rendered = renderLayoutAnnotation(source, canvas, facts, renderContext);
+  assert.deepEqual(rendered.metadata.nodes.find((fact) => fact.component_id === "panel").nine_slice, panelNineSlice);
+  assert.equal(rendered.metadata.nodes.find((fact) => fact.component_id === "panel").nine_slice_decision_required, true);
+  const errors = [];
+  validateLayoutAnnotationPng(rendered.bytes, { layoutNodes: nodes, ...renderContext }, errors, "layout-nine-slice");
+  assert.deepEqual(errors, []);
+
+  const backgroundRegion = structuredClone(region);
+  backgroundRegion.layer = "background";
+  const backgroundElements = buildDecompositionElements([backgroundRegion]);
+  const backgroundErrors = [];
+  validateDecompositionElements(backgroundElements, [backgroundRegion], canvas, "decomposition_elements", backgroundErrors);
+  assert(backgroundErrors.some((message) => message.includes("九宫格 stretch")), "权威 background layer 即使使用 background-frame role 也必须拒绝 stretch");
+
+  const routeOverrideRegion = structuredClone(region);
+  routeOverrideRegion.component_inventory.components[0].role = "background";
+  const routeOverrideElements = buildDecompositionElements([routeOverrideRegion]);
+  assert.equal(routeOverrideElements[0].nine_slice_decision_required, true, "显式 panel route 应保持 V2 必评估");
+  const routeOverrideErrors = [];
+  validateDecompositionElements(routeOverrideElements, [routeOverrideRegion], canvas, "decomposition_elements", routeOverrideErrors);
+  assert.equal(routeOverrideErrors.some((message) => message.includes("九宫格 stretch")), false, "UI 路线应覆盖元素自报 background role");
+
+  const containerRegion = structuredClone(region);
+  containerRegion.component_inventory.components[0].role = "container";
+  assert.throws(() => buildDecompositionElements([containerRegion]), /只能声明在叶子 component 图片皮肤上/);
+});
+
+/** 固定生产 UI 皮肤必须在 V2 决策，后续 false/缺失不能伪造“无需评估”。 */
+test("V2从显式角色派生必评估标记，缺少决策或手填 false 均拒绝", () => {
+  const contract = { mode: "not-applicable", reason: "该按钮装饰为固定尺寸，不拉伸" };
+  const region = {
+    id: "button-region", scene_id: "main", state_id: "default", owner_type: "fixed-production-visual", visual_route_analysis: { element_type: "button" },
+    bounds: { x: 0, y: 0, width: 48, height: 32 },
+    component_inventory: { components: [{ component_id: "button", role: "button", bounds: { x: 4, y: 4, width: 24, height: 12 }, parent_element_id: "viewport", nine_slice: contract, semantic_grouping: { kind: "standalone", rationale: "独立按钮皮肤" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, placements: [] }] },
+  };
+  const elements = buildDecompositionElements([region]);
+  assert.equal(elements[0].nine_slice_decision_required, true);
+  assert.deepEqual(elements[0].nine_slice, contract);
+  const missing = structuredClone(region); delete missing.component_inventory.components[0].nine_slice;
+  assert.throws(() => buildDecompositionElements([missing]), /V2 必须确认 nine_slice/);
+  const bypassed = structuredClone(elements); bypassed[0].nine_slice_decision_required = false;
+  // 显式 region owner/route 仍能重算要求，false 不能关闭 V2 的必评估判断。
+  const errors = [];
+  validateDecompositionElements(bypassed, [region], { width: 48, height: 32 }, "decomposition_elements", errors);
+  assert(errors.some((message) => message.includes("不接受 false 覆盖")));
+  const forgedContext = structuredClone(elements);
+  forgedContext[0].owner_type = "runtime-rendered";
+  forgedContext[0].role = "illustration";
+  forgedContext[0].visual_route_element_type = "illustration";
+  forgedContext[0].nine_slice_decision_required = false;
+  const contextErrors = [];
+  validateDecompositionElements(forgedContext, [region], { width: 48, height: 32 }, "decomposition_elements", contextErrors);
+  assert(contextErrors.some((message) => message.includes("权威归属")));
+  assert(contextErrors.some((message) => message.includes("权威视觉路线")));
+  assert(contextErrors.some((message) => message.includes("不接受 false 覆盖")));
+  const nodes = deriveLayoutNodesFromDecompositionElements(elements, { width: 48, height: 32 }, { alignmentDecisions: new Map([[elements[0].element_id, { horizontal: "left", vertical: "top" }]]) });
+  nodes[0].nine_slice_decision_required = false;
+  assert.throws(() => deriveAutomaticLayoutFacts(nodes, { width: 48, height: 32 }), /不接受 false 覆盖/);
 });
 
 test("布局 PNG metadata 节点调序必须被拒绝", () => {

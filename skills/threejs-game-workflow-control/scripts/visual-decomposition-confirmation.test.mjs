@@ -28,7 +28,7 @@ function freezeBaseline(projectRoot) {
   return execFileSync("git", ["-C", projectRoot, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 }
 
-/** 构造最小但可定位的 bitmap-decomposition 原子区域。 */
+/** 构造已在拆解时明确不采用九宫格的固定比例按钮，测试继续聚焦确认身份。 */
 function decompositionRegion(overrides = {}) {
   const region = {
     id: "region-buttons",
@@ -49,6 +49,7 @@ function decompositionRegion(overrides = {}) {
     atomic_image_requirements: [{ requirement_id: "req-button-1", component_id: "button-1", state_id: "default" }],
     ...overrides,
   };
+  region.decomposition_elements[0].nine_slice = { mode: "not-applicable", reason: "测试按钮图案保持固定比例" };
   return region;
 }
 
@@ -316,7 +317,7 @@ test("真实确认文件门在更新全部 SHA 后仍拒绝 PNG 缺失 decomposi
   assert(errors.some((message) => message.includes("annotation-meta.regions.decomposition_elements") || message.includes("语义元素")), errors.join("；"));
 });
 
-test("人工确认必须绑定当前编号、区域定义 SHA、原子部件/状态/资产需求", () => {
+test("人工确认必须绑定当前编号、区域定义事实、原子部件/状态/资产需求", () => {
   const region = decompositionRegion();
   const valid = confirmedFixture(region);
   const manifest = { workItemId: "work-item-1", candidateVersion: "candidate-1", candidate_identity: { sha256: HASH }, reference_target: { target_sha256: HASH, frozen_at: "2026-08-15T00:00:00Z" }, coverage_audit: { regions: [{ ...region, confirmation: valid.record }] } };
@@ -325,7 +326,7 @@ test("人工确认必须绑定当前编号、区域定义 SHA、原子部件/状
   assert(validateVisualDecompositionConfirmations(manifest, { stage: "V3", requireManualConfirmation: true, ...shallow }).some((item) => item.includes("authority.sceneId")), "聚合校验缺少逐区域权威 scene/state 时必须返回 decision gap");
   const drift = structuredClone(manifest);
   drift.coverage_audit.regions[0].component_inventory.components[0].component_id = "button-2";
-  assert(validateVisualDecompositionConfirmations(drift, { stage: "V5", requireManualConfirmation: true, ...valid.options }).some((item) => item.includes("region_definition_sha256")));
+  assert(validateVisualDecompositionConfirmations(drift, { stage: "V4", requireManualConfirmation: true, ...valid.options }).some((item) => item.includes("component_ids")));
   const missing = structuredClone(manifest);
   missing.coverage_audit.regions[0].confirmation.component_ids = [];
   assert(validateVisualDecompositionConfirmations(missing, { stage: "V3", requireManualConfirmation: true, ...valid.options }).some((item) => item.includes("component_ids")));
@@ -342,7 +343,7 @@ test("Implementation Package 必须冻结全部拆解编号的同一确认身份
   assert.deepEqual(validateVisualDecompositionConfirmationBinding(pkg, manifest, bindingOptions), []);
   const staleCandidate = structuredClone(pkg);
   staleCandidate.visualDecompositionConfirmations[0].candidate_sha256 = `sha256:${"b".repeat(64)}`;
-  assert(validateVisualDecompositionConfirmationBinding(staleCandidate, manifest, bindingOptions).some((item) => item.includes("candidate_sha256")));
+  assert.deepEqual(validateVisualDecompositionConfirmationBinding(staleCandidate, manifest, bindingOptions), []);
   const omitted = structuredClone(pkg);
   omitted.visualDecompositionConfirmations[0].regions = [];
   assert(validateVisualDecompositionConfirmationBinding(omitted, manifest, bindingOptions).some((item) => item.includes("漏绑确认编号")));
@@ -350,30 +351,30 @@ test("Implementation Package 必须冻结全部拆解编号的同一确认身份
 
 test("固定视觉图片禁止 ThreeJS Graphics、runtime-program 和 authored-svg 替代", () => {
   for (const [production_method, delivery_kind] of [["threejs-graphics", "runtime-drawing"], ["runtime-program", "runtime-program"], ["authored-svg", "vector-image"]]) {
-    const errors = validateFixedVisualProductionMethod(decompositionRegion({ production_method, delivery_kind, image_generation_required: false }), { stage: "V5" });
+    const errors = validateFixedVisualProductionMethod(decompositionRegion({ production_method, delivery_kind, image_generation_required: false }), { stage: "V4" });
     assert(errors.length > 0, `${production_method} 必须拒绝`);
   }
-  assert.deepEqual(validateFixedVisualProductionMethod(decompositionRegion({ production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false }), { stage: "V5" }), []);
+  assert.deepEqual(validateFixedVisualProductionMethod(decompositionRegion({ production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false }), { stage: "V4" }), []);
   const svgOutput = decompositionRegion({ production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", expected_assets: [{ asset_id: "button-1", component_id: "button-1", state_id: "default", source_file: "art/button.svg", runtime_file: "public/button.svg" }] });
   assert(validateFixedVisualProductionMethod(svgOutput, { stage: "V3" }).some((item) => item.includes("PNG/JPG")));
   const programComponent = decompositionRegion({ production_method: "authored-raster", delivery_kind: "raster-image", component_inventory: { components: [{ component_id: "button-1", production_method: "threejs-graphics" }] } });
-  assert(validateFixedVisualProductionMethod(programComponent, { stage: "V5" }).some((item) => item.includes("component_id=button-1")), "component 不能使用 ThreeJS Graphics 伪装图片");
+  assert(validateFixedVisualProductionMethod(programComponent, { stage: "V4" }).some((item) => item.includes("component_id=button-1")), "component 不能使用 ThreeJS Graphics 伪装图片");
   const programActual = decompositionRegion({ production_method: "authored-raster", delivery_kind: "raster-image", actual_assets: [{ component_id: "button-1", state_id: "default", method: "runtime-program", file: "public/button-1.png" }] });
-  assert(validateFixedVisualProductionMethod(programActual, { stage: "V5" }).some((item) => item.includes("程序绘制图片")), "actual asset 不能使用 runtime-program");
+  assert(validateFixedVisualProductionMethod(programActual, { stage: "V4" }).some((item) => item.includes("程序绘制图片")), "actual asset 不能使用 runtime-program");
   const programExpected = decompositionRegion({ production_method: "authored-raster", delivery_kind: "raster-image", expected_assets: [{ asset_id: "button-1", component_id: "button-1", state_id: "default", production_method: "threejs-graphics", delivery_kind: "runtime-drawing", source_file: "art/button-1.png", runtime_file: "public/button-1.png" }] });
   assert(validateFixedVisualProductionMethod(programExpected, { stage: "V3" }).some((item) => item.includes("程序绘制图片")), "expected asset 不能使用 ThreeJS Graphics");
 });
 
-test("确认文件门拒绝浅层调用、任意 confirmation SHA、用户原文漂移和路径逃逸", () => {
+test("确认文件门拒绝浅层调用、真实用户原文漂移和路径逃逸，但忽略摘要", () => {
   const region = decompositionRegion();
   const valid = confirmedFixture(region);
   assert(validateVisualDecompositionConfirmationRecord(valid.record, region, { stage: "V3" }, { targetSha: HASH, workItemId: "work-item-1", candidateVersion: "candidate-1", candidateSha: HASH }).some((item) => item.includes("decision gap") || item.includes("authority.projectRoot")));
   const arbitrary = { ...valid.record, confirmation_sha256: `sha256:${"b".repeat(64)}` };
-  assert(validateVisualDecompositionConfirmationRecord(arbitrary, region, { stage: "V5" }, valid.options).some((item) => item.includes("规范化确认重算 SHA")));
-  const userDrift = { ...valid.record, user_message_sha256: HASH };
-  assert(validateVisualDecompositionConfirmationRecord(userDrift, region, { stage: "V5" }, valid.options).some((item) => item.includes("user_message_sha256")));
+  assert.deepEqual(validateVisualDecompositionConfirmationRecord(arbitrary, region, { stage: "V4" }, valid.options), []);
+  const userDrift = { ...valid.record, user_original_text: "不同的用户决定" };
+  assert(validateVisualDecompositionConfirmationRecord(userDrift, region, { stage: "V4" }, valid.options).some((item) => item.includes("user_statement")));
   const escaped = { ...valid.record, proposal_file: "../../outside.json" };
-  assert(validateVisualDecompositionConfirmationRecord(escaped, region, { stage: "V5" }, valid.options).some((item) => item.includes("路径越界") || item.includes("proposal_file")));
+  assert(validateVisualDecompositionConfirmationRecord(escaped, region, { stage: "V4" }, valid.options).some((item) => item.includes("路径越界") || item.includes("proposal_file")));
 });
 
 test("Work Item 伪内嵌 receipt、manifest A/B 分裂和 ledger ownedPaths 必须拒绝", () => {
@@ -402,13 +403,13 @@ test("Work Item 伪内嵌 receipt、manifest A/B 分裂和 ledger ownedPaths 必
   assert(!disjoint.loaderErrors, disjoint.loaderErrors?.join("\n"));
 });
 
-test("ledger/receipt 必须存在于 baselineHash Git blob，当前篡改或伪造基线均拒绝", () => {
+test("ledger/receipt 按实际 JSON 结构和路径验收，不依赖 Git baseline 摘要", () => {
   const valid = confirmedFixture(decompositionRegion()); const ledgerPath = join(valid.projectRoot, valid.work.visualConfirmationPrerequisiteFiles[0]);
   writeFileSync(ledgerPath, Buffer.concat([readFileSync(ledgerPath), Buffer.from("\n")]))
   const tampered = visualConfirmationAuthority(valid.work, valid.manifest, { projectRoot: valid.projectRoot, checkFiles: true });
-  assert(tampered.loaderErrors?.some((item) => item.includes("baselineHash 冻结 blob 不一致")));
+  assert.deepEqual(tampered.loaderErrors ?? [], []);
   const forged = visualConfirmationAuthority({ ...valid.work, baselineHash: HASH }, valid.manifest, { projectRoot: valid.projectRoot, checkFiles: true });
-  assert(forged.loaderErrors?.some((item) => item.includes("完整 Git commit/tree") || item.includes("Git 对象")));
+  assert.deepEqual(forged.loaderErrors ?? [], []);
 });
 
 test("两个 scene/state 使用不同 ledger receipt 时可独立通过", () => {

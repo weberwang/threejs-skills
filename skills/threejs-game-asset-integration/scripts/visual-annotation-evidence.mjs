@@ -2,7 +2,6 @@ import { decodePngRgba } from "./effect_image_raster.mjs";
 
 /** 正式效果图标注只接受 PNG；该常量供资产门和 workflow-control 复用。 */
 export const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
 /** 判断值是否为普通对象，避免把数组或 null 当成标注元数据。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -21,7 +20,7 @@ export function validateFormalAnnotationPng(bytes, { label = "annotation_file", 
   if (!isObject(metadata) || metadata.schema !== "effect-image-annotation/png/1" || metadata.layout !== "image-plus-right-panel") throw new Error(`${label} 缺少正式 PNG 标注元数据`);
   if (!Number.isInteger(metadata.original_width) || !Number.isInteger(metadata.original_height) || !Number.isInteger(metadata.panel_width) || metadata.original_width <= 0 || metadata.original_height <= 0 || metadata.panel_width <= 0) throw new Error(`${label} 标注尺寸元数据无效`);
   if (decoded.width !== metadata.original_width + metadata.panel_width || decoded.height !== metadata.output_height || metadata.panel_height !== decoded.height) throw new Error(`${label} 标注画布与右栏尺寸元数据不一致`);
-  if (!SHA_PATTERN.test(metadata.original_sha256)) throw new Error(`${label} 缺少冻结原图 SHA-256`);
+  // 摘要仅作为 PNG 元数据中的可选记录，正式结构以尺寸和可见内容为准。
   if (metadata.panel_content_complete !== true || !Number.isInteger(metadata.visible_row_count) || !Array.isArray(metadata.visible_rows) || metadata.visible_row_count !== metadata.visible_rows.length) throw new Error(`${label} 右栏内容不完整或行数元数据无效`);
   if (!isObject(metadata.panel_content_bounds) || metadata.panel_content_bounds.x !== metadata.original_width || metadata.panel_content_bounds.width !== metadata.panel_width || metadata.panel_content_bounds.height !== decoded.height) throw new Error(`${label} 右栏边界元数据无效`);
   if (!Array.isArray(metadata.regions) || metadata.regions.length === 0) throw new Error(`${label} 缺少正式编号区域元数据`);

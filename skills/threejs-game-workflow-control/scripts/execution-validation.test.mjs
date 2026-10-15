@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import test from 'node:test';
-import { assertCompletedUnits, assertUnitReady, completeExecutionUnit, createExecutionState, executionStatePath, scopedDiffFingerprint, loadExecutionState, executionPlanFingerprint } from './execution-unit-control.mjs';
+import { assertCompletedUnits, assertUnitReady, completeExecutionUnit, createExecutionState, executionStatePath, scopedDiffFingerprint, loadExecutionState, executionPlanFingerprint, initializeExecutionState } from './execution-unit-control.mjs';
 
 const BASELINE_HASH = `sha256:${'a'.repeat(64)}`;
 
@@ -119,7 +119,7 @@ test('READY 复用已校验 Execution State，不再扫描 Result 目录', (t) =
   assert.equal(fixture.directoryReads, 0);
 });
 
-test('全局完成证据只比较 completedUnitIds，Result 缺失或篡改仍由状态校验拒绝', (t) => {
+test('完成状态仍复核 Result 文件与实质状态，但不以 Result 摘要漂移拒绝', (t) => {
   const missing = makeFixture(t);
   completeUnits(missing, ['UNIT-1', 'UNIT-2']);
   rmSync(missing.results.get('UNIT-2').resultPath);
@@ -129,7 +129,7 @@ test('全局完成证据只比较 completedUnitIds，Result 缺失或篡改仍�
   completeUnits(tampered, ['UNIT-1', 'UNIT-2']);
   const resultEntry = tampered.results.get('UNIT-2');
   writeJson(resultEntry.resultPath, { ...resultEntry.result, verdict: 'FAIL' });
-  assert.throws(() => assertCompletedUnits({ completedUnitIds: ['UNIT-1', 'UNIT-2'] }, tampered.work, tampered.pkg, tampered.repo, tampered.io), /绑定已过期或被篡改/);
+  assert.throws(() => assertCompletedUnits({ completedUnitIds: ['UNIT-1', 'UNIT-2'] }, tampered.work, tampered.pkg, tampered.repo, tampered.io), /只有 PASS/);
 });
 
 test('有效的已校验 Result 不因完成证据检查再次触发目录读取', (t) => {
@@ -141,7 +141,7 @@ test('有效的已校验 Result 不因完成证据检查再次触发目录读取
   assert.equal(fixture.directoryReads, 0);
 });
 
-test('其他模块提交不使本单元证据失效，本单元内容改变仍需重验', (t) => {
+test('单元证据不因其他模块提交或本单元摘要漂移失效', (t) => {
   const fixture = makeFixture(t);
   completeUnits(fixture, ['UNIT-1']);
   writeFileSync(join(fixture.repo, 'src/module.js'), 'export const moduleValue = 2;\n');
@@ -149,7 +149,48 @@ test('其他模块提交不使本单元证据失效，本单元内容改变仍�
   execFileSync('git', ['commit', '-qm', '修改另一个模块'], { cwd: fixture.repo });
   assert.doesNotThrow(() => assertUnitReady(fixture.pkg.executionUnits[1], fixture.work, fixture.pkg, fixture.repo, fixture.io));
   writeFileSync(join(fixture.repo, 'src/main.js'), 'export const value = 3;\n');
-  assert.throws(() => assertUnitReady(fixture.pkg.executionUnits[1], fixture.work, fixture.pkg, fixture.repo, fixture.io), /路径 diff 指纹已过期.*UNIT-1/);
+  assert.doesNotThrow(() => assertUnitReady(fixture.pkg.executionUnits[1], fixture.work, fixture.pkg, fixture.repo, fixture.io));
+});
+
+test('真实完成状态入口接受缺失与陈旧摘要，但继续校验 Result 归属、文件和成功命令', (t) => {
+  const fixture = makeFixture(t);
+  completeUnits(fixture, ['UNIT-1']);
+  const completed = fixture.results.get('UNIT-1');
+  const statePath = resolve(fixture.repo, executionStatePath(fixture.work));
+  const state = JSON.parse(readFileSync(statePath, 'utf8'));
+  delete state.units[0].resultFingerprint;
+  state.baselineHash = 'sha256:stale';
+  state.executionPlanFingerprint = 'sha256:stale';
+  writeJson(statePath, state);
+
+  const result = JSON.parse(readFileSync(completed.resultPath, 'utf8'));
+  delete result.baselineHash;
+  delete result.diffFingerprint;
+  delete result.codeFingerprint;
+  delete result.fileHashes;
+  delete result.commands[0].outputHash;
+  writeJson(completed.resultPath, result);
+
+  assert.doesNotThrow(() => assertUnitReady(fixture.pkg.executionUnits[1], fixture.work, fixture.pkg, fixture.repo, fixture.io));
+
+  const failedCommand = { ...result, commands: [{ ...result.commands[0], exitCode: 1 }] };
+  writeJson(completed.resultPath, failedCommand);
+  assert.throws(() => assertUnitReady(fixture.pkg.executionUnits[1], fixture.work, fixture.pkg, fixture.repo, fixture.io), /命令失败或字段无效/);
+});
+
+test('阶段切换不因基线 commit 摘要改变拒绝已完成的旧序列', (t) => {
+  const fixture = makeFixture(t);
+  completeUnits(fixture, ['UNIT-1', 'UNIT-2']);
+  writeFileSync(join(fixture.repo, 'src', 'next-stage.txt'), 'next stage\n', 'utf8');
+  execFileSync('git', ['add', 'src/next-stage.txt'], { cwd: fixture.repo });
+  execFileSync('git', ['commit', '-qm', '阶段基线变化'], { cwd: fixture.repo });
+  const nextWork = { ...fixture.work, baselineId: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: fixture.repo, encoding: 'utf8' }).trim() };
+  const nextPackage = { ...fixture.pkg, packageId: 'PKG-EXECUTION-2' };
+  fixture.io.writeJson = writeJson;
+
+  const initialized = initializeExecutionState(nextWork, nextPackage, fixture.repo, fixture.io, { replaceExisting: true, previousWork: fixture.work, previousPackage: fixture.pkg });
+  assert.equal(initialized.state.packageId, nextPackage.packageId);
+  assert.equal(initialized.state.workItemId, fixture.work.workItemId);
 });
 
 test('调整未完成单元计划时复用已完成证据，读检查不写状态文件', (t) => {

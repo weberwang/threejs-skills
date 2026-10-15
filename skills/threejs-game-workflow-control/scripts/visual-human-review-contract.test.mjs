@@ -16,7 +16,7 @@ function machineReview() {
 }
 
 test("AI reviewer 即使 PASS 也被通用人工审阅硬门拒绝", () => {
-  const errors = validateHumanReview({ reviewer_type: "automation", reviewer_id: "robot", reviewed_at: "2026-08-18T00:00:00Z", evidence: "review.json", status: "passed" }, { stage: "V4" }, { requirePassed: true });
+  const errors = validateHumanReview({ reviewer_type: "automation", reviewer_id: "robot", reviewed_at: "2026-08-18T00:00:00Z", evidence: "review.json", status: "passed" }, { stage: "V3" }, { requirePassed: true });
   assert(errors.some((value) => value.includes("reviewer_type 必须为 human")));
 });
 test("旧式 V2 视觉人工审批入口已废弃", () => {
@@ -43,12 +43,12 @@ test("确认前 v2_structured_review 只允许机器事实", () => {
 
 test("拆解确认后没有重复复核工件即可通过机器字段门", () => {
   const manifest = { candidate_identity: { sha256: SHA, diff_fingerprint: "diff-1" }, fidelity_cases: [{ candidate_identity: { sha256: SHA, diff_fingerprint: "diff-1" } }] };
-  assert.deepEqual(validateVisualPostApprovalReviewFields(manifest, { stage: "V4" }), []);
+  assert.deepEqual(validateVisualPostApprovalReviewFields(manifest, { stage: "V3" }), []);
 });
 
 test("post-approval 重复复核工件和 reviewer 字段明确拒绝", () => {
   for (const key of ["f2_review", "f2_reviews", "visual_fidelity_review", "production_contract_review", "component_reviews", "reviewer", "reviewer_type", "reviewer_id", "review_id", "reviewed_at", "human_review"]) {
-    const errors = validateVisualPostApprovalReviewFields({ [key]: key === "reviewer" ? "qa" : {} }, { stage: "V4" });
+    const errors = validateVisualPostApprovalReviewFields({ [key]: key === "reviewer" ? "qa" : {} }, { stage: "V3" });
     assert(errors.some((value) => value.includes(key)), `${key} 应被拒绝`);
   }
 });
@@ -59,9 +59,9 @@ test("缺失或身份漂移的旧式 V2 审批仍失败", () => {
   assert(errors.some((value) => value.includes("旧式视觉人工审批已移除")));
 });
 
-test("V3-V4 候选 SHA 正常演进不触发第二次人工确认", () => {
+test("V3/V4 候选 SHA 正常演进不触发第二次人工确认", () => {
   const manifest = { candidate_identity: { sha256: `sha256:${"c".repeat(64)}`, diff_fingerprint: "runtime-diff-v4" } };
-  assert.deepEqual(validateVisualPostApprovalReviewFields(manifest, { stage: "V4" }), []);
+  assert.deepEqual(validateVisualPostApprovalReviewFields(manifest, { stage: "V3" }), []);
 });
 
 test("视觉 F2 只接受 MACHINE 确定性事实，非 reviewer 机器门可通过", () => {

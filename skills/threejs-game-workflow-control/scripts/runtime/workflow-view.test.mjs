@@ -7,7 +7,7 @@ import { renderResult, resultRecord } from './output.mjs';
 test('六阶段视图在生产阶段内区分场景和弹窗任务', () => {
   assert.deepEqual(PROJECT_PHASES.map((phase) => phase.label), ['需求与范围', '全局基线', '基础工程', '场景与弹窗生产', '全局集成验证', '发布']);
   assert.equal(new Set(PROJECT_PHASES.map((phase) => phase.id)).size, 6);
-  assert.deepEqual(SCENE_STEPS.map((step) => step.label), ['场景定义', '拆解确认', '正式资源验收', '页面还原草图', '正式还原与运行验收']);
+  assert.deepEqual(SCENE_STEPS.map((step) => step.label), ['场景定义', '拆解确认', '正式资源验收', '正式还原与运行验收']);
 });
 
 /** 验证六阶段的状态/包信号均能落到对应用户阶段，且不触碰内部状态值。 */
@@ -20,14 +20,13 @@ test('六阶段映射覆盖需求、基线、基础、场景、集成和发布',
   assert.equal(projectWorkflowView({ workItem: { stageId: 'G3', globalState: 'RELEASE_APPROVAL_REQUIRED' } }).phaseId, 'release');
 });
 
-/** 验证 V0-V5 到五步场景视图的完整确定性映射。 */
-test('V0-V5 固定映射到五步单场景视图', () => {
+/** 验证 V0/V1/V2/V3/V4 到四步场景视图的完整确定性映射。 */
+test('V0/V1/V2/V3/V4 固定映射到四步单场景视图', () => {
   const expected = {
     V0: ['scene-definition', '场景定义'], V1: ['scene-definition', '场景定义'],
     V2: ['direction-confirmation', '拆解确认'],
     V3: ['production-ready', '正式资源验收'],
-    V4: ['page-sketch', '页面还原草图'],
-    V5: ['formal-implementation-runtime-validation', '正式还原与运行验收'],
+    V4: ['formal-implementation-runtime-validation', '正式还原与运行验收'],
   };
   for (const [stage, [stepId, stepLabel]] of Object.entries(expected)) {
     const view = projectWorkflowView({ workItem: { stageId: stage, globalState: 'IMPLEMENTING' } });
@@ -47,14 +46,14 @@ test('foundation-only、场景和弹窗实施包映射不同阶段', () => {
   assert.equal(foundation.sceneStepId, null);
 
   const scene = projectWorkflowView({
-    workItem: { stageId: 'G1', globalState: 'IMPLEMENTING', visualStage: 'V5' },
+    workItem: { stageId: 'G1', globalState: 'IMPLEMENTING', visualStage: 'V4' },
     implementationPackage: { executionUnits: [{ unitType: 'SCENE' }] },
   });
   assert.equal(scene.phaseId, 'scene-production');
   assert.equal(scene.sceneStepId, 'formal-implementation-runtime-validation');
 
   const popup = projectWorkflowView({
-    workItem: { stageId: 'G1', globalState: 'IMPLEMENTING', visualStage: 'V5' },
+    workItem: { stageId: 'G1', globalState: 'IMPLEMENTING', visualStage: 'V4' },
     implementationPackage: { executionUnits: [{ unitType: 'DISPLAY_LAYER' }] },
   });
   assert.equal(popup.phaseId, 'scene-production');
@@ -71,7 +70,7 @@ test('完整场景包与纯集成包按合法单元顺序投影', () => {
   assert.equal(complete.sceneStepId, 'production-ready');
 
   const integrated = projectWorkflowView({
-    workItem: { stageId: 'G2', globalState: 'INTEGRATING', visualStage: 'V5' },
+    workItem: { stageId: 'G2', globalState: 'INTEGRATING', visualStage: 'V4' },
     implementationPackage: { executionUnits: [{ unitType: 'SCENE' }, { unitType: 'INTEGRATION' }] },
   });
   assert.equal(integrated.phaseId, 'global-integration-validation');
@@ -99,14 +98,14 @@ test('未知组合返回 unknown 并保留内部阶段', () => {
 
 test('SCENE 与 DISPLAY_LAYER 混包保守返回 unknown', () => {
   const view = projectWorkflowView({
-    workItem: { stageId: 'G1', globalState: 'IMPLEMENTING', visualStage: 'V5' },
+    workItem: { stageId: 'G1', globalState: 'IMPLEMENTING', visualStage: 'V4' },
     implementationPackage: { executionUnits: [{ unitType: 'SCENE' }, { unitType: 'DISPLAY_LAYER' }] },
   });
   assert.equal(view.phaseId, 'unknown');
 });
 
-/** 验证 V3 资源验收和 V4 草图确认始终按真实阶段显示，实施状态不能跳过草图。 */
-test('实施状态不能将 V3 资源验收投影为 V5 正式还原', () => {
+/** 验证 V3 资源验收与 V4 正式实施按真实阶段显示，不能用全局状态冒充视觉阶段。 */
+test('实施状态不能将 V3 资源验收投影为 V4 正式还原', () => {
   for (const globalState of ['IMPLEMENTING', 'VALIDATING', 'PASSED', 'COMPLETE']) {
     const accepted = projectWorkflowView({
       workItem: { stageId: 'V3', globalState, visualStage: 'V3', visualStageState: 'v3-formal-acceptance-complete' },
@@ -147,12 +146,12 @@ test('JSON 顶层字段不变且默认文本显示简化阶段', () => {
   assert.match(text, /下一步：完成当前待执行单元/);
 });
 
-/** V4 确认与 V5 正式实施各自保留用户可见步骤，确认回执不能代替阶段推进。 */
-test("草图确认仍显示 V4，显式 V5 才显示正式还原", () => {
+/** 已移除阶段保持未知，避免旧状态被展示成合法的正式实施进度。 */
+test("V5 不再属于场景生产步骤，V4 直接显示正式还原", () => {
   for (const globalState of ["REVIEW", "IMPLEMENTING", "PASSED"]) {
-    const view = projectWorkflowView({ workItem: { stageId: "V4", visualStage: "V4", visualStageState: "v4-page-sketch-confirmed", globalState }, implementationPackage: { executionUnits: [{ unitType: "SCENE" }] } });
-    assert.equal(view.sceneStepId, "page-sketch");
+    const view = projectWorkflowView({ workItem: { stageId: "V5", visualStage: "V5", globalState }, implementationPackage: { executionUnits: [{ unitType: "SCENE" }] } });
+    assert.equal(view.phaseId, "unknown");
   }
-  const view = projectWorkflowView({ workItem: { stageId: "V5", visualStage: "V5", visualStageState: "in-progress", globalState: "IMPLEMENTING" } });
+  const view = projectWorkflowView({ workItem: { stageId: "V4", visualStage: "V4", visualStageState: "in-progress", globalState: "IMPLEMENTING" } });
   assert.equal(view.sceneStepId, "formal-implementation-runtime-validation");
 });

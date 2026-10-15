@@ -14,8 +14,8 @@ import {
   parseDeviceDpr,
 } from './workflow-dpr-contract.mjs';
 import { DESIGN_RESOLUTIONS, calculateFixedDesignViewport } from '../../threejs-game-ui-layout/scripts/fixed-design-viewport.mjs';
-import { resolveOrientationCoverage, measuredOrientation, matchesRepresentativeViewport, validateOrientationPolicyConsistency, hasSamePageOrientationChange } from './orientation-validation-scope.mjs';
 import { WORLD_VIEWPORT_SCHEMA_VERSION, WORLD_VIEWPORT_EVIDENCE_FIELDS, resolveWorldViewportContract, validateWorldViewportContract, validateWorldViewportEvidenceRecord, validateWorldViewportEvidenceManifest } from './world-viewport-contract.mjs';
+import { resolveOrientationCoverage, measuredOrientation, matchesRepresentativeViewport, validateOrientationPolicyConsistency, hasSamePageOrientationChange } from './orientation-validation-scope.mjs';
 
 /** 响应式模块复用既有 DPR 单一真源，避免调用方引入第二套常量。 */
 export { DEFAULT_DPR, IMAGE_PRODUCTION_DPR, RUNTIME_MAX_DPR } from './workflow-dpr-contract.mjs';
@@ -32,14 +32,14 @@ export const RESPONSIVE_CONTRACT_FIELDS = Object.freeze([
   'representativeViewports', 'requiredRuntimeEvidence',
 ]);
 
-/** V5 每个 Scene 或 DISPLAY_LAYER 至少要提交的真实运行字段。 */
+/** V4 每个 Scene 或 DISPLAY_LAYER 至少要提交的真实运行字段。 */
 export const RUNTIME_EVIDENCE_FIELDS = Object.freeze([
   'viewportRect', 'canvasRect', 'designTransform', 'logicalSize', 'backingSize', 'cssDisplaySize',
   'rawDevicePixelRatio', 'effectiveDevicePixelRatio', 'logicalToCssScale',
   'cssToPhysicalScale', 'cameraViewport', 'cameraZoom', 'cameraOrigin',
   'safeArea', 'edgeGaps', 'backgroundCoverage', 'keyUiRects', 'inputHitResults',
   'resizeTrajectory', 'pageReloaded', 'screenshot', 'sceneId', 'stateId',
-  'candidateSha256', 'layoutContractVersion', 'visualBaselineVersion',
+  'layoutContractVersion', 'visualBaselineVersion',
 ]);
 
 /** 已知代表性视口类别；必测子集由项目支持方向决定。 */
@@ -56,8 +56,7 @@ export const REPRESENTATIVE_BEHAVIOR_REQUIREMENTS = Object.freeze([
   'orientation-change', 'display-layer-open-interact-close-restore',
 ]);
 
-const SHA256 = /^sha256:[a-f0-9]{64}$/i;
-const STAGE_PATTERN = /^V[1-5]$/i;
+const STAGE_PATTERN = /^V[1-4]$/i;
 const DPR_NUMBERS = [1, 1.25, 1.5, 2];
 
 /** 判断是否为普通对象，避免数组被当作结构化合同事实。 */
@@ -99,7 +98,7 @@ function contractError(stage, scope, message, missing = '') {
 
 /** 从根记录或嵌套 responsiveContract 读取单一规范对象。 */
 export function extractResponsiveContract(value = {}) {
-  // world-3d 使用独立坐标合同；根级二维字段不得覆盖或补齐该合同。
+  // 世界合同保持独立坐标空间，二维根字段不得补齐或覆盖它。
   const worldContract = resolveWorldViewportContract(value);
   if (worldContract) return worldContract;
   const nested = value?.responsiveViewportContract ?? value?.responsiveContract ?? value?.responsive_contract;
@@ -117,7 +116,7 @@ export function hasResponsiveDeclaration(value = {}) {
   );
 }
 
-/** 判断工作项是否进入需要响应式合同的 V1-V5 可见范围。 */
+/** 判断工作项是否进入需要响应式合同的 V1-V4 可见范围。 */
 export function isResponsiveWorkItem(work = {}, implementationPackage = null) {
   const stage = String(work?.visualStage ?? work?.visual_stage ?? work?.stageId ?? '').trim().toUpperCase();
   const visibleUnit = (implementationPackage?.executionUnits ?? []).some((unit) => ['SCENE', 'DISPLAY_LAYER'].includes(unit?.unitType));
@@ -143,7 +142,7 @@ export function expectedBackingSize(cssDisplaySize, cssToPhysicalScale, rounding
   const x = typeof cssToPhysicalScale === 'number' ? cssToPhysicalScale : cssToPhysicalScale?.x;
   const y = typeof cssToPhysicalScale === 'number' ? cssToPhysicalScale : cssToPhysicalScale?.y;
   if (![x, y].every((value) => Number.isFinite(value) && value > 0)) return null;
-  const round = rounding === 'round' ? Math.round : rounding === 'ceil' ? Math.ceil : Math.floor;
+  const round = rounding === 'ceil' ? Math.ceil : rounding === 'round' ? Math.round : Math.floor;
   return { width: round(cssDisplaySize.width * x), height: round(cssDisplaySize.height * y) };
 }
 
@@ -336,7 +335,7 @@ export function validateResponsiveContract(value, options = {}) {
   validateRepresentativeMatrix(contract, stage, errors);
   const requiredEvidence = contract.requiredRuntimeEvidence;
   const requiredEvidenceFields = Array.isArray(requiredEvidence) ? requiredEvidence : requiredEvidence?.requiredFields;
-  if (!Array.isArray(requiredEvidenceFields) || !RUNTIME_EVIDENCE_FIELDS.every((fieldName) => requiredEvidenceFields.includes(fieldName) || requiredEvidenceFields.includes(fieldName.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`)))) errors.push(contractError(stage, scope, 'requiredRuntimeEvidence 未覆盖完整 V5 运行字段', 'requiredRuntimeEvidence'));
+  if (!Array.isArray(requiredEvidenceFields) || !RUNTIME_EVIDENCE_FIELDS.every((fieldName) => requiredEvidenceFields.includes(fieldName) || requiredEvidenceFields.includes(fieldName.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`)))) errors.push(contractError(stage, scope, 'requiredRuntimeEvidence 未覆盖完整 V4 运行字段', 'requiredRuntimeEvidence'));
   return [...new Set(errors)];
 }
 
@@ -400,7 +399,7 @@ function validateDesignTransform(record, stage, scope, errors) {
 export function validateResponsiveEvidenceRecord(record, contract = null, options = {}) {
   const worldContract = resolveWorldViewportContract(contract);
   if (worldContract) return validateWorldViewportEvidenceRecord(record, worldContract, options);
-  const stage = String(options.stage ?? 'V5').toUpperCase();
+  const stage = String(options.stage ?? 'V4').toUpperCase();
   const scope = options.scope ?? record?.displayLayerId ?? record?.sceneId ?? record?.scene_id ?? '*';
   const errors = [];
   if (!isObject(record)) return [contractError(stage, scope, '响应式运行证据必须是对象')];
@@ -408,7 +407,7 @@ export function validateResponsiveEvidenceRecord(record, contract = null, option
   if (!['verified', 'pass'].includes(status) || field(record, 'runtimeMeasured', 'runtime_measured', 'measured') === false) errors.push(contractError(stage, scope, '只有 verified/PASS 的真实运行测量才能驱动通过'));
   const measuredAt = field(record, 'measuredAt', 'measured_at', 'recordedAt', 'recorded_at');
   const measurementSource = String(field(record, 'measurementSource', 'measurement_source', 'source') ?? '').toLowerCase();
-  if (field(record, 'runtimeMeasured', 'runtime_measured', 'measured') !== true && !measurementSource.includes('runtime') && !measurementSource.includes('browser')) errors.push(contractError(stage, scope, 'V5 响应式证据必须有真实运行测量标记', 'runtimeMeasured=true'));
+  if (field(record, 'runtimeMeasured', 'runtime_measured', 'measured') !== true && !measurementSource.includes('runtime') && !measurementSource.includes('browser')) errors.push(contractError(stage, scope, 'V4 响应式证据必须有真实运行测量标记', 'runtimeMeasured=true'));
   if (!nonEmptyString(measuredAt) || Number.isNaN(Date.parse(measuredAt))) errors.push(contractError(stage, scope, '运行证据缺少有效测量时间', 'measuredAt'));
   for (const fieldName of RUNTIME_EVIDENCE_FIELDS) if (field(record, fieldName, fieldName.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`)) === undefined) errors.push(contractError(stage, scope, `运行证据缺少 ${fieldName}`, fieldName));
   const raw = field(record, 'rawDevicePixelRatio', 'raw_device_pixel_ratio');
@@ -433,15 +432,12 @@ export function validateResponsiveEvidenceRecord(record, contract = null, option
   const trajectory = field(record, 'resizeTrajectory', 'resize_trajectory');
   if (!Array.isArray(trajectory) || trajectory.length === 0) errors.push(contractError(stage, scope, 'resizeTrajectory 必须记录支持方向内的同页 resize/DPR 变化轨迹', 'resizeTrajectory'));
   if (field(record, 'pageReloaded', 'page_reloaded') !== false) errors.push(contractError(stage, scope, 'resize 必须在同一页面完成，pageReloaded 必须为 false'));
-  if (!hasFact(field(record, 'screenshot'))) errors.push(contractError(stage, scope, 'V5 必须提交真实运行截图', 'screenshot'));
+  if (!hasFact(field(record, 'screenshot'))) errors.push(contractError(stage, scope, 'V4 必须提交真实运行截图', 'screenshot'));
   for (const name of ['sceneId', 'stateId', 'layoutContractVersion', 'visualBaselineVersion']) if (!nonEmptyString(field(record, name, name.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`)))) errors.push(contractError(stage, scope, `运行证据缺少 ${name}`, name));
   const expectedLayoutVersion = options.layoutContractVersion ?? field(contract, 'layoutContractVersion', 'layout_contract_version');
   const expectedVisualVersion = options.visualBaselineVersion ?? field(contract, 'visualBaselineVersion', 'visual_baseline_version');
   if (expectedLayoutVersion && field(record, 'layoutContractVersion', 'layout_contract_version') !== expectedLayoutVersion) errors.push(contractError(stage, scope, '旧 layoutContractVersion 证据已失效'));
   if (expectedVisualVersion && field(record, 'visualBaselineVersion', 'visual_baseline_version') !== expectedVisualVersion) errors.push(contractError(stage, scope, '旧 visualBaselineVersion 证据已失效'));
-  const candidate = field(record, 'candidateSha256', 'candidate_sha256');
-  if (!SHA256.test(String(candidate ?? ''))) errors.push(contractError(stage, scope, 'candidateSha256 必须是当前候选的 sha256 身份', 'candidateSha256'));
-  if (options.candidateSha256 && candidate !== options.candidateSha256) errors.push(contractError(stage, scope, '证据 candidateSha256 未绑定当前候选身份'));
   const unitType = String(options.unitType ?? record.unitType ?? '').toUpperCase();
   if (unitType === 'DISPLAY_LAYER' || field(record, 'displayLayerId', 'display_layer_id') !== undefined) {
     if (!nonEmptyString(field(record, 'displayLayerId', 'display_layer_id'))) errors.push(contractError(stage, scope, '独立 DISPLAY_LAYER 必须记录 displayLayerId', 'displayLayerId'));
@@ -459,19 +455,19 @@ export function validateResponsiveEvidenceRecord(record, contract = null, option
 function validateMeasuredMatrix(records, stage, scope, contract) {
   const coverage = resolveOrientationCoverage(extractResponsiveContract(contract).orientationPolicy);
   const errors = coverage.errors.map((error) => contractError(stage, scope, error));
-  // V5 只接受实测几何和数值覆盖；viewportId、matrixCases 等自报标签不能替代事实。
+  // V4 只接受实测几何和数值覆盖；viewportId、matrixCases 等自报标签不能替代事实。
   const viewport = (record) => field(record, 'viewportRect', 'viewport_rect') ?? {};
   const effective = (record) => field(record, 'effectiveDevicePixelRatio', 'effective_device_pixel_ratio');
   const raw = (record) => field(record, 'rawDevicePixelRatio', 'raw_device_pixel_ratio');
-  for (const record of records) if (!coverage.orientations.includes(measuredOrientation(viewport(record)))) errors.push(contractError(stage, scope, 'V5 证据视口方向不在 orientationPolicy.allowed 中'));
-  for (const kind of coverage.viewportKinds) if (!records.some((record) => matchesRepresentativeViewport(kind, viewport(record)))) errors.push(contractError(stage, scope, `V5 证据未覆盖代表性 ${kind} 视口`));
+  for (const record of records) if (!coverage.orientations.includes(measuredOrientation(viewport(record)))) errors.push(contractError(stage, scope, 'V4 证据视口方向不在 orientationPolicy.allowed 中'));
+  for (const kind of coverage.viewportKinds) if (!records.some((record) => matchesRepresentativeViewport(kind, viewport(record)))) errors.push(contractError(stage, scope, `V4 证据未覆盖代表性 ${kind} 视口`));
   const dprCoverage = {
     'dpr-1': records.some((record) => effective(record) === 1),
     'dpr-1.25-or-1.5': records.some((record) => [1.25, 1.5].includes(effective(record))),
     'dpr-2': records.some((record) => effective(record) === 2),
     'dpr-over-2-capped': records.some((record) => raw(record) > 2 && effective(record) === 2),
   };
-  for (const requirement of REPRESENTATIVE_DPR_REQUIREMENTS) if (!dprCoverage[requirement]) errors.push(contractError(stage, scope, `V5 证据未覆盖 ${requirement}`));
+  for (const requirement of REPRESENTATIVE_DPR_REQUIREMENTS) if (!dprCoverage[requirement]) errors.push(contractError(stage, scope, `V4 证据未覆盖 ${requirement}`));
   const transitions = records.slice(1).map((record, index) => {
     const previous = records[index];
     const samePage = record.samePageWithPrevious === true && record.pageReloaded === false
@@ -479,25 +475,25 @@ function validateMeasuredMatrix(records, stage, scope, contract) {
     const before = viewport(previous); const after = viewport(record);
     return { samePage, viewportChanged: before.width !== after.width || before.height !== after.height, before, after, previousDpr: effective(previous), currentDpr: effective(record) };
   });
-  if (!transitions.some((item) => item.samePage && item.viewportChanged)) errors.push(contractError(stage, scope, 'V5 证据未覆盖 same-page-resize'));
-  if (!transitions.some((item) => item.samePage && item.previousDpr > 1 && item.currentDpr === 1)) errors.push(contractError(stage, scope, 'V5 证据未覆盖 dpr-drop-to-1'));
-  if (!transitions.some((item) => item.samePage && item.viewportChanged && item.previousDpr === item.currentDpr)) errors.push(contractError(stage, scope, 'V5 证据未覆盖 dpr-unchanged-resize'));
-  if (coverage.requiresOrientationChange && !hasSamePageOrientationChange(records, viewport)) errors.push(contractError(stage, scope, 'V5 证据未覆盖 orientation-change'));
+  if (!transitions.some((item) => item.samePage && item.viewportChanged)) errors.push(contractError(stage, scope, 'V4 证据未覆盖 same-page-resize'));
+  if (!transitions.some((item) => item.samePage && item.previousDpr > 1 && item.currentDpr === 1)) errors.push(contractError(stage, scope, 'V4 证据未覆盖 dpr-drop-to-1'));
+  if (!transitions.some((item) => item.samePage && item.viewportChanged && item.previousDpr === item.currentDpr)) errors.push(contractError(stage, scope, 'V4 证据未覆盖 dpr-unchanged-resize'));
+  if (coverage.requiresOrientationChange && !hasSamePageOrientationChange(records, viewport)) errors.push(contractError(stage, scope, 'V4 证据未覆盖 orientation-change'));
   return errors;
 }
 
-/** 校验 V5 证据清单，要求每个可见单元独立记录且绑定当前候选。 */
+/** 校验 V4 证据清单，要求每个可见单元独立记录且绑定当前候选。 */
 export function validateResponsiveEvidenceManifest(value, contract = null, options = {}) {
   const worldContract = resolveWorldViewportContract(contract) ?? resolveWorldViewportContract(value);
   if (worldContract) return validateWorldViewportEvidenceManifest(value, worldContract, options);
-  const stage = String(options.stage ?? value?.currentStage ?? value?.current_stage ?? 'V5').toUpperCase();
+  const stage = String(options.stage ?? value?.currentStage ?? value?.current_stage ?? 'V4').toUpperCase();
   const source = Array.isArray(value) ? value : value?.responsiveEvidence ?? value?.responsiveRuntimeEvidence ?? value?.responsive_runtime_evidence ?? value?.runtimeEvidence;
   const errors = [];
   const nestedContract = contract?.responsiveViewportContract ?? contract?.responsiveContract ?? contract?.responsive_contract;
   if (nestedContract !== undefined && nestedContract !== null) {
     for (const error of validateOrientationPolicyConsistency(contract?.orientationPolicy, nestedContract?.orientationPolicy)) errors.push(contractError(stage, '*', error));
   }
-  if (!Array.isArray(source) || source.length === 0) return [contractError(stage, '*', 'V5 缺少真实响应式运行证据数组', 'responsiveEvidence')];
+  if (!Array.isArray(source) || source.length === 0) return [contractError(stage, '*', 'V4 缺少真实响应式运行证据数组', 'responsiveEvidence')];
   const records = source;
   for (const [index, record] of records.entries()) errors.push(...validateResponsiveEvidenceRecord(record, contract, { ...options, stage, scope: record?.displayLayerId ?? record?.sceneId ?? `record-${index}` }));
   const requiredUnits = options.requiredUnits ?? [];
@@ -524,10 +520,10 @@ export function assertResponsiveContract(value, options = {}) {
 export const responsiveViewportContract = Object.freeze({
   version: RESPONSIVE_CONTRACT_VERSION,
   worldVersion: WORLD_VIEWPORT_SCHEMA_VERSION,
-  fields: RESPONSIVE_CONTRACT_FIELDS,
-  evidenceFields: RUNTIME_EVIDENCE_FIELDS,
   worldContract: validateWorldViewportContract,
   worldEvidenceFields: WORLD_VIEWPORT_EVIDENCE_FIELDS,
+  fields: RESPONSIVE_CONTRACT_FIELDS,
+  evidenceFields: RUNTIME_EVIDENCE_FIELDS,
   validate: validateResponsiveContract,
   validateEvidence: validateResponsiveEvidenceManifest,
 });

@@ -11,16 +11,25 @@ import {
   RESPONSIVE_CONTRACT_FIELDS,
   RUNTIME_EVIDENCE_FIELDS,
   computeCanvasBackingSize,
-  expectedBackingSize,
+  isResponsiveWorkItem,
   normalizeRuntimeDpr,
   validateResponsiveContract,
   validateResponsiveEvidenceManifest,
   validateResponsiveEvidenceRecord,
 } from './responsive-viewport-contract.mjs';
 
-const CANDIDATE = `sha256:${'a'.repeat(64)}`;
 const WORK_ITEM_SCHEMA = JSON.parse(readFileSync(new URL('../references/work-item.schema.json', import.meta.url), 'utf8'));
 const IMPLEMENTATION_PACKAGE_SCHEMA = JSON.parse(readFileSync(new URL('../references/implementation-package.schema.json', import.meta.url), 'utf8'));
+
+/** 正式运行阶段收敛到 V4，避免数字范围继续把旧 V5 当成合法响应式工作项。 */
+test('响应式工作项范围仅包含 V1-V4', () => {
+  for (const visualStage of ['V1', 'V2', 'V3', 'V4', 'v4']) {
+    assert.equal(isResponsiveWorkItem({ visualStage, visibleVisualProductionIntegration: true }), true);
+  }
+  for (const visualStage of ['V0', 'V5', 'V6']) {
+    assert.equal(isResponsiveWorkItem({ visualStage, visibleVisualProductionIntegration: true }), false);
+  }
+});
 
 /** 构造覆盖默认 usability 矩阵的工作流响应式合同。 */
 function makeContract() {
@@ -30,13 +39,13 @@ function makeContract() {
     visualBaselineVersion: 'visual-baseline/1.0',
     logicalViewportSpace: { unit: 'css-logical-px', coordinateSpace: 'css-logical' },
     designResolutionPolicy: {
-      portrait: { width: 1080, height: 1920, fitAxis: 'height' },
-      landscape: { width: 1920, height: 1080, fitAxis: 'width' },
+      portrait: { width: 1080, height: 1920, fitAxis: 'width' },
+      landscape: { width: 1920, height: 1080, fitAxis: 'height' },
       canvasFit: 'fill-viewport',
       crossAxis: 'extend-or-crop',
       backgroundFit: { mode: 'cover-v1', sourceFocalPoint: { x: 0.5, y: 0.5 }, targetPoint: { x: 0.5, y: 0.5 } },
     },
-    canvasBackingPolicy: { relation: 'logical-size-times-effective-dpr', rounding: 'floor' },
+    canvasBackingPolicy: { relation: 'logical-size-times-effective-dpr', rounding: 'round' },
     runtimeDprPolicy: { source: 'devicePixelRatio', dynamic: true, invalidFallback: 1, cap: 2, updatesOn: ['resize', 'orientation-change', 'display-density-change', 'same-page-resize'] },
     maxRuntimeDpr: 2,
     scaleMode: 'RESIZE',
@@ -102,7 +111,6 @@ function makeEvidence(overrides = {}) {
     screenshot: 'evidence/scene.png',
     sceneId: 'play',
     stateId: 'default',
-    candidateSha256: CANDIDATE,
     layoutContractVersion: 'layout/1.0',
     visualBaselineVersion: 'visual-baseline/1.0',
     matrixCases: [...REPRESENTATIVE_DPR_REQUIREMENTS, ...REPRESENTATIVE_BEHAVIOR_REQUIREMENTS],
@@ -115,7 +123,7 @@ function makeMeasuredEvidence(width, height, rawDpr, overrides = {}) {
   const effectiveDpr = normalizeRuntimeDpr(rawDpr);
   return makeEvidence({
     viewportRect: { width, height }, canvasRect: { width, height }, designTransform: calculateFixedDesignViewport({ width, height }), logicalSize: { width, height },
-    cssDisplaySize: { width, height }, backingSize: { width: Math.floor(width * effectiveDpr), height: Math.floor(height * effectiveDpr) },
+    cssDisplaySize: { width, height }, backingSize: { width: Math.ceil(width * effectiveDpr), height: Math.ceil(height * effectiveDpr) },
     rawDevicePixelRatio: rawDpr, effectiveDevicePixelRatio: effectiveDpr, cssToPhysicalScale: { x: effectiveDpr, y: effectiveDpr },
     gameSize: { width, height }, cameraViewport: { width, height },
     ...overrides,
@@ -146,7 +154,7 @@ function makeSingleOrientationMeasurements(orientation) {
   }));
 }
 
-test('单方向合同与 V5 证据无需另一方向设计、视口或切换轨迹', () => {
+test('单方向合同与 V4 证据无需另一方向设计、视口或切换轨迹', () => {
   for (const orientation of ['portrait', 'landscape']) {
     const contract = makeSingleOrientationContract(orientation);
     assert.deepEqual(validateResponsiveContract(contract), [], orientation);
@@ -175,7 +183,7 @@ test('双方向声明继续要求另一方向和同页方向切换，非法方�
   }
 });
 
-test('响应式合同覆盖 18 个字段、运行时 DPR 和生产 2 DPR 分离', () => {
+test('响应式合同覆盖 18 个字段、运行时 DPR 和 1:1 图片生产分离', () => {
   const contract = makeContract();
   assert.equal(RESPONSIVE_CONTRACT_FIELDS.length, 18);
   assert.deepEqual(validateResponsiveContract(contract, { stage: 'V1' }), []);
@@ -191,7 +199,6 @@ test('响应式合同覆盖 18 个字段、运行时 DPR 和生产 2 DPR 分离'
   assert.equal(normalizeRuntimeDpr(-1), 1);
   assert.equal(normalizeRuntimeDpr(3), 2);
   assert.deepEqual(computeCanvasBackingSize({ width: 320, height: 800 }, 1, 2), { width: 640, height: 1600 });
-  assert.deepEqual(expectedBackingSize({ width: 390.5, height: 844.5 }, 1.5), { width: 585, height: 1266 });
 });
 
 test('固定横竖屏设计基准、填满画布和背景 cover 必须符合合同', () => {
@@ -200,12 +207,12 @@ test('固定横竖屏设计基准、填满画布和背景 cover 必须符合合�
   assert.match(validateResponsiveContract(missing).join('\n'), /designResolutionPolicy/);
 
   const portrait = makeContract();
-  portrait.designResolutionPolicy.portrait.fitAxis = 'width';
-  assert.match(validateResponsiveContract(portrait).join('\n'), /portrait 必须为 1080×1920 且按 height 适配/);
+  portrait.designResolutionPolicy.portrait.fitAxis = 'height';
+  assert.match(validateResponsiveContract(portrait).join('\n'), /portrait 必须为 1080×1920 且按 width 适配/);
 
   const landscape = makeContract();
   landscape.designResolutionPolicy.landscape.width = 1280;
-  assert.match(validateResponsiveContract(landscape).join('\n'), /landscape 必须为 1920×1080 且按 width 适配/);
+  assert.match(validateResponsiveContract(landscape).join('\n'), /landscape 必须为 1920×1080 且按 height 适配/);
 
   const canvasBars = makeContract();
   canvasBars.designResolutionPolicy.canvasFit = 'fit';
@@ -227,11 +234,9 @@ test('固定横竖屏设计基准、填满画布和背景 cover 必须符合合�
 test('Work Item 与 Implementation Package 根级和嵌套响应式合同都要求设计分辨率策略', () => {
   for (const [label, schema] of [['Work Item', WORK_ITEM_SCHEMA], ['Implementation Package', IMPLEMENTATION_PACKAGE_SCHEMA]]) {
     assert.ok(schema.properties.designResolutionPolicy, `${label} 根属性应声明 designResolutionPolicy`);
-    const responsiveRule = schema.allOf.find((rule) => JSON.stringify(rule.if ?? {}).includes('world-3d'));
-    assert.ok(responsiveRule?.else?.then?.required?.includes('designResolutionPolicy'), `${label} HUD 根合同应要求 designResolutionPolicy`);
-    assert.ok(schema.$defs.hudResponsiveViewportContract.required.includes('designResolutionPolicy'), `${label} HUD 嵌套合同应要求 designResolutionPolicy`);
-    assert.ok(schema.$defs.hudResponsiveViewportContract.properties.designResolutionPolicy, `${label} HUD 嵌套合同应声明 designResolutionPolicy`);
-    assert.ok(schema.$defs.worldViewportContract.required.includes('renderSpace'), `${label} world-3d 合同应使用独立字段`);
+    assert.ok(schema.allOf.some((rule) => rule.else?.then?.required?.includes('designResolutionPolicy')), `${label} 根响应式合同应要求 designResolutionPolicy`);
+    assert.ok(schema.$defs.hudResponsiveViewportContract.required.includes('designResolutionPolicy'), `${label} 嵌套响应式合同应要求 designResolutionPolicy`);
+    assert.ok(schema.$defs.hudResponsiveViewportContract.properties.designResolutionPolicy, `${label} 嵌套响应式合同应声明 designResolutionPolicy`);
   }
 
   const nestedOnly = { responsiveViewportContract: makeContract() };
@@ -251,9 +256,11 @@ test('合同拒绝缺失矩阵、DPR 上限和生产 DPR 混写', () => {
   badCap.maxRuntimeDpr = 3;
   assert.match(validateResponsiveContract(badCap).join('\n'), /maxRuntimeDpr/);
 
-  const mixed = makeContract();
-  mixed.assetResolutionPolicy.productionDpr = 1.5;
-  assert.match(validateResponsiveContract(mixed).join('\n'), /生产 DPR/);
+  for (const productionDpr of [1.5, 2]) {
+    const mixed = makeContract();
+    mixed.assetResolutionPolicy.productionDpr = productionDpr;
+    assert.match(validateResponsiveContract(mixed).join('\n'), /生产 DPR/, `旧或非整数图片生产倍率不得放行：${productionDpr}`);
+  }
 
   for (const shorthand of ['12', '1.25', '2.5', 'productionDpr=3']) {
     const unstructured = makeContract();
@@ -262,11 +269,11 @@ test('合同拒绝缺失矩阵、DPR 上限和生产 DPR 混写', () => {
   }
 });
 
-test('V5 证据验证 CSS/backing、动态 DPR、矩阵和候选身份', () => {
+test('V4 证据验证 CSS/backing、动态 DPR 和实测矩阵', () => {
   const contract = makeContract();
   const evidence = makeEvidence();
-  assert.deepEqual(validateResponsiveEvidenceRecord(evidence, contract, { candidateSha256: CANDIDATE }), []);
-  const wrongAxis = makeEvidence({ designTransform: { ...evidence.designTransform, scale: 320 / 1080 } });
+  assert.deepEqual(validateResponsiveEvidenceRecord(evidence, contract), []);
+  const wrongAxis = makeEvidence({ designTransform: { ...evidence.designTransform, scale: 800 / 1920 } });
   assert.match(validateResponsiveEvidenceRecord(wrongAxis, contract).join('\n'), /designTransform.scale/);
   const bars = makeEvidence({ canvasRect: { x: 0, y: 25, width: 320, height: 775 } });
   assert.match(validateResponsiveEvidenceRecord(bars, contract).join('\n'), /Canvas 必须填满真实 CSS 视口/);
@@ -279,7 +286,7 @@ test('V5 证据验证 CSS/backing、动态 DPR、矩阵和候选身份', () => {
     makeMeasuredEvidence(1366, 768, 2, { contextId: 'page-b' }),
     makeMeasuredEvidence(1280, 720, 3, { contextId: 'page-b', samePageWithPrevious: true }),
   ];
-  assert.deepEqual(validateResponsiveEvidenceManifest({ responsiveEvidence: matrix }, contract, { candidateSha256: CANDIDATE, requiredUnits: [{ unitType: 'SCENE', sceneId: 'play' }] }), []);
+  assert.deepEqual(validateResponsiveEvidenceManifest({ responsiveEvidence: matrix }, contract, { requiredUnits: [{ unitType: 'SCENE', sceneId: 'play' }] }), []);
 
   const borrowedMatrix = [...matrix, makeMeasuredEvidence(390, 844, 1, { sceneId: 'secondary', contextId: 'secondary-page' })];
   assert.match(validateResponsiveEvidenceManifest({ responsiveEvidence: borrowedMatrix }, contract, { requiredUnits: [{ unitType: 'SCENE', sceneId: 'play' }, { unitType: 'SCENE', sceneId: 'secondary' }] }).join('\n'), /secondary.*narrow-portrait|secondary.*代表性/);
@@ -291,8 +298,10 @@ test('V5 证据验证 CSS/backing、动态 DPR、矩阵和候选身份', () => {
   assert.match(validateResponsiveEvidenceRecord(badDpr, contract).join('\n'), /rawDevicePixelRatio/);
   const badBacking = { ...evidence, backingSize: { width: 641, height: 1600 } };
   assert.match(validateResponsiveEvidenceRecord(badBacking, contract).join('\n'), /backing/);
-  const badCandidate = { ...evidence, candidateSha256: `sha256:${'b'.repeat(64)}` };
-  assert.match(validateResponsiveEvidenceRecord(badCandidate, contract, { candidateSha256: CANDIDATE }).join('\n'), /candidateSha256/);
+  for (const candidateSha256 of [undefined, 'sha256:stale']) {
+    const withoutCurrentDigest = { ...evidence, candidateSha256 };
+    assert.deepEqual(validateResponsiveEvidenceRecord(withoutCurrentDigest, contract), []);
+  }
   const unverified = { ...evidence, verificationStatus: 'unverified', runtimeMeasured: false };
   assert.match(validateResponsiveEvidenceRecord(unverified, contract).join('\n'), /verified\/PASS/);
   assert.match(validateResponsiveEvidenceRecord({ ...evidence, verificationStatus: 'fail' }, contract).join('\n'), /verified\/PASS/);
@@ -307,7 +316,7 @@ test('V5 证据验证 CSS/backing、动态 DPR、矩阵和候选身份', () => {
 
 test('DISPLAY_LAYER 必须有自己的宿主同屏和 open/interact/close/restore 轨迹', () => {
   const display = makeEvidence({ displayLayerId: 'pause', hostSceneId: 'play', hostSceneState: 'default', resizeTrajectory: [{ event: 'open' }, { event: 'interact' }, { event: 'same-page-resize' }, { event: 'close' }, { event: 'restore' }] });
-  assert.deepEqual(validateResponsiveEvidenceRecord(display, makeContract(), { unitType: 'DISPLAY_LAYER', candidateSha256: CANDIDATE }), []);
+  assert.deepEqual(validateResponsiveEvidenceRecord(display, makeContract(), { unitType: 'DISPLAY_LAYER' }), []);
   const missingRestore = { ...display, resizeTrajectory: [{ event: 'open' }, { event: 'interact' }, { event: 'close' }] };
   assert.match(validateResponsiveEvidenceRecord(missingRestore, makeContract(), { unitType: 'DISPLAY_LAYER' }).join('\n'), /restore/);
 });

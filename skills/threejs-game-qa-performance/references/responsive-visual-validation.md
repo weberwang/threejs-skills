@@ -2,7 +2,7 @@
 
 本文件是 QA 的测量字段、假通过禁令、代表性/完整 viewport 证据、同页面动态 resize、根因
 分类、只读 Hook 和脚本用法的唯一详细事实来源。视觉验证由 `visual_validation.mode=usability|exact`
-控制，默认 `usability`；契约字段和 V1-V5 门禁见总控的
+控制，默认 `usability`；契约字段和 V1/V2/V3/V4 门禁见总控的
 [`threejs-game-ui-layout` 布局合同](../../threejs-game-ui-layout/references/layout-contract.md)。
 资产流程只引用本文件，不复制规范。
 
@@ -19,13 +19,13 @@
 ## 适用阶段与结论
 
 - **V1**：确认契约是否定义浏览器 viewport、Canvas、逻辑坐标、safe area 四层关系，
-  FIT/RESIZE/COVER、响应式锚点和断点重排，背景覆盖目标，留白/裁切/拉伸许可，
+  项目自定义 `custom` 视口策略、响应式锚点和断点重排，背景覆盖目标，留白/裁切/拉伸许可，
   代表性视口，以及动态文本、显隐、滚动、触控、resize 和项目支持方向策略。方向以
   `orientationPolicy.allowed` 为准；单方向项目只覆盖该方向，双方向项目才要求方向切换。
   只有 `exact` 或项目明确要求时才冻结完整的基准/最窄/最宽/支持方向/安全区矩阵。缺少影响可用性的核心关系才输出
   `响应式契约缺失`，阻断 V2。
 - **V2 F1**：核对当前候选与任务内响应式规格和布局合同一致；不在 F1 执行工程验证。
-- **V5 F2**：确定性机器分别检查资源的满幅能力、锚点/字体/九宫格/缩放和预算；不能
+- **V4 F2**：确定性机器分别检查资源的满幅能力、锚点/字体/九宫格/缩放和预算；不能
   用算法验证或 Canvas ROI 代替生产场景证据。
 
 ## 契约输入
@@ -34,8 +34,8 @@
 
 ```json
 {
-  "schema_version": "1.1.0",
-  "contract_version": "1.1.0",
+  "schema_version": "1.2.0",
+  "contract_version": "1.2.0",
   "scope": {
     "scenes": ["MainScene"],
     "states": ["default"],
@@ -51,7 +51,7 @@
   "orientationPolicy": { "allowed": ["portrait", "landscape"] },
   "viewport": {
     "mode": "full-viewport",
-    "strategy": "RESIZE",
+    "strategy": "custom",
     "allowWhitespace": true,
     "whitespaceTolerancePx": 8,
     "backgroundCoverageTarget": 1,
@@ -76,7 +76,7 @@
 示例声明双方向，因此 `landscape` 视口和 resize 轨迹属于有效样本；单方向项目应按
 `orientationPolicy.allowed` 删除另一方向的视口，并在支持方向内保留窄/宽尺寸、DPR 与连续 resize 覆盖。
 
-`viewport.allowWhitespace` 未定义时必须输出 `decision_gap`，即使测量看似通过；
+`viewport.strategy` 描述项目采用的视口策略，不是 three.js 渲染器或布局 API 的枚举；正式布局合同根字段 `scaleMode` 使用 `custom`。`viewport.allowWhitespace` 未定义时必须输出 `decision_gap`，即使测量看似通过；
 定义为 `false` 时四边空隙超过 `whitespaceTolerancePx` 失败。`mode: full-viewport`
 仍表示单次截图要包含完整页面（允许的 safe area inset 仍需单独记录），但默认
 `usability` 只需在代表性视口采集，不要求穷举所有断点和状态。`strategy: FIT` 的结论最多为
@@ -167,7 +167,7 @@ viewport 变化以及 Canvas 或关键 UI 的布局变化；刷新、跨 context
 报告使用以下互斥优先级；多因时标注主因/次因：
 
 1. `方案缺失`：目标行为未定义或契约字段缺失（先回 V1）。
-2. `执行问题`：契约已明确，但实现、资源绑定或适配算法不符（回 V3/V5）。
+2. `执行问题`：契约已明确，但实现、资源绑定或适配算法不符（回 V3/V4）。
 3. `验收问题`：缺陷存在却已越过门禁或证据不足仍给通过（撤销结论，回对应 F1/F2/F3）。
 
 尚未给出通过结论的缺证只标记 `unverified`，不能为了填满根因字段而自动归为验收问题。

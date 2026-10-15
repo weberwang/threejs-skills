@@ -7,7 +7,7 @@ import test from 'node:test';
 import { assertSceneWorkItemComplete, createExecutionState, executionStatePath } from './execution-unit-control.mjs';
 import { prepareSceneStageTransition } from './scene-stage-transition.mjs';
 import { prepareImplementationTransition } from './workflow-implementation-transition.mjs';
-import { bindConfirmedSketchFixture } from './workflow-page-sketch-fixture.mjs';
+import { bindVisualEvidenceFixture } from './workflow-visual-evidence-fixture.mjs';
 
 const BASELINE_SHA = `sha256:${'a'.repeat(64)}`;
 const CANDIDATE_SHA = `sha256:${'b'.repeat(64)}`;
@@ -44,9 +44,9 @@ function fixtureIo() {
   };
 }
 
-/** 构造字段封闭的 V2 冻结方案，并绑定 V3 资源、V4 草图和 V5 运行证据。 */
+/** 构造字段封闭的 V2 冻结方案，并绑定直接消费的 V3 资源与 V4 运行证据。 */
 function makeSceneFixture() {
-  const repo = mkdtempSync(join(tmpdir(), 'scene-stage-v5-'));
+  const repo = mkdtempSync(join(tmpdir(), 'scene-stage-v4-'));
   const sceneId = 'main-scene';
   const referenceFile = 'docs/reference.png';
   const targetSha256 = hashBytes(Buffer.from('frozen reference bytes\n'));
@@ -65,7 +65,7 @@ function makeSceneFixture() {
   const artifact = (file, sha256 = hashBytes(readFileSync(resolve(repo, file)))) => ({ file, sha256, sceneId });
   const plan = {
     schemaVersion: 'threejs-scene-v2-reconstruction-plan/1.0',
-    workItemId: 'WI-SCENE-V5',
+    workItemId: 'WI-SCENE-V4',
     status: 'COMPLETE',
     stage: 'V2',
     frozen: true,
@@ -92,15 +92,15 @@ function makeSceneFixture() {
     displayLayerContexts: [],
   };
   const v2 = writeJson(repo, 'docs/v2-plan.json', plan);
-  const pkg = { packageId: 'PKG-V5-SCENE', baselineVersion: '1', executionUnits: [{ unitId: 'SCENE-MAIN', unitType: 'SCENE' }] };
+  const pkg = { packageId: 'PKG-V4-SCENE', baselineVersion: '1', executionUnits: [{ unitId: 'SCENE-MAIN', unitType: 'SCENE' }] };
   const work = {
-    workItemId: 'WI-SCENE-V5',
+    workItemId: 'WI-SCENE-V4',
     baselineHash: BASELINE_SHA,
-    visualStage: 'V5',
+    visualStage: 'V4',
     visualStageEvidenceRefs: { V2: v2 },
   };
-  const bound = bindConfirmedSketchFixture({ repo, work, pkg });
-  const packagePath = 'docs/implementation-package-v5.json';
+  const bound = bindVisualEvidenceFixture({ repo, work, pkg });
+  const packagePath = 'docs/implementation-package-v4.json';
   writeJson(repo, packagePath, pkg);
   Object.assign(work, {
     domain: 'visual',
@@ -135,14 +135,12 @@ function transition(fixture, work, target, args) {
   });
 }
 
-/** 按正式顺序将严格 V2 方案推进到 V4 草图人工确认。 */
-function confirmSketch(fixture) {
+/** 按正式顺序推进到 V3 正式资源验收完成，作为 V4 激活的直接前置。 */
+function completeV3Acceptance(fixture) {
   const v3 = transition(fixture, fixture.work, 'REVIEW', { 'visual-stage': 'V3' }).nextWork;
   assert.equal(v3.visualStageState, 'in-progress');
-  const v4Draft = transition(fixture, v3, 'REVIEW', { 'visual-stage': 'V4' }).nextWork;
-  assert.equal(v4Draft.visualStageState, 'in-progress');
-  const v4Confirmed = transition(fixture, v4Draft, 'REVIEW', { 'visual-stage': 'V4', 'visual-stage-state': 'v4-page-sketch-confirmed' }).nextWork;
-  return { v3, v4Draft, v4Confirmed };
+  const accepted = transition(fixture, v3, 'REVIEW', { 'visual-stage': 'V3', 'visual-stage-state': 'v3-formal-acceptance-complete' }).nextWork;
+  return accepted;
 }
 
 /** 提供读取实施包与校验阶段提交所需的内存适配器。 */
@@ -153,16 +151,16 @@ function validationContext(repo) {
   };
 }
 
-/** 在已确认草图上激活 V5 新包，并返回可继续提交运行候选的 Work Item。 */
-function activateV5(fixture, v4Work, stageId) {
+/** 在 V3 PASS 证据上通过 A3 激活 V4 新包，并返回可继续提交运行候选的 Work Item。 */
+function activateV4(fixture, v3Work, stageId) {
   const prior = {
-    ...v4Work,
-    pendingVisualPrerequisiteSnapshot: { staleStage: 'V4' },
+    ...v3Work,
+    pendingVisualPrerequisiteSnapshot: { staleStage: 'V3' },
     diffAuditRecord: { auditId: 'STALE-AUDIT' },
     diffAuditLedgerRecord: { ledgerId: 'STALE-LEDGER' },
   };
   const stageTransitionPlan = transition(fixture, prior, 'IMPLEMENTING', {
-    'visual-stage': 'V5',
+    'visual-stage': 'V4',
     ...(stageId ? { 'stage-id': stageId } : {}),
   });
   const initialized = [];
@@ -218,49 +216,53 @@ test('V2→V3 只接受严格冻结来源并清除旧阶段审计快照', () => 
   assert.notEqual(plan.nextWork.validationBatchId, fixture.work.validationBatchId);
 });
 
-test('V2真实源文件字节漂移会拒绝阶段推进且不修改原工作项', () => {
+test('V2来源文件字节漂移不因 SHA 摘要阻断阶段推进', () => {
   const fixture = makeSceneFixture();
   const before = structuredClone(fixture.work);
   writeFile(fixture.repo, 'docs/technical-decomposition.json', '{"source":"changed after freeze"}\n');
-  assert.throws(() => transition(fixture, fixture.work, 'REVIEW', { 'visual-stage': 'V3' }), /标准冻结拆解方案无效|file SHA\/path/);
+  const result = transition(fixture, fixture.work, 'REVIEW', { 'visual-stage': 'V3' });
+  assert.equal(result.nextWork.visualStage, 'V3');
   assert.deepEqual(fixture.work, before);
 });
 
-test('V3→V4进入进行态并在同阶段单独确认页面草图', () => {
+test('V3 正式资源 PASS 后直接激活新实施包进入 V4', () => {
   const fixture = makeSceneFixture();
-  const { v3, v4Draft, v4Confirmed } = confirmSketch(fixture);
+  const v3 = completeV3Acceptance(fixture);
   assert.equal(v3.visualStage, 'V3');
-  assert.equal(v4Draft.visualStage, 'V4');
-  assert.equal(v4Draft.visualStageState, 'in-progress');
-  assert.equal(v4Confirmed.visualStageState, 'v4-page-sketch-confirmed');
-  assert.equal(v4Confirmed.visualStageEvidenceRefs.V4.path, 'docs/page-sketch.json');
+  assert.equal(v3.visualStageState, 'v3-formal-acceptance-complete');
+  const activated = activateV4(fixture, v3);
+  assert.equal(activated.packageActivated, true);
+  assert.equal(activated.work.visualStage, 'V4');
+  assert.equal(activated.work.visualStageState, 'in-progress');
+  assert.deepEqual(Object.keys(activated.work.visualStageEvidenceRefs).sort(), ['V2', 'V3', 'V4']);
 });
 
-test('跳过V4或在进入阶段的同一次迁移中提交完成状态都会被拒绝', () => {
+test('V5 明确非法，V2 不能跳到 V4，V3 未完成不能激活正式包', () => {
   const fixture = makeSceneFixture();
-  assert.throws(() => transition(fixture, fixture.work, 'REVIEW', { 'visual-stage': 'V4' }), /V2→V3→V4→V5/);
+  assert.throws(() => transition(fixture, fixture.work, 'REVIEW', { 'visual-stage': 'V5' }), /未知视觉阶段/);
+  for (const stageId of ['V5', 'V6']) assert.throws(() => transition(fixture, fixture.work, 'REVIEW', { 'visual-stage': 'V3', 'stage-id': stageId }), /已知阶段且与 --visual-stage 一致/);
+  assert.throws(() => transition(fixture, fixture.work, 'IMPLEMENTING', { 'visual-stage': 'V4' }), /未知视觉阶段|V2→V3→V4/);
   const v3 = transition(fixture, fixture.work, 'REVIEW', { 'visual-stage': 'V3' }).nextWork;
-  assert.throws(() => transition(fixture, v3, 'REVIEW', { 'visual-stage': 'V4', 'visual-stage-state': 'v4-page-sketch-confirmed' }), /必须分两步/);
-  const { v4Confirmed } = confirmSketch(fixture);
-  assert.throws(() => transition(fixture, v4Confirmed, 'IMPLEMENTING', { 'visual-stage': 'V5', 'visual-stage-state': 'v5-runtime-integration-candidate' }), /必须分两步/);
-  assert.throws(() => transition(fixture, { ...v3, pendingApprovalActionLevel: 'A4' }, 'REVIEW', { 'visual-stage': 'V4' }), /不能替代/);
+  assert.throws(() => transition(fixture, v3, 'IMPLEMENTING', { 'visual-stage': 'V4' }), /V2→V3→V4 前进/);
+  const acceptedV3 = completeV3Acceptance(fixture);
+  assert.throws(() => transition(fixture, acceptedV3, 'IMPLEMENTING', { 'visual-stage': 'V4', 'visual-stage-state': 'v4-runtime-integration-candidate' }), /必须先通过 A3 激活/);
+  assert.throws(() => transition(fixture, { ...v3, pendingApprovalActionLevel: 'A4' }, 'REVIEW', { 'visual-stage': 'V5' }), /不能替代/);
 });
 
-test('存在旧 Execution State 时V3→V4草图阶段要求旧执行序列闭环', () => {
+test('存在旧 Execution State 时 V2→V3 入口要求旧执行序列闭环', () => {
   const fixture = makeSceneFixture();
-  const v3 = transition(fixture, fixture.work, 'REVIEW', { 'visual-stage': 'V3' }).nextWork;
-  const withState = attachIncompleteExecutionState(fixture, v3, 'V3');
-  assert.throws(() => transition(fixture, withState, 'REVIEW', { 'visual-stage': 'V4' }), /旧阶段实施序列尚未完成/);
+  const withState = attachIncompleteExecutionState(fixture, fixture.work, 'V2');
+  assert.throws(() => transition(fixture, withState, 'REVIEW', { 'visual-stage': 'V3' }), /旧阶段实施序列尚未完成/);
 });
 
-test('V4→V5实施包激活保留审批阶段身份并清除旧候选快照', () => {
+test('V3→V4 A3 实施包激活保留审批阶段身份并清除旧候选快照', () => {
   for (const stageId of [undefined, 'scene-runtime-approval']) {
     const fixture = makeSceneFixture();
-    const { v4Confirmed } = confirmSketch(fixture);
-    const result = activateV5(fixture, v4Confirmed, stageId);
-    const expectedStage = stageId ?? 'V5';
+    const v3Accepted = completeV3Acceptance(fixture);
+    const result = activateV4(fixture, v3Accepted, stageId);
+    const expectedStage = stageId ?? 'V4';
     assert.equal(result.packageActivated, true);
-    assert.equal(result.work.visualStage, 'V5');
+    assert.equal(result.work.visualStage, 'V4');
     assert.equal(result.work.visualStageState, 'in-progress');
     assert.equal(result.work.globalState, 'IMPLEMENTING');
     assert.equal(result.work.pendingApprovalState, 'IMPLEMENTING');
@@ -275,31 +277,32 @@ test('V4→V5实施包激活保留审批阶段身份并清除旧候选快照', (
   }
 });
 
-test('存在旧 Execution State 时V4→V5激活新包要求旧执行序列闭环', () => {
+test('存在旧 Execution State 时 V3→V4 激活新包要求旧执行序列闭环', () => {
   const fixture = makeSceneFixture();
-  const { v4Confirmed } = confirmSketch(fixture);
-  const withState = attachIncompleteExecutionState(fixture, v4Confirmed, 'V4');
-  assert.throws(() => transition(fixture, withState, 'IMPLEMENTING', { 'visual-stage': 'V5' }), /旧阶段实施序列尚未完成/);
+  const v3Accepted = completeV3Acceptance(fixture);
+  const withState = attachIncompleteExecutionState(fixture, v3Accepted, 'V3');
+  assert.throws(() => transition(fixture, withState, 'IMPLEMENTING', { 'visual-stage': 'V4' }), /旧阶段实施序列尚未完成/);
 });
 
-test('V5同阶段运行验收完成后，COMPLETE要求完整V2/V3/V4/V5 SHA链', () => {
+test('V4 同阶段运行验收完成后，COMPLETE 要求完整 V2/V3/V4 阶段证据链但不比较摘要', () => {
   const fixture = makeSceneFixture();
-  const { v4Confirmed } = confirmSketch(fixture);
-  const activated = activateV5(fixture, v4Confirmed).work;
+  const v3Accepted = completeV3Acceptance(fixture);
+  const activated = activateV4(fixture, v3Accepted).work;
   const completed = transition(fixture, activated, 'IMPLEMENTING', {
-    'visual-stage': 'V5',
-    'visual-stage-state': 'v5-runtime-integration-candidate',
+    'visual-stage': 'V4',
+    'visual-stage-state': 'v4-runtime-integration-candidate',
   }).nextWork;
-  assert.equal(completed.visualStage, 'V5');
-  assert.equal(completed.visualStageState, 'v5-runtime-integration-candidate');
+  assert.equal(completed.visualStage, 'V4');
+  assert.equal(completed.visualStageState, 'v4-runtime-integration-candidate');
   assert.doesNotThrow(() => assertSceneWorkItemComplete(completed, fixture.pkg, fixture.repo, { diffFingerprint: DIFF_SHA }));
-  assert.throws(() => assertSceneWorkItemComplete(completed, fixture.pkg, fixture.repo, { diffFingerprint: `sha256:${'d'.repeat(64)}` }), /diff 身份不一致/);
+  assert.doesNotThrow(() => assertSceneWorkItemComplete(completed, fixture.pkg, fixture.repo, { diffFingerprint: 'sha256:stale' }));
+  assert.doesNotThrow(() => assertSceneWorkItemComplete(completed, fixture.pkg, fixture.repo));
   const missingV3 = { ...completed, visualStageEvidenceRefs: { ...completed.visualStageEvidenceRefs, V3: undefined } };
   assert.throws(() => assertSceneWorkItemComplete(missingV3, fixture.pkg, fixture.repo, { diffFingerprint: DIFF_SHA }), /V3|未闭合/);
 });
 
 /** 设计阶段与草图尚未进入正式运行态，不能关闭场景工作项。 */
-test('V2/V3/V4不得提前COMPLETE，普通非视觉工作不受场景完成门影响', () => {
-  for (const visualStage of ['V2', 'V3', 'V4']) assert.throws(() => assertSceneWorkItemComplete({ visualStage }, null, '.'), /只有 V5/);
+test('V2/V3不得提前 COMPLETE，普通非视觉工作不受场景完成门影响', () => {
+  for (const visualStage of ['V2', 'V3']) assert.throws(() => assertSceneWorkItemComplete({ visualStage }, null, '.'), /只有 V4/);
   assert.equal(assertSceneWorkItemComplete({ stageId: 'G1' }, null, '.'), true);
 });

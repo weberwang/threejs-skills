@@ -31,7 +31,7 @@ function planning({ inventory = [], persistentLayerIds = [] } = {}) {
   };
 }
 
-/** 构造带宿主上下文图和 V5 运行轨迹的完整瞬态显示层。 */
+/** 构造带宿主上下文图和 V4 运行轨迹的完整瞬态显示层。 */
 function completeTransientLayer(overrides = {}) {
   return {
     layer_id: "pause-modal",
@@ -266,7 +266,7 @@ test("场景规划拒绝 deferred_layers，弹窗必须拆为独立工作项", (
   assert.ok(errors.some((item) => item.includes("deferred_layers 已移除")), errors.join(" | "));
 });
 
-test("独立弹窗工作项仍校验完整上下文与自身 V5 轨迹", () => {
+test("独立弹窗工作项仍校验完整上下文与自身 V4 轨迹", () => {
   const complete = completeTransientLayer();
   delete complete.states[0].contextual_effect_image;
   const missingContext = validateDisplayLayerPlanning(planning({ inventory: [complete] }), targetInfo(), { stage: "V1" });
@@ -274,10 +274,10 @@ test("独立弹窗工作项仍校验完整上下文与自身 V5 轨迹", () => {
 
   const withoutReplay = completeTransientLayer();
   delete withoutReplay.runtime_replay;
-  const v5Errors = validateDisplayLayerPlanning(planning({ inventory: [withoutReplay] }), targetInfo(), { stage: "V5" });
-  assert.ok(v5Errors.some((item) => item.includes("runtime_replay")));
+  const v4Errors = validateDisplayLayerPlanning(planning({ inventory: [withoutReplay] }), targetInfo(), { stage: "V4" });
+  assert.ok(v4Errors.some((item) => item.includes("runtime_replay")));
 
-  assert.deepEqual(validateDisplayLayerPlanning(planning({ inventory: [completeTransientLayer()] }), targetInfo(), { stage: "V5" }), []);
+  assert.deepEqual(validateDisplayLayerPlanning(planning({ inventory: [completeTransientLayer()] }), targetInfo(), { stage: "V4" }), []);
 });
 
 test("独立弹窗可以引用其他工作项的 HUD 或弹窗关系", () => {

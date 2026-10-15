@@ -37,7 +37,7 @@ function clamp(value, minimum, maximum) {
 /**
  * 计算装饰性满幅背景的等比 cover 变换。
  *
- * 结果中的 x/y 是屏幕空间源图的左上角位置（CSS/HUD 逻辑坐标），crop 使用
+ * 结果中的 x/y 是源图使用 ThreeJS `setOrigin(0)` 时的左上角位置，crop 使用
  * 与 viewport 相同的显示坐标单位；调用方可以直接执行 setPosition(x, y)
  * 与 setScale(scale)，而焦点偏移超出可裁切范围时会被 clamp，避免露出空隙。
  *

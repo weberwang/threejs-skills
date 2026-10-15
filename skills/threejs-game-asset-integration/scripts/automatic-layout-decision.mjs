@@ -10,7 +10,6 @@ import { isValidAxisAlignment } from "../../threejs-game-workflow-control/script
 
 export const AUTOMATIC_LAYOUT_DECISION_SCHEMA = "automatic-layout-decision/1.0";
 export const AUTOMATIC_LAYOUT_DECISION_METHOD = "visual-judgement";
-const SHA_PATTERN = /^sha256:[a-f0-9]{64}$/;
 
 /** 判断普通对象。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -23,13 +22,12 @@ function nonEmptyString(value) { return typeof value === "string" && value.trim(
  */
 export function validateAutomaticLayoutDecision(document, context = {}, errors = [], label = "automatic_layout_decision") {
   if (!isObject(document)) { errors.push(`${label} 必须是 JSON 对象`); return null; }
-  for (const field of ["decision_schema", "decision_id", "decision_method", "target_sha256", "scene_id", "state_id", "decomposition_confirmation_id", "decomposition_confirmation_sha256", "proposal_sha256"]) {
+  for (const field of ["decision_schema", "decision_id", "decision_method", "scene_id", "state_id", "decomposition_confirmation_id"]) {
     if (!nonEmptyString(document[field])) errors.push(`${label}.${field} 必须是非空字符串`);
   }
   if (document.decision_schema !== AUTOMATIC_LAYOUT_DECISION_SCHEMA) errors.push(`${label}.decision_schema 必须为 ${AUTOMATIC_LAYOUT_DECISION_SCHEMA}`);
   if (document.decision_method !== AUTOMATIC_LAYOUT_DECISION_METHOD) errors.push(`${label}.decision_method 必须为 ${AUTOMATIC_LAYOUT_DECISION_METHOD}`);
-  for (const field of ["target_sha256", "decomposition_confirmation_sha256", "proposal_sha256"]) if (nonEmptyString(document[field]) && !SHA_PATTERN.test(document[field])) errors.push(`${label}.${field} 必须是合法 sha256`);
-  for (const [field, expected] of [["target_sha256", context.targetSha256 ?? context.target_sha256], ["scene_id", context.sceneId ?? context.scene_id], ["state_id", context.stateId ?? context.state_id], ["decomposition_confirmation_id", context.decompositionConfirmationId ?? context.decomposition_confirmation_id], ["decomposition_confirmation_sha256", context.decompositionConfirmationSha256 ?? context.decomposition_confirmation_sha256], ["proposal_sha256", context.proposalSha256 ?? context.proposal_sha256]]) {
+  for (const [field, expected] of [["scene_id", context.sceneId ?? context.scene_id], ["state_id", context.stateId ?? context.state_id], ["decomposition_confirmation_id", context.decompositionConfirmationId ?? context.decomposition_confirmation_id]]) {
     if (expected !== undefined && document[field] !== expected) errors.push(`${label}.${field} 未绑定当前已确认拆解/冻结目标`);
   }
   const expectedElements = Array.isArray(context.elements) ? context.elements : [];

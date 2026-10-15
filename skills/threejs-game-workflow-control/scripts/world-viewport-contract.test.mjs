@@ -214,13 +214,17 @@ test('透视 WebGL2 与正交 WebGPU 按 CSS aspect 验证矩阵，且正交 nea
   }
 });
 
-test('世界证据清单绑定候选、场景、状态、CSS/backing、输入命中、resize 和 renderer 预算', () => {
+test('世界证据绑定场景、状态、CSS/backing、输入命中和预算，摘要不参与验收', () => {
   const contract = makeWorldContract();
   const evidence = contract.representativeViewports.map((viewport) => makeEvidence(contract, viewport));
   const manifest = { candidateSha256: CANDIDATE, sceneId: 'arena', stateId: 'playing', responsiveEvidence: evidence };
   assert.deepEqual(validateResponsiveEvidenceManifest(manifest, { responsiveContract: contract }, { candidateSha256: CANDIDATE }), []);
 
-  assert.match(validateResponsiveEvidenceManifest(manifest, contract, { candidateSha256: `sha256:${'d'.repeat(64)}` }).join('\n'), /与当前候选不一致|candidateSha256 与当前候选不一致/);
+  assert.deepEqual(validateResponsiveEvidenceManifest(manifest, contract, { candidateSha256: '不同的可选摘要' }), []);
+  // 摘要缺失、错误或变化都不能阻断验收，真实运行数据与场景归属仍须完整。
+  const withoutHashes = { ...manifest, responsiveEvidence: evidence.map(({ candidateSha256, ...record }) => record) };
+  delete withoutHashes.candidateSha256;
+  assert.deepEqual(validateResponsiveEvidenceManifest(withoutHashes, contract), []);
   const wrongScene = { ...evidence[0], sceneId: 'other' };
   assert.match(validateResponsiveEvidenceRecord(wrongScene, contract, { sceneId: 'arena' }).join('\n'), /sceneId 必须绑定当前场景/);
   const wrongState = { ...evidence[0], stateId: 'paused' };

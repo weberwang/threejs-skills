@@ -80,7 +80,7 @@ export class ValidationContext {
 
   /** 读取并缓存实施包绑定的 manifest 快照，确保 bytes、SHA 和解析结果成组复用。 */
   loadVisualManifestSnapshot(pkg) {
-    if (!pkg || (pkg.visualProductionUnits === undefined && pkg.visualManifestFile === undefined && pkg.visualManifestSha256 === undefined)) return null;
+    if (!pkg || (pkg.visualProductionUnits === undefined && pkg.visualManifestFile === undefined)) return null;
     const key = `manifest:${resolve(this.repo, String(pkg.visualManifestFile ?? ''))}:${pkg.visualManifestSha256 ?? ''}`;
     if (!this.cache.has(key)) this.cache.set(key, this.deps.loadVisualManifestSnapshot(pkg, this.repo));
     return this.cache.get(key);

@@ -160,7 +160,7 @@ export function collectImageGenerationAliasViolations(value = {}) {
     violations.push(...collectAliasGroupViolations(value, aliases, `图像生成 ${canonical} `));
   }
   violations.push(...collectAliasGroupViolations(value, ["mime_type", "mimeType"], "图像生成 MIME "));
-  violations.push(...collectAliasGroupViolations(value, ["file", "path"], "V4 actual_assets file/path "));
+  violations.push(...collectAliasGroupViolations(value, ["file", "path"], "V3 actual_assets file/path "));
   const outputs = nestedImageGenerationOutputs(value);
   for (const [container, output] of outputs) {
     for (const [canonical, aliases] of IMAGEGEN_PATH_ALIASES) violations.push(...collectAliasGroupViolations(output, aliases, `${container}.${canonical} `));

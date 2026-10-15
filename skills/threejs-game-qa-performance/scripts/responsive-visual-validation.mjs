@@ -11,7 +11,6 @@ import { DEFAULT_VISUAL_VALIDATION_MODE, isExactVisualValidation, resolveVisualV
 import { resolveOrientationCoverage, measuredOrientation, matchesRepresentativeViewport, validateOrientationPolicyConsistency, hasSamePageOrientationChange } from "../../threejs-game-workflow-control/scripts/orientation-validation-scope.mjs";
 
 export const DEFAULT_HOOK_NAME = "__THREEJS_VISUAL_VALIDATION__";
-const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const NORMALIZED_CONTRACT = Symbol("normalized-responsive-contract");
 
 /** 过滤非有限数字，避免坏的 Hook 数据污染几何计算。 */
@@ -514,23 +513,18 @@ export function evaluateMatrixCoverage(measurements, contract = {}) {
   return { expected, observed: [...observed], missing, mismatched, representativeMissing: representative.missing, orientationMissing, orientationErrors: normalized.orientationErrors, status, mode: normalized.visual_validation.mode ?? DEFAULT_VISUAL_VALIDATION_MODE };
 }
 
-/** 验证响应式报告的不可变候选与视觉身份；V5 还必须携带确认草图的内容 SHA。 */
-export function validateEvidenceIdentity(identity, { requireTarget = false, contract = null } = {}) {
+/** 核对响应式报告的场景、状态和合同版本；验收不要求或比较摘要。 */
+export function validateEvidenceIdentity(identity, { contract = null } = {}) {
   const errors = []; const value = identity && typeof identity === "object" ? identity : {};
-  for (const field of ["candidate_sha256", "scene_id", "state_id", "layout_contract_version", "visual_baseline_version"]) if (typeof value[field] !== "string" || value[field].trim() === "") errors.push(`identity.${field} 必须是非空字符串`);
-  if (typeof value.candidate_sha256 === "string" && !SHA_PATTERN.test(value.candidate_sha256)) errors.push("identity.candidate_sha256 格式无效");
-  if (requireTarget && (typeof value.target_sha256 !== "string" || !SHA_PATTERN.test(value.target_sha256))) errors.push("效果图还原的 identity.target_sha256 必须是合法 SHA-256");
-  if (value.target_sha256 !== undefined && (typeof value.target_sha256 !== "string" || !SHA_PATTERN.test(value.target_sha256))) errors.push("identity.target_sha256 格式无效");
-  if ((value.current_stage ?? value.currentStage) === "V5" && (typeof value.pageSketchSha256 !== "string" || !SHA_PATTERN.test(value.pageSketchSha256))) errors.push("V5 identity.pageSketchSha256 必须是合法 SHA-256");
+  // 摘要核对留给最终人工验收后；错误任务归属或版本仍是实际验收问题。
+  for (const field of ["scene_id", "state_id", "layout_contract_version", "visual_baseline_version"]) if (typeof value[field] !== "string" || value[field].trim() === "") errors.push(`identity.${field} 必须是非空字符串`);
   const binding = contract?.identityContract;
-  if (!binding?.trusted || !nonEmptyBinding(binding.schemaVersion) || !nonEmptyBinding(binding.contractVersion) || !Array.isArray(binding.scenes) || binding.scenes.length === 0 || !Array.isArray(binding.states) || binding.states.length === 0 || !nonEmptyBinding(binding.codeCandidate) || !nonEmptyBinding(binding.visualBaselineVersion)) errors.push("原始 UI 合同未通过完整布局合同校验，不能建立权威身份");
+  if (!binding?.trusted || !nonEmptyBinding(binding.schemaVersion) || !nonEmptyBinding(binding.contractVersion) || !Array.isArray(binding.scenes) || binding.scenes.length === 0 || !Array.isArray(binding.states) || binding.states.length === 0 || !nonEmptyBinding(binding.visualBaselineVersion)) errors.push("原始 UI 合同未通过完整布局合同校验，不能建立权威身份");
   else {
     if (!binding.scenes.includes(value.scene_id)) errors.push("identity.scene_id 不在 UI 合同 scope.scenes 中");
     if (!binding.states.includes(value.state_id)) errors.push("identity.state_id 不在 UI 合同 scope.states 中");
     if (value.layout_contract_version !== binding.contractVersion) errors.push("identity.layout_contract_version 与 UI 合同 contract_version 不一致");
-    if (value.candidate_sha256 !== binding.codeCandidate) errors.push("identity.candidate_sha256 与 UI 合同 code_candidate 不一致");
     if (value.visual_baseline_version !== binding.visualBaselineVersion) errors.push("identity.visual_baseline_version 与 UI 合同视觉基线不一致");
-    if (nonEmptyBinding(binding.targetSha256) && value.target_sha256 !== binding.targetSha256) errors.push("identity.target_sha256 与 frozen_visual_target 不一致");
   }
   return errors;
 }
@@ -544,8 +538,7 @@ export function summarizeReport(measurements, contract = {}, identity = null) {
   const viewportStatuses = measurements.map((measurement) => measurement.status);
   const resize = buildResizeRecords(measurements, normalized);
   const matrix = evaluateMatrixCoverage(measurements, normalized);
-  const requireTarget = normalized.effectImageApplicability === "effect-image" || identity?.reconstruction_applicability === "effect-image";
-  const identityErrors = validateEvidenceIdentity(identity, { requireTarget, contract: normalized });
+  const identityErrors = validateEvidenceIdentity(identity, { contract: normalized });
   const status = worstStatus([...viewportStatuses, resize.status, matrix.status, normalized.dprErrors.length ? "fail" : "pass", identityErrors.length ? "decision_gap" : "pass"]);
   return {
     status,
@@ -555,7 +548,6 @@ export function summarizeReport(measurements, contract = {}, identity = null) {
     sceneId: identity?.scene_id ?? null,
     stateId: identity?.state_id ?? null,
     candidateSha256: identity?.candidate_sha256 ?? null,
-    pageSketchSha256: identity?.pageSketchSha256 ?? null,
     layoutContractVersion: identity?.layout_contract_version ?? null,
     visualBaselineVersion: identity?.visual_baseline_version ?? null,
     resize: resize.records,
@@ -673,7 +665,7 @@ async function runBrowserValidation(options) {
   const rawContract = await readJsonInput(options.contract);
   const contract = normalizeContract(rawContract);
   const identity = await readJsonInput(options.identity);
-  const identityErrors = validateEvidenceIdentity(identity, { requireTarget: contract.effectImageApplicability === "effect-image" || identity?.reconstruction_applicability === "effect-image", contract });
+  const identityErrors = validateEvidenceIdentity(identity, { contract });
   if (identityErrors.length) throw new Error(identityErrors.join("；"));
   if (contract.dprErrors.length) throw new Error(contract.dprErrors.join("；"));
   if (contract.orientationErrors.length) throw new Error(contract.orientationErrors.join("；"));

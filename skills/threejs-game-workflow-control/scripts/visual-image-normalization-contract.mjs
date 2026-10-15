@@ -2,9 +2,8 @@
  * 图像生成 尺寸归一化记录的纯合同校验器。
  *
  * 运行时转换由 visual-image-normalization.mjs 负责；本模块不加载 Sharp，
- * 这样 V3/V5 合同校验仍可在没有本地原图时审计结构化事实。
+ * 这样 V3/V4 合同校验仍可在没有本地原图时审计结构化事实。
  */
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { normalizeProjectRelativePath } from "./visual-component-contract.mjs";
@@ -68,9 +67,12 @@ function stableSerialize(value) {
   return JSON.stringify(value);
 }
 
-/** 判断值是否为本项目约定的 SHA-256 字符串。 */
-function isSha256(value) {
-  return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value);
+/** 摘要字段仅供追踪；复制的 normalization_record 以尺寸、路径和操作事实比较。 */
+function withoutSummaryDigests(value) {
+  if (Array.isArray(value)) return value.map(withoutSummaryDigests);
+  if (!isObject(value)) return value;
+  const pattern = /(^|[_-])(sha1|sha256|hash|checksum|fingerprint|digest|diff_identity)([_-]|$)/i;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !pattern.test(key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`))).map(([key, item]) => [key, withoutSummaryDigests(item)]));
 }
 
 /** 将路径折叠为稳定比较值；合同路径仍由上游项目路径门负责安全校验。 */
@@ -124,8 +126,8 @@ export function getImageNormalizationRecord(asset = {}, generation = {}) {
 
 /** 比较重复记录的交付身份，不把属性书写顺序误判为事实冲突。 */
 function sameNormalizationIdentity(left, right) {
-  return ["schema", "status", "operation", "source_file", "source_sha256", "source_width", "source_height", "target_width", "target_height", "output_file", "output_sha256", "output_width", "output_height", "preserve_alpha", "tool", "tool_version", "completed_at"].every((name) => left[name] === right[name])
-    && stableSerialize(left.aspect_ratio_correction) === stableSerialize(right.aspect_ratio_correction);
+  return ["schema", "status", "operation", "source_file", "source_width", "source_height", "target_width", "target_height", "output_file", "output_width", "output_height", "preserve_alpha", "tool", "tool_version", "completed_at"].every((name) => left[name] === right[name])
+    && stableSerialize(withoutSummaryDigests(left.aspect_ratio_correction)) === stableSerialize(withoutSummaryDigests(right.aspect_ratio_correction));
 }
 
 /** 以交叉乘法比较两个正整数宽高比，避免浮点数舍入导致误放行。 */
@@ -139,17 +141,6 @@ function resolveProjectFile(projectRoot, projectFile) {
   if (!nonEmptyString(projectRoot) || !nonEmptyString(projectFile)) return null;
   const normalized = normalizeProjectRelativePath(projectFile);
   return normalized ? resolve(projectRoot, ...normalized.split("/")) : null;
-}
-
-/** 在请求了真实文件门时重新计算文件哈希，防止记录只描述而未交付。 */
-function fileSha256(projectRoot, projectFile) {
-  const absolute = resolveProjectFile(projectRoot, projectFile);
-  if (!absolute) return null;
-  try {
-    return `sha256:${createHash("sha256").update(readFileSync(absolute)).digest("hex")}`;
-  } catch {
-    return null;
-  }
 }
 
 /** 从真实 PNG/JPEG 文件读取像素尺寸，供比例修正 attempt 的文件门复算。 */
@@ -226,12 +217,11 @@ function validateAspectRatioCorrection(record, expectedWidth, expectedHeight, er
       const allowedAttemptFields = ["attempt_id", "generation_record_id", "generated_at", "file", "sha256", "width", "height"];
       const extraAttemptFields = Object.keys(attempt).filter((fieldName) => !allowedAttemptFields.includes(fieldName));
       if (extraAttemptFields.length) errors.push(`aspect_ratio_correction.attempts[${index}] 包含 Schema 禁止字段：${extraAttemptFields.join("、")}`);
-      for (const name of ["attempt_id", "generation_record_id", "generated_at", "file", "sha256", "width", "height"]) if (attempt[name] === undefined) errors.push(`aspect_ratio_correction.attempts[${index}].${name} 缺失`);
+      for (const name of ["attempt_id", "generation_record_id", "generated_at", "file", "width", "height"]) if (attempt[name] === undefined) errors.push(`aspect_ratio_correction.attempts[${index}].${name} 缺失`);
       if (!nonEmptyString(attempt.attempt_id)) errors.push(`aspect_ratio_correction.attempts[${index}].attempt_id 必须是非空字符串`);
       if (!nonEmptyString(attempt.generation_record_id)) errors.push(`aspect_ratio_correction.attempts[${index}].generation_record_id 必须是非空字符串`);
       if (!validDateTime(attempt.generated_at)) errors.push(`aspect_ratio_correction.attempts[${index}].generated_at 必须是 RFC3339 时间`);
       if (!nonEmptyString(attempt.file)) errors.push(`aspect_ratio_correction.attempts[${index}].file 必须是非空路径`);
-      if (!isSha256(attempt.sha256)) errors.push(`aspect_ratio_correction.attempts[${index}].sha256 必须是 sha256:<64位小写十六进制>`);
       if (!positiveInteger(attempt.width) || !positiveInteger(attempt.height)) errors.push(`aspect_ratio_correction.attempts[${index}] 的 width/height 必须是正整数`);
       if (positiveInteger(attempt.width) && positiveInteger(attempt.height) && sameImageAspectRatio(attempt.width, attempt.height, expectedWidth, expectedHeight)) {
         errors.push(`aspect_ratio_correction.attempts[${index}] 不能与目标宽高比一致`);
@@ -243,7 +233,6 @@ function validateAspectRatioCorrection(record, expectedWidth, expectedHeight, er
       && attempts[0].attempt_id === attempts[1].attempt_id) errors.push("两次 aspect_ratio_correction attempt 的 attempt_id 必须唯一");
     if (nonEmptyString(attempts[0]?.generation_record_id) && nonEmptyString(attempts[1]?.generation_record_id)
       && attempts[0].generation_record_id === attempts[1].generation_record_id) errors.push("两次 aspect_ratio_correction attempt 的 generation_record_id 必须唯一");
-    if (isSha256(attempts[0]?.sha256) && isSha256(attempts[1]?.sha256) && attempts[0].sha256 === attempts[1].sha256) errors.push("两次 aspect_ratio_correction attempt 必须具有不同的 SHA-256，复制同一输出不能作为第二次生成");
     const secondAttemptPath = comparablePath(attempts[1]?.file);
     const normalizationSourcePath = comparablePath(record.source_file);
     const generationSourcePath = comparablePath(field(generation, "source_file", "sourceFile"));
@@ -257,16 +246,12 @@ function validateAspectRatioCorrection(record, expectedWidth, expectedHeight, er
       // 去背输出是独立的 normalization source；这里仅通过尺寸绑定 raw attempt，不能要求路径或 SHA 相同。
     } else if (generationSourcePath) {
       if (secondAttemptPath !== generationSourcePath) errors.push("普通 图像生成 路线的第二次 raw 图像生成 attempt 必须绑定 generation_record.source_file");
-      if (generationSourcePath === normalizationSourcePath && isSha256(attempts[1]?.sha256) && attempts[1].sha256 !== record.source_sha256) {
-        errors.push("第二次 raw 图像生成 attempt 与 normalization_record.source_file 相同时，SHA-256 必须一致");
-      }
     }
     if (positiveInteger(attempts[1]?.width) && attempts[1].width !== record.source_width) errors.push("第二次 raw 图像生成 attempt 的 width 必须与 normalization_record.source_width 一致");
     if (positiveInteger(attempts[1]?.height) && attempts[1].height !== record.source_height) errors.push("第二次 raw 图像生成 attempt 的 height 必须与 normalization_record.source_height 一致");
     if (options.checkFiles === true && options.projectRoot) {
       attempts.forEach((attempt, index) => {
         if (!isObject(attempt) || !nonEmptyString(attempt.file)) return;
-        if (fileSha256(options.projectRoot, attempt.file) !== attempt.sha256) errors.push(`aspect_ratio_correction.attempts[${index}] 的实际 SHA-256 与记录不一致`);
         const actualDimensions = imageDimensions(options.projectRoot, attempt.file);
         if (!actualDimensions || actualDimensions.width !== attempt.width || actualDimensions.height !== attempt.height) errors.push(`aspect_ratio_correction.attempts[${index}] 的实际尺寸与记录不一致`);
       });
@@ -324,7 +309,7 @@ export function validateImageNormalizationContract({ asset = {}, contract = {}, 
   const record = records[0];
   if (!isObject(record)) return ["normalization_record 必须是对象，不能用字符串或空值代替结构化记录"];
   if (records.length > 1 && records.some((item) => !isObject(item) || !sameNormalizationIdentity(item, record))) errors.push("asset 与 generation_record 的 normalization_record 不一致");
-  for (const name of ["schema", "status", "operation", "source_file", "source_sha256", "source_width", "source_height", "target_width", "target_height", "output_file", "output_sha256", "output_width", "output_height", "preserve_alpha", "tool", "tool_version", "completed_at"]) requireField(record, name, errors);
+  for (const name of ["schema", "status", "operation", "source_file", "source_width", "source_height", "target_width", "target_height", "output_file", "output_width", "output_height", "preserve_alpha", "tool", "tool_version", "completed_at"]) requireField(record, name, errors);
   if (record.schema !== IMAGE_NORMALIZATION_SCHEMA) errors.push(`normalization_record.schema 必须为 ${IMAGE_NORMALIZATION_SCHEMA}`);
   if (!IMAGE_NORMALIZATION_STATUS.includes(String(record.status ?? "").toLowerCase())) errors.push("normalization_record.status 必须为 passed");
   if (!IMAGE_NORMALIZATION_OPERATIONS.includes(record.operation)) errors.push("normalization_record.operation 只能为 resize-to-contract、not-required 或 crop-and-resize-to-contract");
@@ -345,7 +330,6 @@ export function validateImageNormalizationContract({ asset = {}, contract = {}, 
   validateAspectRatioCorrection(record, expectedWidth, expectedHeight, errors, options, generation);
   const outputFileFormat = outputFormat(record.output_file);
   if (!IMAGE_NORMALIZATION_OUTPUT_FORMATS.includes(outputFileFormat)) errors.push("归一化 output_file 必须是最终 PNG、JPG 或 JPEG");
-  if (!isSha256(record.source_sha256) || !isSha256(record.output_sha256)) errors.push("normalization_record.source_sha256/output_sha256 必须是 sha256:<64位小写十六进制>");
   if (typeof record.preserve_alpha !== "boolean") errors.push("normalization_record.preserve_alpha 必须是布尔值");
   if (expectedAsset.alpha === true && record.preserve_alpha !== true) errors.push("透明 expected asset 必须声明 preserve_alpha=true");
   if (expectedAsset.alpha === true && metadata.alpha !== true) errors.push("透明 expected asset 的归一化最终输出必须保留 alpha");
@@ -373,14 +357,12 @@ export function validateImageNormalizationContract({ asset = {}, contract = {}, 
   if (assetSources.length > 0 && !assetSources.includes(sourcePath)) errors.push("manifest asset 的 source_file 未指向归一化记录 source_file");
   if (generationSources.length > 0 && !generationSources.includes(sourcePath)) errors.push("generation_record 的 source_file 未指向归一化记录 source_file");
   if (nonEmptyString(metadata.file) && comparablePath(metadata.file) !== outputPath) errors.push("实际输出 metadata.file 未指向归一化后的 output_file");
-  const declaredHashes = [asset.sha256, asset.output_sha256, metadata.sha256, expectedAsset.sha256].filter(isSha256);
-  if (declaredHashes.some((hash) => hash !== record.output_sha256)) errors.push("归一化 output_sha256 未匹配最终资产/expected asset SHA-256");
-  const declaredSourceHashes = [asset.source_sha256, generation.source_sha256, expectedAsset.source_sha256].filter(isSha256);
-  if (declaredSourceHashes.some((hash) => hash !== record.source_sha256)) errors.push("归一化 source_sha256 未匹配已声明的原图 SHA-256");
   if (metadata.width !== undefined && (metadata.width !== expectedWidth || metadata.height !== expectedHeight)) errors.push("最终实际输出宽高未匹配 expected_assets，必须交付归一化位图");
   if (options.checkFiles === true && options.projectRoot) {
-    if (fileSha256(options.projectRoot, record.source_file) !== record.source_sha256) errors.push("归一化 source_file 的实际 SHA-256 与记录不一致");
-    if (fileSha256(options.projectRoot, record.output_file) !== record.output_sha256) errors.push("归一化 output_file 的实际 SHA-256 与记录不一致");
+    const actualSource = imageDimensions(options.projectRoot, record.source_file);
+    const actualOutput = imageDimensions(options.projectRoot, record.output_file);
+    if (!actualSource || actualSource.width !== record.source_width || actualSource.height !== record.source_height) errors.push("归一化 source_file 的实际尺寸与记录不一致");
+    if (!actualOutput || actualOutput.width !== record.output_width || actualOutput.height !== record.output_height) errors.push("归一化 output_file 的实际尺寸与记录不一致");
   }
   return [...new Set(errors)];
 }

@@ -1,38 +1,30 @@
 # 验证记录
 
-验证日期：2026-10-08。范围为 three.js 技能工作流、机器合同、资产静态门和最小工程。
+验证日期：2026-10-15。范围为从 `E:\Git\phaser-skills` 同步通用工作流，并适配当前 three.js Web 3D 技能集。
 
-## Skills CLI 接入验证：T1
+## 本次同步
 
-项目使用官方 `npx skills add` 安装技能。自定义安装脚本、对应测试和 npm 安装入口均已删除；package.json 与锁文件的 bin 清单同步更新。
+- 统一 V0–V4，V4 直接消费 V2 布局与 V3 正式资源；删除独立页面草图和编辑器链。
+- 同步美术体验验收、透明素材路线、九宫格数据合同、图片递归补帧与汁水感指南；二维能力仅用于适用的 HUD、DOM、billboard 和纹理。
+- 保留 world-3d、运行基础、Blender/GLB 模型和插件管线；移除 Spine 技能及其依赖、测试和文档入口。
+- 摘要只作可选追踪，仍检查实际文件、路径安全、任务归属、模型结构、预算及人工确认。
+- 安装器为 workflow-control 与 frame-animation 安装独立依赖，不修改目标游戏的依赖清单。
 
-- `npm run test:game`：4 项通过，0 失败、0 跳过。
-- `npm run lint:workflow`：通过。
-- `npx --yes skills --version`、`--help`：Skills CLI 1.7.1，参数核对通过。
-- `npx --yes skills add E:\Git\threejs-skills --list`：发现全部 20 个技能，退出码 0；仅用于校验技能发现，没有执行安装。
-- npm 脚本与 bin 目标存在性、锁文件 bin 同步检查：通过。
-- `npm pack --dry-run --json`：294 个发行文件，自定义安装脚本已从发行内容移除。
-
-技能内部 Sharp 依赖由使用者在安装后按 README 执行 npm ci，Skills CLI 不代执行该步骤。命令和 Codex 项目目录已核对 [官方文档](https://github.com/vercel-labs/skills) 与当前 CLI 源码。本次未执行远程仓库安装或向用户项目、全局安装技能，未提交、推送或发布，未执行全量 T3、浏览器或真机验收。
-
-## 基础工作流历史验证：T3
-
-下表记录此前基础工作流实施完成时的验证，不代表本次接入后的全量复验。
+## T3 验证
 
 | 检查 | 命令或范围 | 结果 |
 | --- | --- | --- |
-| 全量回归 | npm test，62 个测试文件 | 821 项通过，0 失败，0 跳过 |
-| 控制面静态检查 | npm run lint:workflow | 通过 |
-| 技能结构 | skill-creator quick_validate.py，Python UTF-8 模式 | 20 个技能通过 |
-| MJS 语法 | node --check | 178 个文件通过 |
-| 代码规模 | scripts 与 skills 中全部 MJS | 无超过 1000 行文件 |
-| 最小工程 | create-game → npm ci → npm run build | TypeScript 检查和 Vite 生产构建通过 |
-| 发行内容 | npm pack --dry-run --json | 298 个文件，必要技能锁文件存在，无 output/node_modules 混入 |
+| 全量回归 | `npm test`，全部 62 个测试文件 | 857 项通过，0 失败、0 跳过；退出码 0 |
+| 控制面与文档链接 | `npm run lint:workflow` | 通过 |
+| 隔离复制安装 | `npm run test:copy-install` | 两个工具技能独立解析 Sharp、跨技能导入成功，目标 package.json 未变 |
+| MJS 语法与规模 | `node --check`，scripts/skills | 170 个文件通过，无超过 1000 行的代码文件 |
+| 初始化模板 | 导出集合、JSON 声明、已取消摘要门的文字核对 | 6 个核心模板、5 组可选模板，检查通过 |
+| 最小三维工程 | `create-game` → `npm ci` → `npm run build` | TypeScript 与 Vite 生产构建通过 |
+| 发行内容 | `npm pack --dry-run --json` | 298 个文件，bin 与必要锁文件齐全，无 Spine、旧草图、output 或 node_modules 混入 |
+| 差异格式 | `git diff --check`（识别 CRLF 行尾） | 通过 |
 
-首轮全量回归有 1 个共享词汇测试保留旧枚举期望；补入 authored-model/gltf-model 后定向复验通过，最终重新执行全量回归并得到上表结果。
+## 限制与未执行项
 
-## 未执行与限制
+未启动浏览器预览或真机，未进行截图自动分析、WebGL/WebGPU 实际运行、目标设备性能、外部系统写入、推送或发布。机器合同与模型静态校验不能代替真实渲染、三维生产全流程或人工视觉验收。
 
-未启动预览服务，未执行浏览器 WebGL/WebGPU、真机、目标设备性能、外部写入或发布验收。合同验证和 GLB 静态检查不代表实际 GPU 渲染或解码通过；压缩模型报告明确标记未解码。插件表是按需求启用的方案，不是所有插件组合均已安装或通过设备验收的声明。
-
-最小工程构建有约 529 kB 主 chunk 的 Vite 大小提示；未把构建成功当作首屏性能达标。实际项目应冻结加载、GPU 和帧时间预算，再验证真实玩法密度。
+最小工程保留约 529 kB 主 chunk 的 Vite 大小提示；构建通过不表示加载性能或 GPU 预算达标。Windows npm 的固定参数 `.cmd` 启动另有 Node DEP0190 提示，不影响本次检查结果。

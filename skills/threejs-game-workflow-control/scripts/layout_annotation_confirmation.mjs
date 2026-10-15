@@ -5,7 +5,7 @@
  *
  * 拆解确认、布局候选和人工布局确认是三个串行身份。确认门会把实际
  * review.html、layout-nodes.json、布局决策副本、PNG、参考图和 proposal
- * 全部复算后再放行，避免旧页面或只写元数据的记录确认新布局。
+ * 的实际结构和内容后放行；摘要仅作为可选追踪信息。
  */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
@@ -14,22 +14,19 @@ import { decodePngRgba } from "../../threejs-game-asset-integration/scripts/effe
 import { deriveAutomaticLayoutFacts, validateLayoutAnnotationPng } from "../../threejs-game-asset-integration/scripts/layout_annotation_contract.mjs";
 import { validateDecompositionElements } from "../../threejs-game-asset-integration/scripts/decomposition-elements.mjs";
 import { validateAutomaticLayoutDecision } from "../../threejs-game-asset-integration/scripts/automatic-layout-decision.mjs";
-import { computeLayoutReviewIdentitySha256, readAndValidateLayoutReviewPayload, renderLayoutReviewBundle, validateLayoutNodesDocument } from "../../threejs-game-asset-integration/scripts/layout_review_bundle.mjs";
+import { readAndValidateLayoutReviewPayload, validateLayoutNodesDocument } from "../../threejs-game-asset-integration/scripts/layout_review_bundle.mjs";
 
 export const LAYOUT_ANNOTATION_CONFIRMATION_SCHEMA = "layout-annotation-confirmation/1.0";
-const SHA_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const REQUIRED_FIELDS = [
-  "confirmation_schema", "confirmation_id", "confirmation_sha256", "status", "confirmation_mode",
-  "layout_annotation_file", "layout_annotation_sha256", "layout_annotation_width", "layout_annotation_height",
-  "layout_annotation_schema", "layout_annotation_layout", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256",
-  "layout_review_file", "layout_review_sha256", "layout_review_identity_sha256", "layout_nodes_file", "layout_nodes_sha256",
-  "decomposition_confirmation_id", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_file", "layout_decision_sha256", "layout_decision_id", "target_sha256", "scene_id", "state_id",
-  "user_original_text", "user_message_sha256", "decision_record_file", "decision_record_sha256", "user_decision_receipt_file", "user_decision_receipt_sha256", "accepted_at",
+  "confirmation_schema", "confirmation_id", "status", "confirmation_mode",
+  "layout_annotation_file", "layout_annotation_width", "layout_annotation_height",
+  "layout_annotation_schema", "layout_annotation_layout", "layout_review_file", "layout_nodes_file",
+  "decomposition_confirmation_id", "layout_decision_file", "layout_decision_id", "scene_id", "state_id",
+  "user_original_text", "decision_record_file", "user_decision_receipt_file", "accepted_at",
 ];
 const DECISION_BINDING_FIELDS = [
-  "layout_annotation_file", "layout_annotation_sha256", "layout_annotation_identity_sha256",
-  "layout_review_file", "layout_review_sha256", "layout_review_identity_sha256", "layout_nodes_file", "layout_nodes_sha256",
-  "decomposition_confirmation_id", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_file", "layout_decision_sha256", "layout_decision_id", "target_sha256", "scene_id", "state_id", "user_statement", "user_message_sha256", "accepted_at",
+  "layout_annotation_file", "layout_review_file", "layout_nodes_file",
+  "decomposition_confirmation_id", "layout_decision_file", "layout_decision_id", "scene_id", "state_id", "user_statement", "accepted_at",
 ];
 
 /** 判断普通对象。 */
@@ -52,7 +49,7 @@ function sha256(value) { return `sha256:${createHash("sha256").update(value).dig
 /** 计算不含自引用字段的布局确认身份。 */
 export function computeLayoutAnnotationConfirmationSha256(record = {}) { const payload = { ...record }; delete payload.confirmation_sha256; return sha256(canonicalJson(payload)); }
 
-/** 计算用户原文 SHA，布局确认不能由调用方任意伪造。 */
+/** 保留历史摘要生成接口供记录端输出；确认验收不依赖该摘要。 */
 export function computeLayoutUserMessageSha256(text) { return sha256(String(text ?? "")); }
 
 /** 限制确认文件路径落在项目内，并允许尚未创建的直接子路径。 */
@@ -66,29 +63,25 @@ function safeProjectPath(projectRoot, value) {
   return candidate;
 }
 
-/** 读取并复算确认关联文件。 */
-function readBoundFile(projectRoot, file, expectedSha, label, errors, parseJson = false) {
+/** 安全读取确认关联文件；文件路径、存在性和 JSON 结构承担实际校验。 */
+function readBoundFile(projectRoot, file, label, errors, parseJson = false) {
   const path = safeProjectPath(projectRoot, file);
   if (!path || !existsSync(path) || !statSync(path).isFile()) { errors.push(`${label} 文件不存在或路径越界`); return null; }
-  if (!SHA_PATTERN.test(String(expectedSha ?? ""))) { errors.push(`${label} 缺少合法 SHA-256`); return null; }
-  const bytes = readFileSync(path); const actual = sha256(bytes);
-  if (actual !== expectedSha) errors.push(`${label} SHA-256 与文件不一致`);
-  if (!parseJson) return { bytes, sha256: actual };
-  try { return { bytes, sha256: actual, json: JSON.parse(bytes.toString("utf8")) }; } catch (error) { errors.push(`${label} 不是合法 JSON：${error.message}`); return null; }
+  const bytes = readFileSync(path);
+  if (!parseJson) return { bytes };
+  try { return { bytes, json: JSON.parse(bytes.toString("utf8")) }; } catch (error) { errors.push(`${label} 不是合法 JSON：${error.message}`); return null; }
 }
 
 /** 校验决定/receipt 的用户解除语义，并要求它们绑定新的审阅工件身份。 */
-function validateLayoutDecisionDocument(document, record, decisionSha, label, errors, receipt = false) {
+function validateLayoutDecisionDocument(document, record, label, errors, receipt = false) {
   if (!isObject(document)) { errors.push(`${label} 必须是 JSON 对象并明确确认当前布局图`); return; }
-  const required = ["author_role", "resolution_status", "resolved_from", ...DECISION_BINDING_FIELDS, ...(receipt ? ["message_id", "thread_id", "resolution_id", "decision_record_sha256"] : ["confirmation_id", "confirmation_mode"])];
+  const required = ["author_role", "resolution_status", "resolved_from", ...DECISION_BINDING_FIELDS, ...(receipt ? ["message_id", "thread_id", "resolution_id"] : ["confirmation_id", "confirmation_mode"])];
   for (const field of required) if (!nonEmptyString(document[field])) errors.push(`${label}.${field} 必须是非空值`);
   if (document.author_role !== "user" || document.resolution_status !== "resolved" || document.resolved_from !== "USER_INPUT_REQUIRED") errors.push(`${label} 必须是 user 解除 USER_INPUT_REQUIRED 的 resolved 记录`);
   if (!receipt && (document.status !== "accepted" || document.confirmation_mode !== "manual")) errors.push(`${label} 必须是 accepted/manual 布局决定`);
-  for (const field of ["layout_annotation_sha256", "layout_annotation_identity_sha256", "layout_review_sha256", "layout_review_identity_sha256", "layout_nodes_sha256", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_sha256", "target_sha256", "user_message_sha256"]) if (Object.hasOwn(document, field) && !SHA_PATTERN.test(String(document[field]))) errors.push(`${label}.${field} 必须是合法 sha256`);
   for (const [field, expected] of DECISION_BINDING_FIELDS.map((field) => [field, field === "user_statement" ? record.user_original_text : record[field]])) if (expected !== undefined && document[field] !== expected) errors.push(`${label}.${field} 未绑定布局确认记录`);
   if (!receipt && document.confirmation_id !== record.confirmation_id) errors.push(`${label}.confirmation_id 未绑定当前布局确认`);
-  if (receipt && document.decision_record_sha256 !== decisionSha) errors.push(`${label}.decision_record_sha256 未绑定当前 decision 文件`);
-  if (nonEmptyString(document.user_statement) && document.user_message_sha256 !== computeLayoutUserMessageSha256(document.user_statement)) errors.push(`${label}.user_message_sha256 与 user_statement 不一致`);
+  if (nonEmptyString(document.user_statement) && document.user_statement !== record.user_original_text) errors.push(`${label}.user_statement 与 user_original_text 不一致`);
   if (nonEmptyString(document.accepted_at) && Number.isNaN(Date.parse(document.accepted_at))) errors.push(`${label}.accepted_at 必须是合法时间`);
   if (nonEmptyString(document.accepted_at) && document.accepted_at !== record.accepted_at) errors.push(`${label}.accepted_at 未绑定布局确认时间`);
 }
@@ -130,11 +123,11 @@ function validateLayoutNodesAgainstProposal(proposal, nodesDocument, context, er
   }
 }
 
-/** 校验 review.html、layout-nodes.json 及其引用文件的真实字节身份。 */
+/** 校验 review.html、layout-nodes.json 及其引用文件的真实内容和归属。 */
 function validateLayoutReviewFiles(record, context, files, image, errors, label) {
   const { review, nodes, layoutDecision } = files;
   if (!review || !nodes) return;
-  const expected = { projectRoot: context.projectRoot, sceneId: record.scene_id, stateId: record.state_id, decompositionConfirmationId: record.decomposition_confirmation_id, decompositionConfirmationSha256: record.decomposition_confirmation_sha256, layoutDecisionId: record.layout_decision_id, referenceFile: context.referenceFile ?? context.reference_file, proposalFile: context.proposalFile ?? context.proposal_file, referenceSha256: record.target_sha256, proposalSha256: record.proposal_sha256 };
+  const expected = { projectRoot: context.projectRoot, sceneId: record.scene_id, stateId: record.state_id, decompositionConfirmationId: record.decomposition_confirmation_id, layoutDecisionId: record.layout_decision_id, referenceFile: context.referenceFile ?? context.reference_file, proposalFile: context.proposalFile ?? context.proposal_file };
   const payload = readAndValidateLayoutReviewPayload(review.bytes, nodes.bytes, expected, errors, label);
   if (!payload) return;
   const expectedFacts = expectedLayoutFacts(context, payload.externalNodes, errors, label);
@@ -148,52 +141,39 @@ function validateLayoutReviewFiles(record, context, files, image, errors, label)
     if (!Array.isArray(annotationMetadata?.nodes) || canonicalJson(annotationMetadata.nodes) !== canonicalJson(documentFacts)) errors.push(`${label} layout-nodes.json 与标准 PNG 的实际布局 facts 不一致`);
   } catch (error) { errors.push(`${label} 无法读取标准 PNG 布局 facts：${error.message}`); }
   const bindings = payload.bindings;
-  const bindingPairs = [["layout_annotation_file", bindings.annotation?.file], ["layout_annotation_sha256", bindings.annotation?.sha256], ["layout_review_file", record.layout_review_file], ["layout_review_sha256", record.layout_review_sha256], ["layout_nodes_file", bindings.nodes?.file], ["layout_nodes_sha256", bindings.nodes?.sha256], ["layout_decision_file", bindings.decision?.file], ["layout_decision_sha256", bindings.decision?.sha256]];
+  const bindingPairs = [["layout_annotation_file", bindings.annotation?.file], ["layout_review_file", record.layout_review_file], ["layout_nodes_file", bindings.nodes?.file], ["layout_decision_file", bindings.decision?.file]];
   for (const [field, actual] of bindingPairs) if (actual !== record[field]) errors.push(`${label}.${field} 未绑定确认记录`);
-  if (bindings.decision?.sha256 !== record.layout_decision_sha256 || bindings.nodes?.sha256 !== record.layout_nodes_sha256 || bindings.annotation?.sha256 !== record.layout_annotation_sha256) errors.push(`${label} 未绑定同一批 PNG、节点和布局决策字节`);
-  if (computeLayoutReviewIdentitySha256(bindings) !== record.layout_review_identity_sha256) errors.push(`${label}.layout_review_identity_sha256 复算失败`);
   const references = [];
-  for (const [name, item] of [["reference", bindings.reference], ["proposal", bindings.proposal]]) if (isObject(item)) references.push([name, readBoundFile(context.projectRoot, item.file, item.sha256, `${label}.${name}`, errors, name === "proposal")]);
+  for (const [name, item] of [["reference", bindings.reference], ["proposal", bindings.proposal]]) if (isObject(item)) references.push([name, readBoundFile(context.projectRoot, item.file, `${label}.${name}`, errors, name === "proposal")]);
   const reference = references.find(([name]) => name === "reference")?.[1]; const proposal = references.find(([name]) => name === "proposal")?.[1];
-  if (reference && reference.sha256 !== record.target_sha256) errors.push(`${label}.reference.sha256 未绑定冻结参考图`);
-  if (proposal && proposal.sha256 !== record.proposal_sha256) errors.push(`${label}.proposal.sha256 未绑定当前拆解提案`);
   if (proposal?.json) validateLayoutNodesAgainstProposal(proposal.json, payload.externalNodes, context, errors, label);
-  if (layoutDecision && reference && proposal) {
-    try {
-      const rebuilt = renderLayoutReviewBundle({ nodesDocument: payload.nodesDocument, bindings, originalBytes: reference.bytes, annotationBytes: image?.bytes, nodesBytes: nodes.bytes, decisionBytes: layoutDecision.bytes });
-      if (!rebuilt.equals(review.bytes)) errors.push(`${label} 实际 HTML 与同模板重建字节不一致，疑似页面篡改或引用了旧页面`);
-    } catch (error) { errors.push(`${label} 无法按同一模板重建审阅页：${error.message}`); }
-  }
 }
 
 /** 校验独立布局确认；布局阶段必须提供上游拆解和完整审阅页上下文。 */
 export function validateLayoutAnnotationConfirmation(record, context = {}, errors = [], label = "layout_annotation_confirmation") {
   if (!isObject(record)) { errors.push(`${label} 必须是对象；V2 最终门缺少独立布局确认`); return null; }
   for (const field of REQUIRED_FIELDS) if (!Object.hasOwn(record, field)) errors.push(`${label}.${field} 必须存在`);
-  for (const field of ["confirmation_id", "confirmation_mode", "layout_annotation_file", "layout_annotation_schema", "layout_annotation_layout", "layout_review_file", "layout_nodes_file", "decomposition_confirmation_id", "layout_decision_file", "layout_decision_sha256", "layout_decision_id", "scene_id", "state_id", "user_original_text", "decision_record_file", "user_decision_receipt_file", "accepted_at"]) if (!nonEmptyString(record[field])) errors.push(`${label}.${field} 必须是非空字符串`);
+  for (const field of ["confirmation_id", "confirmation_mode", "layout_annotation_file", "layout_annotation_schema", "layout_annotation_layout", "layout_review_file", "layout_nodes_file", "decomposition_confirmation_id", "layout_decision_file", "layout_decision_id", "scene_id", "state_id", "user_original_text", "decision_record_file", "user_decision_receipt_file", "accepted_at"]) if (!nonEmptyString(record[field])) errors.push(`${label}.${field} 必须是非空字符串`);
   if (record.confirmation_schema !== LAYOUT_ANNOTATION_CONFIRMATION_SCHEMA) errors.push(`${label}.confirmation_schema 必须为 ${LAYOUT_ANNOTATION_CONFIRMATION_SCHEMA}`);
   if (record.layout_annotation_schema !== "layout-annotation/png/1") errors.push(`${label}.layout_annotation_schema 必须为 layout-annotation/png/1`);
   if (record.layout_annotation_layout !== "image-plus-right-panel") errors.push(`${label}.layout_annotation_layout 必须为 image-plus-right-panel`);
   if (nonEmptyString(record.accepted_at) && Number.isNaN(Date.parse(record.accepted_at))) errors.push(`${label}.accepted_at 必须是合法时间`);
   for (const field of ["layout_annotation_width", "layout_annotation_height"]) if (!Number.isInteger(record[field]) || record[field] <= 0) errors.push(`${label}.${field} 必须是正整数`);
   if (record.status !== "accepted" || record.confirmation_mode !== "manual") errors.push(`${label} 必须是 manual accepted`);
-  for (const field of ["confirmation_sha256", "layout_annotation_sha256", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "layout_review_sha256", "layout_review_identity_sha256", "layout_nodes_sha256", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_sha256", "target_sha256", "user_message_sha256", "decision_record_sha256", "user_decision_receipt_sha256"]) if (Object.hasOwn(record, field) && !SHA_PATTERN.test(String(record[field]))) errors.push(`${label}.${field} 必须是合法 sha256`);
-  if (Object.hasOwn(record, "confirmation_sha256") && SHA_PATTERN.test(record.confirmation_sha256) && computeLayoutAnnotationConfirmationSha256(record) !== record.confirmation_sha256) errors.push(`${label}.confirmation_sha256 复算失败`);
-  for (const [field, expected] of [["target_sha256", context.targetSha256 ?? context.target_sha256], ["scene_id", context.sceneId ?? context.scene_id], ["state_id", context.stateId ?? context.state_id], ["decomposition_confirmation_id", context.decompositionConfirmationId ?? context.decomposition_confirmation_id], ["decomposition_confirmation_sha256", context.decompositionConfirmationSha256 ?? context.decomposition_confirmation_sha256], ["proposal_sha256", context.proposalSha256 ?? context.proposal_sha256]]) if (expected !== undefined && record[field] !== expected) errors.push(`${label}.${field} 未绑定当前串行上游身份`);
-  if (nonEmptyString(record.user_original_text) && computeLayoutUserMessageSha256(record.user_original_text) !== record.user_message_sha256) errors.push(`${label}.user_message_sha256 与 user_original_text 不一致`);
+  for (const [field, expected] of [["scene_id", context.sceneId ?? context.scene_id], ["state_id", context.stateId ?? context.state_id], ["decomposition_confirmation_id", context.decompositionConfirmationId ?? context.decomposition_confirmation_id]]) if (expected !== undefined && record[field] !== expected) errors.push(`${label}.${field} 未绑定当前串行上游身份`);
   if (nonEmptyString(context.decompositionConfirmationId) && record.confirmation_id === context.decompositionConfirmationId) errors.push(`${label}.confirmation_id 必须独立于拆解确认 ID`);
   if (context.checkFiles === true && nonEmptyString(context.projectRoot)) {
-    const image = readBoundFile(context.projectRoot, record.layout_annotation_file, record.layout_annotation_sha256, `${label}.layout_annotation`, errors);
-    const review = readBoundFile(context.projectRoot, record.layout_review_file, record.layout_review_sha256, `${label}.layout_review`, errors);
-    const nodes = readBoundFile(context.projectRoot, record.layout_nodes_file, record.layout_nodes_sha256, `${label}.layout_nodes`, errors);
-    const layoutDecision = readBoundFile(context.projectRoot, record.layout_decision_file, record.layout_decision_sha256, `${label}.layout_decision`, errors, true);
-    const decision = readBoundFile(context.projectRoot, record.decision_record_file, record.decision_record_sha256, `${label}.decision_record`, errors, true);
-    const receipt = readBoundFile(context.projectRoot, record.user_decision_receipt_file, record.user_decision_receipt_sha256, `${label}.user_decision_receipt`, errors, true);
+    const image = readBoundFile(context.projectRoot, record.layout_annotation_file, `${label}.layout_annotation`, errors);
+    const review = readBoundFile(context.projectRoot, record.layout_review_file, `${label}.layout_review`, errors);
+    const nodes = readBoundFile(context.projectRoot, record.layout_nodes_file, `${label}.layout_nodes`, errors);
+    const layoutDecision = readBoundFile(context.projectRoot, record.layout_decision_file, `${label}.layout_decision`, errors, true);
+    const decision = readBoundFile(context.projectRoot, record.decision_record_file, `${label}.decision_record`, errors, true);
+    const receipt = readBoundFile(context.projectRoot, record.user_decision_receipt_file, `${label}.user_decision_receipt`, errors, true);
     if (image) {
       const checkErrors = [];
-      const validated = validateLayoutAnnotationPng(image.bytes, { annotationSha256: record.layout_annotation_sha256, identitySha256: record.layout_annotation_identity_sha256, targetSha256: record.target_sha256, sceneId: record.scene_id, stateId: record.state_id, decompositionConfirmationId: record.decomposition_confirmation_id, decompositionConfirmationSha256: record.decomposition_confirmation_sha256, decompositionProposalSha256: record.proposal_sha256, layoutDecisionId: record.layout_decision_id, layoutDecisionSha256: record.layout_decision_sha256, layoutNodes: context.layoutNodes }, checkErrors, label);
+      const validated = validateLayoutAnnotationPng(image.bytes, { sceneId: record.scene_id, stateId: record.state_id, decompositionConfirmationId: record.decomposition_confirmation_id, layoutDecisionId: record.layout_decision_id, layoutNodes: context.layoutNodes }, checkErrors, label);
       errors.push(...checkErrors);
-      if (validated) { if (validated.decoded.width !== record.layout_annotation_width || validated.decoded.height !== record.layout_annotation_height) errors.push(`${label} 尺寸与确认记录不一致`); if (validated.metadata.schema !== record.layout_annotation_schema || validated.metadata.layout !== record.layout_annotation_layout) errors.push(`${label} schema/layout 与确认记录不一致`); if (validated.metadataSha256 !== record.layout_annotation_metadata_sha256) errors.push(`${label} metadata identity 与确认记录不一致`); }
+      if (validated) { if (validated.decoded.width !== record.layout_annotation_width || validated.decoded.height !== record.layout_annotation_height) errors.push(`${label} 尺寸与确认记录不一致`); if (validated.metadata.schema !== record.layout_annotation_schema || validated.metadata.layout !== record.layout_annotation_layout) errors.push(`${label} schema/layout 与确认记录不一致`); }
     }
     let nodesDocument = null;
     if (nodes) {
@@ -203,15 +183,15 @@ export function validateLayoutAnnotationConfirmation(record, context = {}, error
       const decisionErrors = [];
       const finalNodes = (context.layoutNodes ?? nodesDocument?.layout_nodes ?? []).filter((node) => node?.is_root_container !== true);
       const elements = finalNodes.map((node) => ({ element_id: node.element_id ?? node.layout_node_id }));
-      const decisionMap = validateAutomaticLayoutDecision(layoutDecision.json, { elements, targetSha256: record.target_sha256, sceneId: record.scene_id, stateId: record.state_id, decompositionConfirmationId: record.decomposition_confirmation_id, decompositionConfirmationSha256: record.decomposition_confirmation_sha256, proposalSha256: record.proposal_sha256 }, decisionErrors);
+      const decisionMap = validateAutomaticLayoutDecision(layoutDecision.json, { elements, sceneId: record.scene_id, stateId: record.state_id, decompositionConfirmationId: record.decomposition_confirmation_id }, decisionErrors);
       errors.push(...decisionErrors.map((message) => `${label}.layout_decision ${message}`));
       if (layoutDecision.json?.decision_id !== record.layout_decision_id) errors.push(`${label}.layout_decision.decision_id 未绑定确认记录`);
       if (!decisionMap) errors.push(`${label}.layout_decision 必须为每个最终布局元素提供显式对齐`);
       else for (const node of finalNodes) { const elementId = node.element_id ?? node.layout_node_id; const expected = node.axis_alignment ?? node.axisAlignment; const actual = decisionMap.get(elementId); if (!isObject(expected) || actual?.horizontal !== expected.horizontal || actual?.vertical !== expected.vertical) errors.push(`${label}.layout_decision.${elementId} 与最终布局节点 axis_alignment 不一致`); }
     }
     if (review && nodes && image && layoutDecision) validateLayoutReviewFiles(record, context, { review, nodes, layoutDecision }, image, errors, `${label}.layout_review`);
-    if (decision) validateLayoutDecisionDocument(decision.json, record, decision.sha256, `${label}.decision_record`, errors);
-    if (receipt) validateLayoutDecisionDocument(receipt.json, record, decision?.sha256, `${label}.user_decision_receipt`, errors, true);
+    if (decision) validateLayoutDecisionDocument(decision.json, record, `${label}.decision_record`, errors);
+    if (receipt) validateLayoutDecisionDocument(receipt.json, record, `${label}.user_decision_receipt`, errors, true);
   }
   return record;
 }

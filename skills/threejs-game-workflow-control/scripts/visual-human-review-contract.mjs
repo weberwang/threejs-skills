@@ -56,7 +56,7 @@ const VISUAL_APPROVAL_REVIEWER_FIELDS = Object.freeze([
 /**
  * V2 拆解确认后不再创建任何新的视觉复核身份或复核工件。
  *
- * 这些字段曾被 V3/F2/V4 当成第二套人工/AI 审阅入口；现在它们会掩盖
+ * 这些字段曾被 V3/F2 当成第二套人工/AI 审阅入口；现在它们会掩盖
  * 已冻结的 V2 拆解方案并造成重复确认，因此由共享门统一 fail closed。机器
  * 验证只能写入明确的确定性事实，例如文件 SHA、运行消费和 fidelity case。
  */
@@ -74,7 +74,7 @@ export const VISUAL_POST_APPROVAL_REVIEW_FIELDS = Object.freeze([
   "humanReview",
 ]);
 
-/** V3-V4 禁止重复生成的视觉复核工件名称。 */
+/** V3/V4 禁止重复生成的视觉复核工件名称。 */
 export const VISUAL_POST_APPROVAL_REVIEW_ARTIFACTS = Object.freeze([
   "f2_review",
   "f2_reviews",
@@ -93,7 +93,7 @@ export function earliestVisualReturnStage(stage, fallback = "V1/PROPOSAL") {
   const normalized = String(stage ?? "V1").toUpperCase();
   if (normalized === "V1" || normalized === "V2") return "V1/PROPOSAL";
   if (normalized === "V3") return "V2/V3";
-  if (normalized === "V4" || normalized === "F2") return "V3/F2";
+  if (normalized === "F2") return "V3/F2";
   return fallback;
 }
 
@@ -159,30 +159,22 @@ export function validateVisualHumanApproval(approval, binding = {}, context = {}
   })];
 }
 
-export function readCandidateSha(identity) {
-  if (!isObject(identity)) return undefined;
-  return identity.code_sha256 ?? identity.codeSha256 ?? identity.build_sha256 ?? identity.buildSha256 ?? identity.sha256 ?? identity.candidate_sha256 ?? identity.candidateSha256;
-}
-
-/** 校验人工审阅是否绑定当前目标、候选和 diff 身份。 */
+/** 校验人工审阅中显式记录的工作项、候选版本和场景身份。 */
 export function validateHumanReviewIdentity(review, identity = {}, context = {}, options = {}) {
   const errors = [];
   if (!isObject(review)) return errors;
-  const expectedTarget = options.targetSha ?? identity.target_sha256 ?? identity.targetSha256 ?? identity.target;
-  const expectedCandidate = options.candidateSha ?? identity.candidate ?? readCandidateSha(identity.candidate_identity ?? identity.candidateIdentity ?? identity);
-  const expectedDiff = options.diffIdentity ?? identity.diff_fingerprint ?? identity.diffFingerprint ?? identity.diff_identity ?? identity.diffIdentity ?? identity.diff;
-  const reviewedTarget = review.reviewed_target_identity ?? review.reviewedTargetIdentity;
-  const reviewedCandidate = review.reviewed_candidate_identity ?? review.reviewedCandidateIdentity;
-  const actualTarget = review.target_sha256 ?? review.targetSha256 ?? (isObject(reviewedTarget) ? (reviewedTarget.target_sha256 ?? reviewedTarget.targetSha256 ?? readCandidateSha(reviewedTarget)) : undefined);
-  const actualCandidate = review.candidate_sha256 ?? review.candidateSha256 ?? review.code_sha256 ?? review.codeSha256 ?? review.build_sha256 ?? review.buildSha256 ?? (isObject(reviewedCandidate) ? readCandidateSha(reviewedCandidate) : undefined);
-  const actualDiff = review.diff_fingerprint ?? review.diffFingerprint ?? review.diff_identity ?? review.diffIdentity ?? (isObject(reviewedCandidate) ? reviewedCandidate.diff_fingerprint ?? reviewedCandidate.diffFingerprint ?? reviewedCandidate.diff_identity ?? reviewedCandidate.diffIdentity : undefined);
   const fail = (message, expected, actual) => errors.push(humanReviewError({ ...context, review }, message, { expected, actual: `${reviewerSummary(review)}; binding=${String(actual ?? "missing")}`, review, returnStage: options.returnStage, rootCause: options.rootCause }));
-  if (options.requireTarget === true && !nonEmptyString(actualTarget)) fail("人工审阅缺少 target SHA 绑定", String(expectedTarget ?? "target_sha256"), actualTarget);
-  else if (nonEmptyString(expectedTarget) && nonEmptyString(actualTarget) && actualTarget !== expectedTarget) fail("人工审阅 target SHA 与当前冻结目标不一致", expectedTarget, actualTarget);
-  if (options.requireCandidate === true && !nonEmptyString(actualCandidate)) fail("人工审阅缺少 candidate code/build SHA 绑定", String(expectedCandidate ?? "candidate_sha256/code_sha256/build_sha256"), actualCandidate);
-  else if (nonEmptyString(expectedCandidate) && nonEmptyString(actualCandidate) && actualCandidate !== expectedCandidate) fail("人工审阅 candidate code/build SHA 与当前候选不一致", expectedCandidate, actualCandidate);
-  if (options.requireDiff === true && !nonEmptyString(actualDiff)) fail("人工审阅缺少 diff identity 绑定", String(expectedDiff ?? "diff_fingerprint/diff_identity"), actualDiff);
-  else if (nonEmptyString(expectedDiff) && nonEmptyString(actualDiff) && actualDiff !== expectedDiff) fail("人工审阅 diff identity 与当前候选不一致", expectedDiff, actualDiff);
+  const reviewed = review.reviewed_identity ?? review.reviewedIdentity ?? {};
+  const pairs = [
+    ["workItemId", identity.workItemId ?? identity.work_item_id, review.workItemId ?? review.work_item_id ?? reviewed.workItemId ?? reviewed.work_item_id],
+    ["candidateId", identity.candidateId ?? identity.candidate_id, review.candidateId ?? review.candidate_id ?? reviewed.candidateId ?? reviewed.candidate_id],
+    ["candidateVersion", identity.candidateVersion ?? identity.candidate_version, review.candidateVersion ?? review.candidate_version ?? reviewed.candidateVersion ?? reviewed.candidate_version],
+    ["sceneId", identity.sceneId ?? identity.scene_id, review.sceneId ?? review.scene_id ?? reviewed.sceneId ?? reviewed.scene_id],
+    ["stateId", identity.stateId ?? identity.state_id, review.stateId ?? review.state_id ?? reviewed.stateId ?? reviewed.state_id],
+  ];
+  for (const [field, expected, actual] of pairs) {
+    if (nonEmptyString(expected) && nonEmptyString(actual) && actual !== expected) fail(`人工审阅 ${field} 与当前身份不一致`, expected, actual);
+  }
   return errors;
 }
 
@@ -194,7 +186,7 @@ export function validateHumanReviewIdentity(review, identity = {}, context = {},
  */
 export function validateVisualPostApprovalReviewFields(value, options = {}) {
   const errors = [];
-  const stage = options.stage ?? "V3/V5";
+  const stage = options.stage ?? "V3/V4";
   const contextFor = (path) => ({ stage, region_id: path || "*" });
   const walk = (current, path = "") => {
     if (Array.isArray(current)) {
