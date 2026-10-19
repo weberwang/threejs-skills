@@ -26,6 +26,22 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-threejs-game
 
 ## 最短工作流
 
+游戏工程按[游戏项目目录规范](skills/threejs-game-architecture/references/project-structure.md)组织代码，生产与收尾按[产物目录与归档规范](skills/threejs-game-architecture/references/artifact-storage.md)分别存放临时文件、已确认成果、游戏资源和工作流记录：
+
+| 用途 | 目标游戏项目内的目录 |
+| --- | --- |
+| 临时中间文件 / 未送审候选 | `output/intermediate/` / `output/candidates/`，按工作项、阶段、候选分组 |
+| 已确认非运行设计成果 | `docs/confirmed/<owner>/<artifact-id>/<version>/` |
+| 可编辑源文件与必要生产输入 | `assets-source/<owner>/` |
+| 已验收正式游戏资源 | `public/assets/<owner>/` |
+| 审阅、截图、录屏与验证文件 | `evidence/<workItemId>/reviews/`、`evidence/<workItemId>/validation/` |
+| 工作流机器记录 | `.workflow-control/`，沿用控制工具实际布局 |
+| 受保护用户确认账本与回执 | `.threejs-workflow/user-resolutions/`，沿用现有固定位置 |
+
+`<owner>` 为 `shared`、`scenes/<scene-id>` 或 `display-layers/<display-layer-id>`。送审前将真实候选持久保留，确认后按用途归档；已绑定的审阅文件保持原路径，归档副本不建立第二套确认状态。正式资源与必要证据不能只留在可清理的 `output/`。
+
+Git 按[最小提交集](skills/threejs-game-architecture/references/artifact-storage.md#最小提交集)仅保存运行/构建/必要验证所需的工程文件，以及当前工作项仍读取的规格、有效确认和执行/证据记录。非运行文档、源素材、证据及控制记录默认忽略，执行代理在 `.gitignore` 中逐文件精确放行实际依赖；不自动提交全部 JSON、文本报告、历史记录或已确认归档。忽略的文件留在本地，跨机器验收前恢复被引用媒体；不自动删除或取消既有文件跟踪。
+
 先按[简化工作流视图](skills/threejs-game-workflow-control/references/simplified-workflow.md)理解当前任务：
 
 ```text

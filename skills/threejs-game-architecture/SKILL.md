@@ -36,7 +36,7 @@ description: three.js Web 3D 游戏的技术架构角色。需要划分或评审
 
 ## 执行与交接
 
-新建游戏项目、实现基础模块或调整目录与模块边界时，先读取[游戏项目目录规范](references/project-structure.md)，按入口/基础服务分层、场景功能聚合组织代码，明确资源、平台、测试和产物归属，并把实际路径与所有权写入 TDD 和实施包。
+新建游戏项目、实现基础模块或调整目录与模块边界时，先读取[游戏项目目录规范](references/project-structure.md)，按入口/基础服务分层、场景功能聚合组织代码；生成或归档产物时同时读取[产物目录与归档规范](references/artifact-storage.md)，明确临时文件、已确认成果、资源、平台、测试和工作流记录的归属，并把实际路径与所有权写入 TDD 和实施包。
 
 1. 在实现前划分并审计模块，记录职责与非目标、公开输入/输出、状态所有权、生命周期、允许/禁止依赖、失败边界、测试和实现顺序；首次模块先完成模块门与 grilling，再按 F0-F4 写入 TDD。全局阶段、视觉硬门和场景前置以[控制模型](../threejs-game-workflow-control/references/control-model.md)、[状态、阶段与停止门](../threejs-game-workflow-control/references/state-gates.md)及对应 Schema 为准；本领域只补充模块边界。
 2. 在 TDD 标注 foundation-only 的 `SHARED`/`MODULE` 范围、场景 `SCENE`/`DISPLAY_LAYER` 归属和跨场景 `INTEGRATION` 依赖。基础包只提供稳定契约，不实现具体场景玩法、HUD/布局、正式可见资产消费或 Boot→正式可见 Scene 接入；模块可按互斥所有权并行，共享契约/入口保持串行。场景控制器只通过公开服务、状态仓库或消息契约协作，不得直接访问其他控制器的内部状态。

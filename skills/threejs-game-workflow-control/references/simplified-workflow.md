@@ -38,6 +38,10 @@
 
 基础工程同时按[游戏项目目录规范](../../threejs-game-architecture/references/project-structure.md)建立实际需要的目录：入口与基础服务分层，场景内部按功能聚合，平台适配、独立显示层、正式资源、源素材、测试和生成产物分清归属；路径与所有权在 TDD 和实施包中明确，不预建空壳目录。
 
+各阶段生产与收尾按[产物目录与归档规范](../../threejs-game-architecture/references/artifact-storage.md)执行：临时转换与未送审候选进入 `output/` 对应子目录，已确认设计成果进入 `docs/confirmed/`，正式游戏资源进入按所有权划分的 `public/assets/`，源文件进入 `assets-source/`；审阅/验证文件与机器控制记录分别进入 `evidence/<workItemId>/` 和 `.workflow-control/`。送审前保留实际文件，确认后归档且保留原证据引用，不把已确认或已绑定产物当临时文件清理。
+
+Git 收尾按[最小提交集](../../threejs-game-architecture/references/artifact-storage.md#最小提交集)逐文件选择运行必需工程文件和当前工作项仍引用的必要规格/记录；非运行文档、素材、证据和控制记录默认忽略，执行代理维护精确放行。完成归档不表示全部提交，减少提交也不授权清理本地文件。
+
 ## 四步单场景视图
 
 | 步骤 ID | 用户步骤 | 内部阶段 | 关键产物 |

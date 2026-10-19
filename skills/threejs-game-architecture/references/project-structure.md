@@ -63,8 +63,16 @@ game-project/
 │   └── fixtures/                   # 测试专用数据与资源
 ├── scripts/                         # 构建、资源处理和工程检查工具
 ├── docs/                            # GDD、TDD、资源合同和项目说明
-├── evidence/                        # 工作流验证证据，沿用控制面现有路径
+│   └── confirmed/<owner>/<artifact-id>/<version>/ # 已确认的非运行设计成果
+├── output/                          # 未被正式引用的可再生成产物，按最小范围忽略
+│   ├── intermediate/<workItemId>/<stageId>/<candidateId>/ # 临时转换、缓存与导出
+│   └── candidates/<workItemId>/<stageId>/<candidateId>/   # 尚未送审的探索候选
+├── evidence/                        # 审阅、截图、录屏与验证文件，按工作项归属
+│   └── <workItemId>/
+│       ├── reviews/<stageId>/<candidateId>/    # 保留送审实际文件与确认依据
+│       └── validation/<stageId>/<candidateId>/ # 验证日志、报告和运行证据
 ├── .workflow-control/               # 控制面状态与审批工件，沿用工具实际布局
+├── .threejs-workflow/user-resolutions/ # 现有受保护用户确认账本与回执
 └── dist/                            # Web 构建产物，不手工维护
 ```
 
@@ -81,8 +89,10 @@ game-project/
 
 ## 资源、命名与产物
 
+临时、候选、已确认成果、源文件、运行资源和工作流记录必须按[产物目录与归档规范](artifact-storage.md)分别存放；其中 `<owner>` 为 `shared`、`scenes/<scene-id>` 或 `display-layers/<display-layer-id>`。在 TDD 冻结实际目录映射，送审前保留真实候选，确认后按用途归档，不覆盖或搬走已绑定的证据文件。
+
 - `public/assets/` 只收录当前已验收的正式运行资源；按 `shared`、场景 ID、显示层 ID 分所有权，再按需细分 `images/`、`audio/`、`atlases/` 等类型。资源目录与代码使用同一身份映射，资源键与加载路径由所属清单维护。
-- `assets-source/` 放可编辑源文件、原始音频和生产输入；候选图、拆解图、预览和验证报告放项目合同指定的 `docs/`、`evidence/` 或工具输出路径，不能放入 `public/`，因为该目录的文件会随构建发布。需要模块导入的小型资源可随所属代码放置，但同一正式资源不得同时维护两份。
+- `assets-source/<owner>/` 放可编辑源文件、原始音频和生产输入；临时中间文件与未送审候选分别放 `output/intermediate/`、`output/candidates/`，已确认非运行成果放 `docs/confirmed/`，送审与验证文件放 `evidence/<workItemId>/`。控制记录仍使用 `.workflow-control/` 的实际布局。非运行产物不能放入 `public/`，因为该目录的文件会随构建发布。需要模块导入的小型资源可随所属代码放置，但同一正式资源不得同时维护两份。
 - 目录与资源文件默认 `kebab-case`，TypeScript 类或主要组件文件用 `PascalCase.ts`，函数/工具模块用 `kebab-case.ts`；资源 ID、模块 ID、场景 ID、显示层 ID 明确映射。导入大小写必须与磁盘一致，不用 `index.ts` 批量再导出掩盖循环依赖。
 - 关卡和角色的常用交付格式为 glTF/GLB；按资产实际压缩方式选择 `KTX2Loader`、Meshopt decoder 或 `DRACOLoader`，只在被引用的资产需要时启用。资源登记还要记录材质纹理色彩空间/压缩、动画片段与共享 GPU 资源的释放所有权。
 - `dist/`、`node_modules/`、已采用的原生构建目录、缓存和临时输出按项目 `.gitignore` 排除；已采用的原生工程主题、Manifest、Activity 等项目源配置应纳入版本管理，不能整体忽略对应平台目录。控制面工件和正式证据按现有工作流规则保留，不为整理目录移动它们。

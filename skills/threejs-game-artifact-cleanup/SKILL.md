@@ -23,7 +23,9 @@ description: 清理 three.js 项目中过期或未使用的工作流记录文件
 | 明确属于本任务的临时日志、临时导出、失败候选、重复预览、可再生成构建或缓存 | 证明无引用、无运行占用且可再生成后，纳入清理清单 |
 | 源码、正式资源、源素材/视频、用户交付物、锁文件、测试夹具、发布产物 | 默认保留；不是一般中间产物 |
 
-原视频可能用于重新抽帧，去背景原图可能支撑生产记录与质量复核，`review.html` 可能是人工审阅所需的实际产物。不要按扩展名、目录名含 `output`/`temp`，或体积大小批量判断。已有产物目录规范见[游戏项目目录规范](../threejs-game-architecture/references/project-structure.md)，证据语义见[控制模型](../threejs-game-workflow-control/references/control-model.md)。
+原视频可能用于重新抽帧，去背景原图可能支撑生产记录与质量复核，`review.html` 可能是人工审阅所需的实际产物。不要按扩展名、目录名含 `output`/`temp`，或体积大小批量判断。按[产物目录与归档规范](../threejs-game-architecture/references/artifact-storage.md)优先盘点本任务 `output/intermediate/` 和 `output/candidates/` 中未被引用且可再生成的文件；`docs/confirmed/`、`assets-source/`、正式资源、审阅/验证文件和 `.workflow-control/` 记录属于保留对象。发现临时路径已被绑定时先保留并修复归档与引用，不先删除；证据语义见[控制模型](../threejs-game-workflow-control/references/control-model.md)。
+
+Git 的[最小提交集](../threejs-game-architecture/references/artifact-storage.md#最小提交集)只限制入库范围，不缩小本地保留集合。未被当前工作项引用的历史文件、已被忽略的素材或撤销精确放行规则的记录，不因此自动成为清理对象；仍须核对全部保留记录和运行依赖。本 Skill 的清理结果仅在当前工作项仍需读取时提交，优先复用已有 Result/证据记录。
 
 ## 清理流程
 

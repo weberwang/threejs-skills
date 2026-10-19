@@ -1,3 +1,26 @@
 node_modules/
 output/
 dist/
+
+# 文档、源素材与工作流产物默认不提交；放行目录供末尾精确文件规则生效
+/docs/**
+!/docs/**/
+/assets-source/**
+!/assets-source/**/
+/evidence/**
+!/evidence/**/
+/.workflow-control/**
+!/.workflow-control/**/
+/.threejs-workflow/user-resolutions/**
+!/.threejs-workflow/user-resolutions/**/
+
+# 本地秘密配置不提交
+.env
+.env.local
+.env.*.local
+
+# 本技能包维护与交付必需的文档；游戏项目按当前工作项实际依赖维护自己的精确清单
+!/docs/dpr-responsive.md
+!/docs/verification.md
+
+# 当前工作项必要记录：在此按具体文件追加放行，不放行整目录或全部 JSON
