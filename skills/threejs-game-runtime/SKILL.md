@@ -9,6 +9,8 @@ description: 为 three.js Web 3D 游戏实现固定时间步、输入、场景�
 
 three.js 提供渲染与场景图；玩法循环、输入状态、物理世界、资源生命周期和游戏状态由项目负责。先复用项目服务；新工程以 TypeScript、Vite、three 为核心。
 
+项目实际采用 SDK 时，按[SDK 单文件独立初始化](../threejs-game-architecture/references/sdk-initialization.md)在 `src/platform/initialize-sdks.ts` 集中实现，各 SDK 独立发起与恢复。应用装配调用后继续启动渲染与 Boot，不等待 SDK 批次完成；能力入口自行处理目标 SDK 未就绪，不在主循环或场景间串接 SDK 初始化。无 SDK 的工程模板不增加占位文件。
+
 1. 把渲染 Scene 与玩法 scene controller 分离。控制器负责 enter、fixedUpdate、renderUpdate、exit、dispose，入口只装配服务。规则与数值模块不依赖 WebGL、DOM 或材质。
 2. 使用 [固定步与输入辅助模块](scripts/game-runtime.mjs)：物理和规则用固定 dt，渲染用 accumulator/step 插值。后台暂停、失焦与 Pointer Lock 解除清空按键；恢复时重置时间戳和积累量，禁止补算整段后台时间。最多追赶有限步数，记录丢弃时间；输入边沿每模拟步只消费一次。
 3. 世界使用米、秒、弧度、Y 向上，明确前向和玩家尺寸。模型 pivot、碰撞体中心、HUD 锚点是不同契约。高速物体按实测使用 CCD；Raycaster 负责选取，不替代刚体碰撞。物理与导航见 [插件选择](../threejs-game-plugins/SKILL.md)。

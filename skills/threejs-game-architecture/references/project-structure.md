@@ -46,6 +46,7 @@ game-project/
 │   │   │   └── pause-menu/          # 弹窗自身控制、UI、布局和生命周期
 │   │   └── shared/                  # 已满足共享条件的实体、UI 或纯函数
 │   └── platform/
+│       ├── initialize-sdks.ts        # 已采用 SDK 的唯一初始化文件，各 SDK 独立启动与恢复
 │       ├── web/                     # 浏览器可见性、存储等适配
 │       ├── android/                 # 仅采用 Android 原生宿主时创建
 │       └── ios/                     # 仅采用 iOS 原生宿主时创建
@@ -83,6 +84,7 @@ game-project/
 - 一个场景的规则、实体、常驻 UI、布局与测试就近组织在 `scenes/<scene-id>/`；不要在根级 `entities/`、`managers/` 或 `ui/` 汇集所有场景的私有实现。按需拆分内部目录，小场景无需机械创建全部子目录。
 - `modules/<module-id>/` 归属场景无关的基础服务；场景通过其公开接口调用。模块不得导入具体场景、显示层或其私有实现，场景之间也不得直接访问对方内部状态。纯规则与数据校验优先保持独立于 ThreeJS 显示对象，方便定向测试。
 - `platform/` 默认只实现浏览器能力，`game/contracts/` 定义需要的平台接口，`src/main.ts` 完成注入。只有目标渠道明确需要原生宿主时才创建 Capacitor、Android 或 iOS 工程及适配器；业务不得直接导入原生插件或平台适配器。原生主题、Manifest 和 Activity 修改归属对应宿主工程。
+- 已采用 SDK 的全部初始化调用、完成处理、幂等和初始化重试集中在 `src/platform/initialize-sdks.ts`，按[SDK 单文件独立初始化](sdk-initialization.md)由装配入口一次投递，各 SDK 之间无前置依赖；无 SDK 时不创建空文件。各平台与业务适配器不得另建 SDK 初始化实现，游戏不等待 SDK 批次完成。
 - modal/popup 等瞬态层归属 `display-layers/<display-layer-id>/`，独立于宿主的 `ui/`，对应独立 DISPLAY_LAYER Work Item；宿主只提供公开接口与上下文。其常规目录位置不改变 V2/V3 门、实施顺序或互斥文件所有权。
 - 通用基础服务进入 `modules/`；跨场景复用的实体、UI 或纯函数进入 `shared/`，二者不重复维护同一能力。只有被至少两个已确认场景稳定复用或属于启动运行必需时才能提取共享实现；禁止无职责边界的 `common/`、`utils/` 和全局可变状态集合。
 - 单元测试优先使用相邻 `*.test.ts`，跨模块测试放 `tests/integration/`，端到端测试放 `tests/e2e/`；沿用项目已采用的测试工具，不因目录规范额外安装框架。测试专用资源不放进 `public/assets/`。

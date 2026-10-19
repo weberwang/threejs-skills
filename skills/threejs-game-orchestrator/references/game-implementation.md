@@ -14,6 +14,8 @@
 
 基础实施先按[游戏项目目录规范](../../threejs-game-architecture/references/project-structure.md)冻结入口、基础模块、场景、显示层、平台适配、资源、测试和产物的路径与所有权；按实际需要创建目录，后续实施沿同一映射落盘。
 
+涉及 SDK 时，基础平台包按[SDK 单文件独立初始化](../../threejs-game-architecture/references/sdk-initialization.md)将全部 SDK 的初始化调用、回调、状态和初始化恢复集中在 `src/platform/initialize-sdks.ts`。SDK 相互独立，首帧、场景与隐私流程不等待 SDK 批次完成；不能把初始化分散回各场景或在成功回调里串接下一个 SDK。
+
 Android/iOS 原生平台功能按[原生平台插件选型](../../threejs-game-architecture/SKILL.md#原生平台插件选型)优先复用现有插件，再选择适用的官方或社区插件；仅在明确能力缺口下补充自建原生实现。实施包记录插件选型与平台适配边界，必要宿主配置和冷启动/恢复验收仍按对应约束执行。
 
 1. 全局基线、foundation-only 边界和项目状态顺序按[控制模型](../../threejs-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](../../threejs-game-workflow-control/references/state-gates.md)执行；编排层只建立“需求 → 功能 → 模块 → 场景 → 正式资源 → 测试证据”的追踪。

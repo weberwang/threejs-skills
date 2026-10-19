@@ -21,6 +21,7 @@ description: three.js Web 3D 游戏的技术架构角色。需要划分或评审
 - three.js `Scene` 是 `Object3D` 树，负责组织可见对象，不充当游戏状态容器。独立的场景控制器拥有玩法状态与生命周期，并提供 `enter`、`update`、`exit`、`dispose`；渲染循环按固定步长推进玩法/物理，再用渲染插值显示当前状态。
 - 浏览器是默认平台。仅当目标渠道确实要求原生宿主时才采用 Capacitor 或对应宿主；平台插件按能力逐项选择并封装在适配层，不预装非必需插件。
 - 小游戏必须单独验证；可选商业能力须有显式接口和已批准开关。
+- 项目采用的 SDK 按[SDK 单文件独立初始化](references/sdk-initialization.md)统一在 `src/platform/initialize-sdks.ts` 实现启动、回调、幂等和初始化重试。各 SDK 独立发起，不互相等待，也不等待隐私流程、场景或全局就绪；原生真实条件按各 SDK 单独检查，业务使用仍遵守相应能力门。
 - 基础模块按[音频生命周期约束](../threejs-game-audio/SKILL.md#后台暂停与恢复约束)处理浏览器页面可见性和音频上下文受限；只有采用原生宿主时才添加对应平台生命周期适配。
 - 基础模块按[基础显示约束](../threejs-game-orchestrator/references/game-implementation.md#基础显示约束)让 Canvas 适配实际 CSS 视口并保持 Camera、HUD 和输入坐标一致。原生窗口主题、沉浸式全屏和平台安全区只在对应宿主被选用时实现。
 

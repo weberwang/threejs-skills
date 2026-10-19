@@ -4,6 +4,8 @@
 
 Android/iOS 原生平台功能优先通过插件实现：先复用项目现有插件，再评估官方插件、社区插件；仅在明确能力缺口下补充最小自建原生实现。选型、平台适配边界和必要宿主配置遵循[原生平台插件选型](skills/threejs-game-architecture/SKILL.md#原生平台插件选型)。
 
+项目已采用的 SDK 按[SDK 单文件独立初始化](skills/threejs-game-architecture/references/sdk-initialization.md)统一在 `src/platform/initialize-sdks.ts` 实现启动、回调、幂等和初始化重试；各 SDK 独立发起，不互相等待，也不把 SDK 批次完成作为隐私流程、游戏首帧或场景启动的前置。无 SDK 时不创建占位实现。
+
 ## 安装
 
 需要 Node.js 22.20 或更高版本：
