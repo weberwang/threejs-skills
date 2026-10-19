@@ -7,8 +7,10 @@
 - ThreeJS Web、浏览器预览、小游戏和其他没有原生 MAX 容器的目标不直接调用 MAX、不导入原生 SDK，也不发起网络广告请求。共享 TypeScript 门面在这些目标上返回结构化 `unsupported-platform` no-op，并立即让游戏继续。
 - iOS 与 Android 仅通过 AppLovin 官方 `cordova-plugin-applovin-max` 调用 MAX；Capacitor 使用其 Cordova 兼容层加载插件。ThreeJS 场景只能调用共享 TypeScript 门面，不能直接触碰官方插件全局对象、Activity、ViewController、MAX 原生对象或任何网络 SDK。
 - 项目不得改用社区广告插件、自建 Capacitor 原生广告插件或直接集成 Android/iOS MAX SDK。实施前核对官方插件版本与当前 Capacitor、Android Gradle、iOS CocoaPods/Swift Package Manager 路径的兼容性；任一目标平台不兼容时标记阻断并回到 Work Item 决策，不静默切换实现路线。
+- 本合同的“隐私未决仍初始化”“privacy 不暂停初始化重试”等规则，只适用于已由官方资料与锁定依赖核实支持独立时序的 SDK/CMP 组合。官方要求先完成自有 CMP 而当前组合无法满足独立初始化要求时，将 MAX 任务标为结构化配置阻断，不调用 initialize、不安排自动重试，也不建立等待 CMP 或其他 SDK 的启动链；记录限制并按当前任务解决配置，AppsFlyer 和游戏继续独立启动。该阻断来自不适用的接入组合，不从用户拒绝或 ATT 状态本身推断。
 - 所有已启用的插页与激励视频广告位都在初始化成功后立即投递后台静默预加载意图，实际 load 经过广告请求隐私门，未满足时保留意图待恢复；初始化不主动创建广告对象或视图，Banner 不预加载，只在展示请求时创建并加载；加载、重试和展示回调均走后台/事件驱动路径。游戏主循环、输入、场景切换和结算不得等待广告加载、网络响应、CMP、展示或隐藏；全屏展示触发只读取当前状态并快速返回，不能在触发路径临时 load；Banner 展示触发允许按需创建并加载，但同样立即返回。
 - 任何平台只允许一个广告服务实例和一个官方插件接入实例。每个广告位持有独立业务状态和至多一个加载重试 timer，格式匹配的 MAX 原生对象由官方插件内部管理；所有广告位只共用激励视频结束后的插页保护截止时间等服务级状态，不设置跨广告位全屏互斥，不共用加载重试 timer。重复初始化、预加载、展示请求或插件回调不能造成同广告位并发 load、递归回调或多套退避机制。
+- 新 MAX 实例首次实际 initialize 前必须手动调用官方 `AppLovinMAX.setHasUserConsent(false)`。该值仅作为 SDK 隐私配置，不能作为业务广告开关：不得因 false 拒绝初始化、预加载、Banner 按需加载、加载重试或展示，不得从 `!hasUserConsent` 推导 `privacy-pending`/`privacy-blocked`。SDK 已就绪且其他真实条件满足时照常发起请求；实际填充和 SDK/adapter 返回结果按原合同处理，不把 false 擅改为 true。内建流程关闭与该配置分别核对，AppsFlyer 不依赖该值启动。
 - 加载失败、无填充和后台重试始终静默，不弹 Toast。视频广告触发时已不可用，或展示请求发出后收到 `displayFailed`，必须由共享 UI 层显示一次本地化“视频广告暂不可用，请稍后再试”Toast；重复和迟到事件不得重复提示。
 - Banner 使用原生 MAX ad view，不预加载也不默认创建；首次展示请求才创建并加载。只有收到 `loaded`、布局已确认安全且业务仍请求可见时才能显示；未 ready、加载失败或布局不可用时保持隐藏并立即返回，不弹 Toast，也不让空白广告位阻塞或覆盖游戏。
 
@@ -106,7 +108,7 @@ interface GateSnapshot {
   host: GateStatus;          // Activity/ViewController provider
   foreground: GateStatus;
   connectivity: GateStatus;
-  privacy: "ready" | "pending" | "blocked";
+  privacy: "ready" | "pending" | "blocked"; // 实际请求条件，不等于 hasUserConsent=true
 }
 
 interface AdResult {
@@ -194,7 +196,7 @@ interface AdUiNoticeEvent {
 - `unknown-slot`、`format-mismatch`：广告位不存在或其格式与调用不一致。
 - `layout-not-ready`、`banner-visible-conflict`：Banner 尚无安全布局，或当前 viewport 已有另一个可见 Banner。
 - `not-initialized`、`initializing`：SDK 尚未初始化或初始化请求进行中；不用于表达隐私状态。
-- `privacy-pending`、`privacy-blocked`：仅表示广告加载/展示的隐私门未满足，不能作为 initialize/retryInitialize 的拒绝原因。
+- `privacy-pending`、`privacy-blocked`：仅表示存在尚未满足的独立实际广告请求条件或 SDK/平台限制，不得由 `hasUserConsent=false` 单独产生，也不能作为 initialize/retryInitialize 的拒绝原因；初始化前的接入组合不适用按配置阻断另行处理。
 - `not-ready`、`loading`、`already-showing`：当前没有可立即展示的缓存广告，或同一广告位已有展示请求；其他广告位的展示状态不参与拒绝判定。
 - `background`、`offline`、`no-host`：当前生命周期或网络不适合展示。
 - `not-natural-break`：调用点不是明确的自然中断点，不发起展示。
@@ -230,16 +232,16 @@ interface AdUiNoticeEvent {
 - `host`：Activity/ViewController provider 能否提供当前有效宿主；
 - `foreground`：App 是否在前台并允许呈现全屏界面；
 - `connectivity`：网络连通性监视器是否允许请求；
-- `privacy`：广告请求/展示的隐私条件是否达到 `ready`；不参与 MAX 初始化调用、完成及初始化重试判定。初始化成功与用户同意分别记录，不能互相推断；隐私流程的进行中、失败或取消不能覆盖 SDK 初始化状态。
+- `privacy`：实际广告请求配置和 SDK/平台条件是否达到 `ready`，不表示用户是否同意。`hasUserConsent=false` 已正确传入且没有其他独立阻断时，privacy 应为 ready，允许加载、重试和展示；不能因为 false 等待用户同意、把值改 true 或映射为 pending/blocked。只有另有明确的实际请求限制才使用 pending/blocked，并记录与该布尔值无关的原因；不参与 SDK 初始化完成判定，已确认的初始化成功不受弹窗结果覆盖。
 
 ThreeJS 场景只提供 `slotId` 与自然中断点上下文并消费结构化结果；`tryShow` 前由官方插件适配层读取该广告位当前实例就绪属性、phase 和共享 gates，任一 gate closed/unknown 都立即拒绝。前后台、断网、隐私变化和宿主切换由 Capacitor 生命周期与官方插件事件归一化后发布，恢复时重新计算 gates，而不是让场景写入广告 phase。
 
 1. `new → initializing` 只由首次有效 `initialize` 触发；相同配置的重复初始化复用原请求或返回当前 phase，不再次创建 SDK/广告对象。
-2. MAX 初始化完成后，广告位业务状态进入 `idle`，不以隐私同意与否作为初始化成功条件；不遍历创建广告对象或视图，只通过插页与激励视频各自的服务入口立即投递一次预加载，插件内部按需管理资源。Banner 保持未创建，不投递 load；官方插件初始化失败转为 `failed`。隐私未决或被阻断时只阻断实际广告请求/展示，以 privacy gate 和结果码表达，保留预加载意图，不改变已经确认的 SDK 初始化成功状态。
+2. MAX 初始化完成后，广告位业务状态进入 `idle`，不以隐私同意与否作为初始化成功条件；不遍历创建广告对象或视图，只通过插页与激励视频各自的服务入口立即投递一次预加载，插件内部按需管理资源。Banner 保持未创建，不投递 load；官方插件初始化失败转为 `failed`。只有另有明确的实际请求限制导致 privacy pending/blocked 时才阻断 load/show 并保留意图，不从 hasUserConsent=false 推导该限制，也不改变已经确认的 SDK 初始化成功状态。
 3. 每个全屏广告位的 `idle → loading → ready` 是一次独立加载生命周期；重复 `preload(slotId)` 先读取实例就绪属性，属性为 true 或仍有 in-flight load 时不重复加载；`preload(bannerSlotId)` 始终返回 `format-mismatch` 且不创建、不加载。预加载成功由当前实例就绪属性确认，`loaded` 仅触发复核，phase 是资源状态的投影。
 4. 全屏广告的 `ready → showing` 只由 `tryShow` 触发，前提是当前实例就绪属性为 true、所有 gates open、自然中断条件成立且满足格式策略。插页还必须满足当前单调时间不早于 `interstitialBlockedUntilMonotonicMs`；保护期内返回 `rewarded-interstitial-delay`，不能调用 MAX 的 show，也不能在触发路径补做 load。
 5. `showing → idle` 的 `displayFailed` 立即发起一次去重后的后台预加载；只有这次加载失败后才进入指数退避。`showing → idle` 的 `hidden` 也必须立即后台预加载。若该事件属于当前匹配的激励视频展示，请先以事件的 `monotonicAtMs + 30_000` 更新插页保护截止时间，再结束该广告位的展示状态并立即预加载；重复、迟到、旧实例或不匹配的 `hidden` 不得延长保护期。激励视频 `displayFailed` 不启动保护期。
-6. 后台、离线、隐私未决或无有效宿主时保留当前 phase 快照，但不发起新的 load/show；恢复到前台且网络可用后重新计算 gates，并按保留的退避 deadline 最多恢复一次调度。
+6. 后台、离线、独立的实际请求条件未满足或无有效宿主时保留当前 phase 快照，但不发起新的 load/show；hasUserConsent=false 本身不属于这些阻断。恢复到前台且网络可用后重新计算 gates，并按保留的退避 deadline 最多恢复一次调度。
 7. 任何销毁、平台切换或配置变更都使旧回调携带的实例代次失效；旧事件不得把新实例推进到 `ready` 或重置新实例的计数。
 8. Banner 初始未创建且 `bannerVisibility=hidden`。首次有效 `setBannerVisibility(true)` 记录可见请求，创建视图并发起加载，立即返回 `banner-load-started`；重复请求复用同一视图、in-flight load 或 retry timer。`loaded` 把 phase 置为 `ready`，仅当业务仍请求可见、gates open 且布局安全时显示。`setBannerVisibility(false)` 清除可见请求、取消待执行恢复 timer、停止刷新并立即隐藏；未创建时不创建视图。
 
@@ -252,7 +254,7 @@ ThreeJS 场景只提供 `slotId` 与自然中断点上下文并消费结构化�
 - 官方插件初始化失败进入 `failed`，立即返回稳定错误类别及 `retryScheduled`，全程静默、不阻塞游戏。相同配置的重复 `initialize` 复用当前请求或失败/恢复快照，不递归初始化，也不重置退避。
 - 网络超时、网络服务暂不可用和明确的原生服务瞬时错误，由统一初始化文件中 MAX 唯一的恢复任务自动重试。独立保存初始化连续失败计数、单调时钟 deadline、timer 引用和 in-flight 标记；沿用加载重试的 2/4/8/16/32/64 秒公式及抖动规则，最高 64 秒、无次数上限，直到成功、服务禁用或销毁。失败回调只登记任务，不同步递归初始化，不重新初始化其他 SDK。
 - `host`、`foreground` 或 `connectivity` 条件未满足时，不发起初始化请求；服务保留初始化意图并监听条件恢复。已存在退避时取消 timer 但保留失败计数与 deadline；条件变化本身不增加失败计数。全部条件满足且不存在配置/策略阻断或待诊断未知错误时，尚无失败 deadline 的待初始化请求执行一次；已有 deadline 的请求到期后执行一次，未到期则按剩余时间恢复 timer。重复恢复事件不得重复请求。
-- 缺失 SDK/adapter、无效配置、平台不支持或明确策略阻断不自动重试：取消初始化恢复任务并报告原因。修正受控配置或依赖、解除策略阻断后由调用方显式 `retryInitialize()`；未修正时返回原阻断；前台、网络、宿主或隐私恢复事件不能解除该阻断或自动发起初始化。初始化及其重试不受 privacy gate 约束：隐私未决、拒绝同意或 ATT 未授权都不暂停、不取消初始化任务；隐私结果只用于配置真实隐私标志与广告请求/展示策略。无法归类的错误先诊断，不凭自由文本默认无限重试，只有确认瞬时故障后才纳入自动退避。
+- 缺失 SDK/adapter、无效配置、平台不支持或明确策略阻断不自动重试：取消初始化恢复任务并报告原因。修正受控配置或依赖、解除策略阻断后由调用方显式 `retryInitialize()`；未修正时返回原阻断；前台、网络、宿主或隐私恢复事件不能解除该阻断或自动发起初始化。对已核实支持独立时序的 SDK/CMP 组合，初始化及其重试不受广告请求 privacy gate 约束：隐私未决、拒绝同意或 ATT 未授权都不暂停、不取消初始化任务；隐私结果只用于配置真实隐私标志与广告请求/展示策略。不满足独立时序的组合维持配置阻断，不按隐私状态变化抢跑。无法归类的错误先诊断，不凭自由文本默认无限重试，只有确认瞬时故障后才纳入自动退避。
 - SDK 初始化请求进行中才保持 `initializing` 和同一个 in-flight 请求；隐私弹窗状态不参与该判定。SDK 完成回调到达即确认成功，即使隐私流程仍在进行；隐私失败不增加初始化失败计数、不创建初始化重试 timer。只有当前 SDK 初始化请求明确失败时才按失败分类恢复，重复点击或隐私状态变化不再次 initialize。
 - `retryInitialize()` 是同一恢复任务的手动入口：初始化进行中复用请求；已有自动退避时复用原 deadline，不取消退避抢跑、不重置计数；宿主/前台/网络门关闭时立即返回原因并保留待恢复意图；确定性问题修正后清除对应配置阻断及旧失败计数，受理一次新初始化。已成功时返回成功快照，不再次初始化。
 - timer 执行前先清空自身引用，校验服务仍启用、实例代次、当前初始化请求有效性、宿主/前台/网络门及非 in-flight 状态（不检查 privacy gate），最多投递一次请求。每次尝试在适配器内部关联唯一操作标识；重复、迟到或旧尝试回调不得覆盖当前状态、增加计数或重复启动预加载。重试复用 `instanceGeneration`，实例重建时先递增 generation 并失效旧请求和 timer。
@@ -263,13 +265,30 @@ ThreeJS 场景只提供 `slotId` 与自然中断点上下文并消费结构化�
 
 MAX 的实际初始化和完成/恢复处理集中在 `src/platform/initialize-sdks.ts`，与项目其他 SDK 分别独立投递；初始化入口、幂等状态和 timer 不分散到广告服务、隐私模块或场景中。游戏和其他 SDK 不等待 MAX 完成，MAX 也不等待它们；已启用聚合网络由 MAX 官方插件/adapter 自身管理，不绕过插件为每个网络另行直接初始化原生 SDK。
 
-1. 启动时读取受控平台配置，检查平台、当前 Activity/ViewController、环境开关与插件配置；Web/小游戏直接 no-op。支持的原生平台服务启用且具备有效配置时，必须调用 MAX initialize，不以同意隐私、CMP 完成或 ATT 授权作为前置条件；不得把拒绝同意转换为禁用 MAX 初始化。
-2. SDK 初始化与隐私流程是两条独立任务，不通过 Promise 串联，也不相互等待完成事件。SDK 初始化成功只由实际完成回调确认；隐私弹窗、CMP、UMP 或 ATT 的进行中、拒绝、失败、取消及重新授权只更新真实隐私状态和广告请求门，不修改已确认的初始化结果，也不触发初始化重试。广告请求门未满足时保留预加载意图，不发起 load/show；隐私状态恢复后仅恢复广告请求。
-3. 不再强制使用 MAX 自带的 Terms and Privacy Policy Flow，也不得把初始化前启用该流程作为交付前置。[Android 官方流程](https://support.applovin.com/en/max/android/overview/terms-and-privacy-policy-flow)和[iOS 官方流程](https://support.applovin.com/en/max/ios/overview/terms-and-privacy-policy-flow)说明：启用自动流程后，SDK 在用户完成流程后才调用初始化完成回调。这种配置不能作为“初始化与隐私独立”的实现。实施时检查官方插件与锁定 SDK 支持的配置入口，以及 Android `res/raw/applovin_settings.json` 的 `consent_flow_settings`、iOS `AppLovin-Settings.plist` 的 `ConsentFlowInfo` 等原生资源，移除工作流强加的自动启用配置；不能套用其他框架的 API、自建广告桥或提前伪造成功回调。隐私方案由独立模块按当前官方支持方式与项目要求配置，避免重复弹窗和 ATT 请求；移除自动流程不代表隐私已完成，不得默认同意。若锁定插件/SDK 或所选 CMP 本身要求串行初始化，记录具体能力限制和官方证据，返回 Work Item 决策；不得把该组合标为已满足独立初始化，也不得擅自改用“先初始化、后 CMP”的未获支持顺序。
+1. 启动时读取受控平台配置，检查平台、当前 Activity/ViewController、环境开关、插件配置与独立时序资格；Web/小游戏直接 no-op。原生服务启用、配置有效且官方已确认当前 SDK/CMP 组合支持独立时序时，正常调用 MAX initialize，不额外添加同意隐私、CMP 完成、ATT 或 AppsFlyer 完成等等待；不得把拒绝同意本身转换为禁用 MAX。组合不支持独立时序时按上述配置阻断处理，不能绕过官方初始化前提。
+2. SDK 初始化与隐私流程是两条独立任务，不通过 Promise 串联，也不相互等待完成事件。SDK 初始化成功只由实际完成回调确认；隐私弹窗、CMP、UMP 或 ATT 的进行中、拒绝、失败、取消及重新授权如实更新对应信号，不修改已确认的初始化结果或触发初始化重试。广告请求门根据独立实际请求条件判断，不把 hasUserConsent=false 或用户拒绝直接映射为业务 blocked；只有确有其他独立限制时才保留预加载意图并暂停 load/show，限制解除后恢复广告请求。
+3. 必须在 MAX initialize 之前完成内建 Terms and Privacy Policy Flow 的关闭配置，不能仅删除弹窗调用或未经核对就假设默认关闭。[Android 官方流程](https://developers.applovin.com/en/max/android/overview/terms-and-privacy-policy-flow/)和[iOS 官方流程](https://developers.applovin.com/en/max/ios/overview/terms-and-privacy-policy-flow/)说明：该流程需 opt-in 启用，启用后 SDK 在用户完成流程后才调用初始化完成回调。关闭只作用于 MAX 内建流程，MAX SDK 与广告服务仍保持启用，继续正常调用 initialize，并由真实完成回调确认成功。实际关闭方式按下一节核对，不套用其他框架 API、自建广告桥或伪造成功。独立隐私模块继续维护真实授权状态，关闭 MAX 内建流程不代表隐私已完成；官方页面还要求自有 CMP 组合先满足其规定的隐私前提，因此不能宣称任意 CMP 组合都可独立初始化。若锁定插件/SDK 或所选 CMP 不支持要求的独立时序，记录具体限制与官方证据并在当前任务范围解决接入组合，不擅自恢复内建流程、改成跨 SDK 串行等待或把未满足要求的配置标为通过；AppsFlyer 等其他独立 SDK 继续启动。
 4. iOS `Info.plist` 按当前 AppLovin SKAdNetwork 页面和已实际启用的每个 mediated network 生成/维护 `SKAdNetworkItems`，不能复制过期的固定清单。Android/iOS 的隐私 manifest、数据安全声明、商店隐私资料和目标地区限制同样由发布责任人核对。
 5. 初始化成功后立即通过每个启用的插页与激励视频广告位自己的服务入口投递静默预加载意图；实际 load 仍检查广告请求隐私门，未满足时保留意图，恢复后各广告位去重执行一次。初始化失败立即返回结构化错误；瞬时故障由独立任务自动退避，宿主/前台/网络条件未满足时暂停，隐私状态不阻断初始化重试，配置错误修正后显式重试，不在初始化回调里递归重试或阻塞 ThreeJS。
+6. 项目启用 AppsFlyer 时，其初始化及实际启动由统一文件中的 AppsFlyer 私有任务独立发起，不在 MAX initialize、MAX 内建隐私流程、广告 load/show 或 MAX 重试回调中执行，也不等待这些动作完成。按[官方 Cordova 指南](https://github.com/AppsFlyerSDK/appsflyer-cordova-plugin/blob/master/docs/Guides.md#init-sdk)核对锁定插件：当前 API 的 `init()` 不自动启动，在 AppsFlyer 自己的 `registerSessionReadyListener` 回调调用 `start()`，自身真实 ATT/授权条件仍遵守官方要求。MAX 失败或永久不回调时不阻断 AppsFlyer 自己的启动流程，AppsFlyer 失败或不回调时不阻断 MAX 初始化。两个 SDK 不共享启动标志、请求或重试 timer，不能以 MAX 成功代替 AppsFlyer 已启动；未采用 AppsFlyer 的项目不额外安装它。
 
-Google AdMob 的 Google UMP/CMP 消息配置、IAB TCF 与实际聚合网络覆盖由隐私模块独立核实，不固定为 MAX 初始化内置流程；外部控制台配置仍由责任人在授权范围内完成。隐私状态按所锁定插件支持的接口如实传递，不从初始化成功推断用户已同意；已有真实状态按官方要求设置，未决状态不得伪造为同意或拒绝。具体方案须核对[官方 Cordova 隐私说明](https://support.applovin.com/en/max/cordova/overview/privacy)，不能假设所有 SDK/CMP 组合都支持独立时序；儿童数据、年龄限制和地区义务不能由广告模块自行假设或绕过。
+### 初始化前设置 hasUserConsent=false 与广告请求资格
+
+- 在 `src/platform/initialize-sdks.ts` 中，每个新 MAX 实例首次实际 initialize 前手动调用官方 `AppLovinMAX.setHasUserConsent(false)`；不是给门面、场景或 `InitConfig` 增加一个本地同名字段。设置的是布尔 `false`，不能传字符串、假设 SDK 默认已为 false，或等初始化完成才设置。调用顺序和原生实际接收状态应在目标项目验证。
+- [官方 Cordova 隐私说明](https://support.applovin.com/en/max/cordova/overview/privacy)明确提供“设置 false → 初始化 SDK → 请求广告”的调用方式；[官方 JS 实现](https://github.com/AppLovin/AppLovin-MAX-Cordova/blob/master/plugin/www/applovinmax.js)的 setter 不返回完成 Promise，也不接收完成回调。不能用 `await setHasUserConsent(...)` 假装等待原生配置生效；按插件真实调用语义在 initialize 前设置，并在目标项目通过初始化日志的 Privacy States / Has User Consent 或 Mediation Debugger 核对实际值为 false。
+- 同一实例的重复启动入口复用已有初始化请求/结果，不重复执行 SDK 列表或覆盖后续真实隐私更新；同一实例瞬时失败后的恢复复用已确定的配置，未完成的必要配置不能跳过。只有创建新原生实例并首次初始化时，才重新落实本工作流要求的初始 false；同实例的自动/手动重试、状态查询和回调重放不再次回写 false 覆盖后续真实更新。
+- `hasUserConsent` 与广告请求资格分开保存：`false` 不表示 SDK 未就绪、广告禁用、无填充或必须等待同意。在 SDK 初始化成功、宿主/网络/前台、广告位与格式等条件满足，且没有其他独立实际限制时，privacy gate 为 ready，全屏预加载、Banner 按需加载、加载重试和就绪后的展示照常执行。禁止通过 `if (!hasUserConsent) return`、将 false 映射为 pending/blocked、等待该值变 true 或取消既有恢复任务来间接阻止广告请求。
+- 实际 SDK/adapter 对该隐私配置如何处理请求及是否填充，以真实结果为准；不得保证 false 一定有填充，也不把值改成 true 来消除错误。独立的真实 SDK/平台请求限制继续按其实际原因处理，不能把缺少用户同意本身重复包装成另一个业务层禁用开关。
+- 此 false 是本次启动指定的 SDK 初始配置，不是用户已点击拒绝/同意的交互记录，也不是 AppsFlyer 的授权状态。独立隐私模块按真实反馈和官方接口更新相应信号；不得从 MAX 初始化成功推断用户同意，或用 MAX 的 false 决定 AppsFlyer 是否启动。设置 false 与关闭内建流程是两个独立动作，必须分别核对。
+
+### 内建流程关闭配置与真实初始化核对
+
+- 先检查锁定的[官方 Cordova JS API](https://github.com/AppLovin/AppLovin-MAX-Cordova/blob/master/plugin/www/applovinmax.js)及原生桥接。已核对的官方公共接口没有内建流程开关，不得写入不存在的 `AppLovinMAX.setTermsAndPrivacyPolicyFlowEnabled(false)`；`setHasUserConsent(false)` 只表达授权状态，也不能用来代替关闭内建流程。
+- 对官方支持的宿主资源检查 Android `res/raw/applovin_settings.json` 的 `consent_flow_settings.consent_flow_enabled`，以及 iOS 主 target `AppLovin-Settings.plist` 的 `ConsentFlowInfo.ConsentFlowEnabled`；取消启用该流程的 opt-in `true`/`YES` 项，并检查所有已采用的构建模板、生成脚本、原生代码启用调用和最终产物，避免再次注入启用设置。若锁定 SDK 已确认支持以布尔 `false`/`NO` 显式配置，则按其实际读取行为关闭；官方流程文档只展示启用示例，不能将反设 false 的行为或多处配置覆盖优先级写成已验证事实。
+- 核对关闭配置先于实际 SDK initialize 生效，但初始化任务照常发起；以官方插件回传的 SDK 初始化完成信号检查真实成功，随后由广告服务投递预加载意图，实际 load/show 仍检查业务与隐私门。保留配置、初始化完成和广告请求各自的验证结果，不以无弹窗、请求受理、AppsFlyer 成功或源码检查代替 MAX 运行验证。
+- AppsFlyer 的自身配置、监听、session-ready 和 start 都留在独立任务；MAX 的开关配置失败或初始化异常只影响 MAX，不跳过 AppsFlyer 的任务投递。其自身官方启动前提与 MAX 无关，不把关闭 MAX 流程误写为用户已同意 AppsFlyer 跟踪。
+
+Google AdMob 的 Google UMP/CMP 消息配置、IAB TCF 与实际聚合网络覆盖由隐私模块独立核实，不固定为 MAX 初始化内置流程；外部控制台配置仍由责任人在授权范围内完成。本工作流明确要求 MAX 初始化前手动传入 false，该初始配置不能冒充用户交互结果，也不能被业务层用作阻止广告加载的条件。其余真实隐私信号按锁定插件支持的接口传递，不从初始化成功推断用户已同意，不为获得填充把 false 改为 true。具体方案须核对[官方 Cordova 隐私说明](https://support.applovin.com/en/max/cordova/overview/privacy)，不能假设所有 SDK/CMP 组合都支持独立时序；儿童数据、年龄限制和地区义务不能由广告模块自行假设或绕过。
 
 ## 全屏广告静默预加载与独立持续重试
 
@@ -409,11 +428,13 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 - Web/小游戏所有入口均为 no-op，`isReady=false`，且不导入或触发原生 API。
 - 重复 `initialize`、同广告位重复 `preload`、重复 `tryShow` 和重复 listener 回调保持幂等；每广告位最多一个 in-flight load 和一个待执行加载重试 timer，服务不存在共享加载重试 timer。
 - 全屏 loaded 到达但实例就绪属性为 false 时不确认成功、不清零失败计数且继续退避；旧 phase 为 ready 但属性为 false 时禁止 show；phase 尚未同步但属性为 true 时按当前属性判断。重试执行前属性已为 true 时取消重试且不重复 load，成功只清理自身任务；实例缺失/销毁/旧代次/读取异常均不判成功，同广告位 showing 不被就绪查询覆盖。
-- 使用永不结束的 fake 隐私流程，独立触发 SDK 初始化成功回调：SDK 必须退出 initializing 并投递一次全屏预加载意图，privacy gate 仍关闭且 load/show 为零；随后隐私同意、拒绝、失败、取消均不得覆盖初始化成功、重复初始化或重复投递意图。再覆盖隐私先完成而 SDK 未完成时仍保持 initializing，不能用隐私完成代替 SDK 回调。
-- 核验 Android/iOS 实际构建中的隐私配置没有因工作流要求自动启用串入初始化回调的弹窗；按独立隐私模块同步真实结果，已有状态时不重复弹窗。初始化重试不重复注册隐私监听或请求 CMP/UMP/ATT；隐私未决不阻断初始化失败后的既有恢复任务，流程未完成时不伪造 SDK 成功或用户同意。锁定依赖无法满足独立时序时记录能力限制，不伪造验收通过。
-- 隐私 pending、blocked、拒绝同意及 ATT 未决/拒绝时均调用 MAX initialize，临时初始化失败仍自动重试；SDK 的初始化完成回调到达前不得假装成功。初始化成功时隐私门阻断仅保留广告位预加载意图，不发起 load，隐私恢复只恢复广告请求、不重新初始化。
+- 使用假的官方插件记录调用顺序：新 MAX 实例首次 initialize 之前必须先收到布尔 `false` 的 setHasUserConsent 调用；SDK 真正完成前不能 load。完成后保持 false，其他实际条件满足且没有独立阻断时，privacy 为 ready，全部启用全屏广告位各发起一次预加载，Banner 仍只在展示请求时创建并加载；模拟加载失败后仍按原任务重试，实例就绪后允许展示，不等待值变 true，也不返回仅由 false 产生的 privacy 错误或 Toast。
+- 在上项基础上另设一项明确的、与 hasUserConsent 值无关的 SDK/平台请求限制，才验证 privacy pending/blocked 时 load/show 为零；解除该限制后 false 仍不变，恢复广告请求而不重新初始化 MAX。独立隐私任务的成功、拒绝、失败、取消均不得覆盖已确认的 SDK 初始化状态；SDK 尚未完成时也不能用隐私任务完成代替实际 SDK 回调。
+- 核验 MAX 内建流程启用项已从实际配置取消，关闭状态先于 initialize 生效，构建脚本及最终 Android/iOS 产物不会重新启用；没有弹窗、入口返回或仅检查源码均不能代替真实 MAX 初始化完成回调。只在已确认支持独立初始化的 SDK/CMP 组合中，用不结束的独立隐私任务验证 MAX 仍能完成，成功后只投递一次全屏预加载意图，实际 load/show 仍经过隐私门。按独立隐私模块同步真实结果，已有状态时不重复弹窗；初始化重试不重复注册隐私监听或请求 CMP/UMP/ATT。锁定依赖无法满足独立时序时记录能力限制，不伪造验收通过。
+- 同时启用 MAX 与 AppsFlyer，分别模拟任一 SDK 的同步异常、失败、永久不回调和重试：另一个仍独立发起并按自身真实完成/启动信号推进，游戏首帧继续；AppsFlyer 在自身 session-ready 和实际采用的官方条件满足后执行 start，不遗漏或重复启动。检查两者不共享初始化状态和重试 timer，AppsFlyer 不挂在 MAX 初始化或广告回调下；关闭 MAX 内建流程不误设 AppsFlyer 授权状态。
+- 对已核实支持独立时序的 SDK/CMP 组合，在隐私任务未完成、拒绝同意及 ATT 未决/拒绝时仍调用 MAX initialize，临时初始化失败仍自动重试；SDK 的初始化完成回调到达前不得假装成功。是否阻断广告请求仅按独立的真实请求限制判断，不能因初始化配置 false 或用户拒绝就把业务 privacy gate 置为 blocked。另测官方要求自有 CMP 前置而不满足独立时序的组合：MAX 返回具体配置阻断，不调用 initialize 或创建初始化重试任务，但不能从 false 本身推断该阻断，AppsFlyer 仍独立启动。
 - 初始化瞬时失败按 2/4/8/16/32/64 秒持续重试，配置/依赖错误修正前不自动请求，未知错误确认前不自动退避，运行门恢复不能绕过这些阻断；初始化与广告位任务、计数和 deadline 独立。
-- 初始化退避中重复 initialize/retryInitialize、重复生命周期或网络恢复事件最多复用一次请求；后台、离线、宿主门关闭暂停且保留 deadline，隐私未决或拒绝不暂停初始化重试，恢复不抢跑、不重置计数。成功取消 timer 并只投递一次全屏预加载意图，实际 load 继续检查广告请求隐私门，Banner 不创建；禁用、销毁、配置替换和旧/重复尝试回调不能重新启动旧任务。
+- 在已核实支持独立时序且不存在配置阻断的组合中，初始化退避中重复 initialize/retryInitialize、重复生命周期或网络恢复事件最多复用一次请求；后台、离线、宿主门关闭暂停且保留 deadline，隐私未决或拒绝不暂停初始化重试，恢复不抢跑、不重置计数。成功取消 timer 并只投递一次全屏预加载意图，实际 load 继续检查广告请求隐私门，Banner 不创建；禁用、销毁、配置替换和旧/重复尝试回调不能重新启动旧任务。
 - Banner 离开展示场景不影响初始化恢复；初始化恢复也不能重建该 Banner 的已取消任务。
 - 初始化成功立即静默预加载全部启用的插页与激励视频广告位；任一广告位 load success 只清零自身计数；所有已发起加载的广告位 load failure 都使用相同的 2/4/8/16/32/64 秒公式并封顶，抖动在 0.8–1.2 范围内且最终不超过 64 秒。
 - 重试超过六次乃至任意次数仍继续，configuration、adapter、unknown 加载失败不停止；禁用/移除/销毁终止重试，gates 暂停后恢复，初始化失败不混入 load 重试。

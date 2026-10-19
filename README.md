@@ -6,6 +6,8 @@ Android/iOS 原生平台功能优先通过插件实现：先复用项目现有�
 
 项目已采用的 SDK 按[SDK 单文件独立初始化](skills/threejs-game-architecture/references/sdk-initialization.md)统一在 `src/platform/initialize-sdks.ts` 实现启动、回调、幂等和初始化重试；各 SDK 独立发起，不互相等待，也不把 SDK 批次完成作为隐私流程、游戏首帧或场景启动的前置。无 SDK 时不创建占位实现。
 
+MAX 接入必须在初始化前手动调用 `AppLovinMAX.setHasUserConsent(false)` 并关闭内建隐私流程，随后正常初始化并等待真实完成回调；`hasUserConsent=false` 不作为业务层拒绝广告加载或展示的条件。项目启用 AppsFlyer 时保持独立初始化与启动，不等待 MAX、其隐私流程或广告就绪。配置与验证要求见[广告接入合同](skills/threejs-game-ad-integration/references/applovin-max-contract.md#初始化与隐私独立编排)。
+
 ## 安装
 
 需要 Node.js 22.20 或更高版本：
