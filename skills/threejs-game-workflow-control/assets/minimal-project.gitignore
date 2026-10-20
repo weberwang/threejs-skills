@@ -1,0 +1,22 @@
+# 依赖、构建和临时尝试不进入阶段提交。
+node_modules/
+/dist/
+
+# 临时和候选产物默认忽略文件，保持目录可遍历，供仍被有效引用的文件精确放行。
+/output/**
+!/output/**/
+# 人工审阅与验证文件同样按当前有效引用精确放行。
+/evidence/**
+!/evidence/**/
+/docs/**
+!/docs/**/
+/assets-source/**
+!/assets-source/**/
+/.workflow-control/**
+!/.workflow-control/**/
+/.threejs-workflow/**
+!/.threejs-workflow/**/
+
+# 工作流必要文件开始
+# 仅追加当前工作项及其有效依赖的具体文件，不放行整个产物目录。
+# 工作流必要文件结束

@@ -10,7 +10,7 @@ schema 1.2.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes
 
 ## 全局响应式视口合同
 
-任何可见 Scene、HUD、弹窗或 `DISPLAY_LAYER` 都必须在根对象声明以下字段：`logicalViewportSpace`、`designResolutionPolicy`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr`、`scaleMode`、`cameraViewportPolicy`、`cameraZoomPolicy`、`cameraOriginPolicy`、`inputCoordinatePolicy`、`safeAreaPolicy`、`resizePolicy`、`orientationPolicy`、`textResolutionPolicy`、`assetResolutionPolicy`、`performanceBudget`、`representativeViewports` 和 `requiredRuntimeEvidence`。这些字段表达项目事实和坐标策略，不是 three.js 内置布局 API；`scaleMode=custom` 表示由项目代码更新 `WebGLRenderer` 尺寸与 Camera 投影。字段名不绑定某个临时函数名；缺失、用旧字段替代或只写一句说明均不能通过。
+屏幕 HUD、DOM Overlay、适用的屏幕自适应平面内容、弹窗和 `DISPLAY_LAYER` 必须在根对象声明以下字段：`logicalViewportSpace`、`designResolutionPolicy`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr`、`scaleMode`、`cameraViewportPolicy`、`cameraZoomPolicy`、`cameraOriginPolicy`、`inputCoordinatePolicy`、`safeAreaPolicy`、`resizePolicy`、`orientationPolicy`、`textResolutionPolicy`、`assetResolutionPolicy`、`performanceBudget`、`representativeViewports` 和 `requiredRuntimeEvidence`。这些字段表达项目事实和坐标策略，不是 three.js 内置布局 API；`scaleMode=custom` 表示由项目代码更新 `WebGLRenderer` 尺寸与 Camera 投影。字段名不绑定某个临时函数名；缺失、用旧字段替代或只写一句说明均不能通过。真正三维世界和透视关卡使用[三维世界视口合同](../../threejs-game-workflow-control/references/world-viewport-contract.schema.json)，不适用本二维合同，也不需要二维固定设计视口。
 
 `logicalViewportSpace` 的单位固定为 CSS 逻辑像素（`css-px`/`css-logical-px`）。布局、safe area、断点、点击区域和程序化文字排版都在该空间计算；合同中的 `gameSizeSpace` 仅为项目定义的逻辑视口字段，不代表 three.js 有 `GameSize` 类型。Camera viewport 按项目的 HUD/世界投影合同确定，不能把透视世界单位与 HUD 像素空间混为一谈。`canvasBackingPolicy` 必须明确 three.js `WebGLRenderer.setSize()` 按有效 DPR 将 backing 宽高向下取整，并声明 backing 是物理像素；物理 backing 像素不得直接作为布局坐标或命中坐标。CSS display 尺寸、逻辑尺寸和 backing 尺寸必须分别记录，不能把一个数值重复贴到三种空间。
 

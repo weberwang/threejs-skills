@@ -163,7 +163,8 @@ test("响应式合同使用动态封顶策略并保留运行时上限", () => {
 test("固定横竖屏设计分辨率、主轴适配与背景 cover 不可缺失", () => {
   const portrait = copy(); portrait.designResolutionPolicy.portrait.width = 720; assertFailed(portrait, "portrait 必须为 1080×1920");
   const landscape = copy(); landscape.designResolutionPolicy.landscape.fitAxis = "width"; assertFailed(landscape, "landscape 必须为 1920×1080");
-  const bars = copy(); bars.scaleMode = "FIT"; assertFailed(bars, "Canvas 填满真实 CSS 视口");
+  const engineMode = copy(); engineMode.scaleMode = "RESIZE"; assertFailed(engineMode, "scaleMode 必须为 custom");
+  const bars = copy(); bars.scaleMode = "FIT"; assertFailed(bars, "scaleMode 必须为 custom");
   const cover = copy(); cover.designResolutionPolicy.backgroundFit.mode = "contain"; assertFailed(cover, "背景需等比覆盖可见视口");
   const focus = copy(); focus.designResolutionPolicy.backgroundFit.sourceFocalPoint.x = 2; assertFailed(focus, "sourceFocalPoint 必须包含 [0,1]");
   const crossAxis = copy(); crossAxis.designResolutionPolicy.crossAxis = "fixed"; assertFailed(crossAxis, "crossAxis 必须为 extend-or-crop");

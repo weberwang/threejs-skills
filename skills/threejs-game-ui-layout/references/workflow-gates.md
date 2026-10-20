@@ -16,7 +16,7 @@ effect-image 例外：V1–V3 必须先验证 `scene_reconstruction_contract`、
 
 ## 高分屏与响应式阶段门
 
-- V1：Implementation Package/布局合同必须填写 `logicalViewportSpace`、`designResolutionPolicy`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr=2`、`scaleMode`、Camera viewport/zoom/origin、输入坐标、安全区、resize、方向、文字/资源分辨率和性能预算。竖屏 1080×1920 按宽、横屏 1920×1080 按高适配，Canvas 填满视口且背景等比 cover；还需说明物理 backing、`gameSize`、弹窗宿主继承、监听清理及显式降级策略。
+- 对屏幕 HUD、DOM Overlay、适用的屏幕自适应平面内容、弹窗和 `DISPLAY_LAYER`，V1 的 Implementation Package/布局合同必须填写 `logicalViewportSpace`、`designResolutionPolicy`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr=2`、`scaleMode=custom`、Camera viewport/zoom/origin、输入坐标、安全区、resize、方向、文字/资源分辨率和性能预算。竖屏 1080×1920 按宽、横屏 1920×1080 按高适配，Canvas 填满视口且背景等比 cover；还需说明物理 backing、`gameSize`、弹窗宿主继承、监听清理及显式降级策略。真正三维世界和透视关卡按三维世界视口合同验收，不要求二维固定设计视口。
 - V2：机器门确认布局节点使用逻辑 CSS 像素，不能依赖物理像素硬编码；按[节点组织规则](layout-hierarchy.md)核对 `ui_layout` 与确认拆解的父级、容器职责、尺寸、溢出、安全区和唯一输入目标一致；确认 HUD/弹窗与宿主 Scene、Camera/输入合同的关系；确认资源生产 DPR=1 与运行时 DPR 动态封顶 2 分离，资源生产分辨率覆盖 intended scale。
 - V3：每项资源登记逻辑显示范围、最大 intended scale、生产分辨率、source/runtime 尺寸、代表性视口放大风险和资源不足阻断条件；简单插值放大不能作为清晰度修复，性能预算必须绑定机器/结果证据。
 - V4：直接使用当前 V2 节点布局和 V3 验收资源实现正式 Scene；提交真实运行证据，记录 `requiredRuntimeEvidence` 全部字段、`designTransform` 主轴比例和可见逻辑区域、raw/effective DPR、CSS/backing 尺寸、Camera、背景完整覆盖、输入命中、resize 轨迹和候选身份。默认 usability 覆盖四类代表性视口、DPR 1/1.25 或 1.5/2/大于 2 封顶、连续 resize、DPR 降至 1、同 DPR 再 resize，以及独立 DISPLAY_LAYER 的打开/交互/resize/关闭/宿主恢复；缺测量为 `unverified`。

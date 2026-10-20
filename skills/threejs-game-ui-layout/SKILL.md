@@ -21,7 +21,7 @@ UI 布局参照按[场景与弹窗尺寸参照](references/layout-hierarchy.md#�
 
 ## 全局视口与高分屏合同
 
-所有可见 Scene、HUD、弹窗和 `DISPLAY_LAYER` 都必须在布局合同中填写 `logicalViewportSpace`、`designResolutionPolicy`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr`、`scaleMode`、`cameraViewportPolicy`、`cameraZoomPolicy`、`cameraOriginPolicy`、`inputCoordinatePolicy`、`safeAreaPolicy`、`resizePolicy`、`orientationPolicy`、`textResolutionPolicy`、`assetResolutionPolicy`、`performanceBudget`、`representativeViewports` 和 `requiredRuntimeEvidence`。这些字段描述项目的视口和坐标策略，不是 three.js 内置布局 API；Three.js 项目用 `WebGLRenderer.setSize()`、CSS 视口和相机投影实现实际映射。`orientationPolicy.allowed` 声明项目支持的方向；`designResolutionPolicy` 只需提供这些方向的分支，`targets.orientations` 与其一致。竖屏以 1080×1920 为设计基准并按宽度适配，横屏以 1920×1080 为设计基准并按高度适配；另一轴随视口展开或裁切。Canvas 填满 CSS 视口，装饰性背景等比 cover，禁止黑边。Canvas backing 由 CSS 尺寸乘有效 DPR 向下取整，物理像素不得直接用于布局或命中。
+屏幕 HUD、DOM Overlay、适用的屏幕自适应平面内容、弹窗和 `DISPLAY_LAYER` 必须在布局合同中填写 `logicalViewportSpace`、`designResolutionPolicy`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr`、`scaleMode`、`cameraViewportPolicy`、`cameraZoomPolicy`、`cameraOriginPolicy`、`inputCoordinatePolicy`、`safeAreaPolicy`、`resizePolicy`、`orientationPolicy`、`textResolutionPolicy`、`assetResolutionPolicy`、`performanceBudget`、`representativeViewports` 和 `requiredRuntimeEvidence`。这些字段描述项目的视口和坐标策略，不是 three.js 内置布局 API；Three.js 项目用 `WebGLRenderer.setSize()`、CSS 视口和相机投影实现实际映射。`orientationPolicy.allowed` 声明项目支持的方向；`designResolutionPolicy` 只需提供这些方向的分支，`targets.orientations` 与其一致。竖屏以 1080×1920 为设计基准并按宽度适配，横屏以 1920×1080 为设计基准并按高度适配；另一轴随视口展开或裁切。Canvas 填满 CSS 视口，装饰性背景等比 cover，禁止黑边。Canvas backing 由 CSS 尺寸乘有效 DPR 向下取整，物理像素不得直接用于布局或命中。真正的三维世界和透视关卡使用[三维世界视口合同](../threejs-game-workflow-control/references/world-viewport-contract.schema.json)，不套用二维布局合同，也不要求二维固定设计视口。
 
 运行时 DPR 从设备动态读取，非法输入回退 1，正有限值封顶 2，且必须覆盖 resize、显示密度变化以及双方向项目的方向切换并清理监听器。资源生产 DPR 固定基线为 1（逻辑尺寸 1:1），必须与运行时 DPR 分离。`scaleMode` 是项目自定义视口策略字段，使用 `custom` 表示由项目代码计算视口、更新 `WebGLRenderer` 和相机投影；`gameSizeSpace` 仅指合同中的逻辑布局空间，不代表 three.js 提供 `GameSize`。`cameraOriginPolicy` 记录坐标系原点约定，不对应相机上的 `origin` 属性。实施包必须证明逻辑视口、Camera 投影、输入映射和 CSS/物理尺寸之间的真实关系；声明字段或构建成功不能单独作为高分屏证据。弹窗默认继承宿主逻辑视口、DPR、安全区、Camera 和输入合同，V4 必须独立记录其运行轨迹。
 
@@ -50,7 +50,7 @@ UI 布局参照按[场景与弹窗尺寸参照](references/layout-hierarchy.md#�
 
 正式场景依据项目现有 ThreeJS Scene 结构和布局合同实现。V2 锚点、父子 bounds、资源 origin 与 ThreeJS 父级局部坐标分别处理，祖先偏移只累计一次。V4 直接加载已验收资源并在真实 ThreeJS Scene 中组合；背景覆盖按实际可见视口计算，图片按冻结 fit/裁切规则呈现，不能缩进安全区、留边或平移露出空隙。图片 fit 和 ThreeJS 文字字段按适配参考执行；资源/字体未就绪、布局或渲染异常必须令运行验收失败。Scene 创建、唤醒和 resize 使用同一幂等布局入口；发布画面不含编辑辅助内容。运行证据来自正式场景的实际消费与画面。
 
-正式场景的设计画布尺寸、主轴与另一轴的展开或裁切规则由项目布局合同定义；合同采用固定设计视口时，可使用 `assets/fixed-design-viewport.mjs`。设备 CSS 像素只决定显示尺寸。背景必须覆盖完整可见场景，位置由合同与实际视口共同决定，不能用编辑器中的拖动或临时偏移改变冻结目标。
+正式 HUD、DOM Overlay 和适用平面 UI 的设计画布尺寸、主轴与另一轴的展开或裁切规则由项目布局合同定义；合同采用固定设计视口时，可使用 `assets/fixed-design-viewport.mjs`。真正三维世界的模型、角色和道具位置由[三维世界视口合同](../threejs-game-workflow-control/references/world-viewport-contract.schema.json)定义，不要求二维固定设计视口。设备 CSS 像素只决定显示尺寸。背景必须覆盖完整可见区域，位置由对应合同与实际视口共同决定，不能用编辑器中的拖动或临时偏移改变冻结目标。
 
 ## effect-image 场景绑定
 

@@ -302,10 +302,7 @@ export function validateResponsiveContract(value, options = {}) {
   }
   if (!hasFact(contract.logicalViewportSpace) || (isObject(contract.logicalViewportSpace) && !String(field(contract.logicalViewportSpace, 'unit', 'coordinateSpace', 'coordinate_space') ?? '').toLowerCase().includes('css'))) errors.push(contractError(stage, scope, 'logicalViewportSpace 必须明确 CSS 逻辑像素坐标空间', 'logicalViewportSpace'));
   if (!hasFact(contract.canvasBackingPolicy)) errors.push(contractError(stage, scope, 'canvasBackingPolicy 必须明确 CSS→物理 backing 关系', 'canvasBackingPolicy'));
-  if (!hasFact(contract.scaleMode)) errors.push(contractError(stage, scope, '必须明确选择 ScaleMode', 'scaleMode'));
-  const scaleMode = isObject(contract.scaleMode) ? field(contract.scaleMode, 'mode', 'scaleMode', 'strategy', 'value') : contract.scaleMode;
-  const normalizedScaleMode = typeof scaleMode === 'string' ? scaleMode.trim().toUpperCase() : '';
-  if (!['RESIZE', 'CUSTOM'].includes(normalizedScaleMode)) errors.push(contractError(stage, scope, 'scaleMode 必须为 RESIZE 或 custom；FIT 会产生黑边，其他模式也必须证明等效填满视口', 'scaleMode=RESIZE|custom'));
+  if (contract.scaleMode !== 'custom') errors.push(contractError(stage, scope, 'scaleMode 必须为字符串 custom；FIT、RESIZE 或其他引擎模式名均不属于合同值', 'scaleMode=custom'));
   for (const fieldName of ['cameraViewportPolicy', 'cameraZoomPolicy', 'cameraOriginPolicy', 'inputCoordinatePolicy', 'safeAreaPolicy', 'resizePolicy', 'orientationPolicy', 'textResolutionPolicy']) if (!hasFact(contract[fieldName])) errors.push(contractError(stage, scope, `必须明确 ${fieldName}`, fieldName));
   const assets = contract.assetResolutionPolicy;
   const productionDpr = isObject(assets) ? field(assets, 'productionDpr', 'production_dpr', 'assetProductionDpr', 'asset_production_dpr', 'maxDpr', 'max_dpr') : null;

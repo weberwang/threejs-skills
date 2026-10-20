@@ -358,7 +358,7 @@ function validateResponsiveContract(document, errors, coverage) {
   }
   if (document.maxRuntimeDpr !== RUNTIME_MAX_DPR || typeof document.maxRuntimeDpr !== "number") errors.push(`maxRuntimeDpr 必须严格为 ${RUNTIME_MAX_DPR}`);
 
-  if (!["RESIZE", "custom"].includes(document.scaleMode)) errors.push("scaleMode 必须为 RESIZE 或 custom，并让 Canvas 填满真实 CSS 视口");
+  if (document.scaleMode !== "custom") errors.push("scaleMode 必须为 custom，并让 Canvas 填满真实 CSS 视口");
 
   const cameraViewport = document.cameraViewportPolicy;
   if (requireObjectFields(cameraViewport, "cameraViewportPolicy", ["coordinateSpace", "gameSizeSpace", "physicalMapping", "requiresExplicitViewport", "popupInheritance"], errors)) {

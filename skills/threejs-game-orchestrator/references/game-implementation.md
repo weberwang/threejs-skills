@@ -25,7 +25,7 @@ Android/iOS 原生平台功能按[原生平台插件选型](../../threejs-game-a
 
 场景 V1 同时冻结[显示对象锚点与显示层分层](../../threejs-game-ui-layout/references/display-object-layering.md)方案：可设置原点的显示对象默认中心 `(0.5, 0.5)`，例外逐对象说明；背景、世界、特效、HUD 和瞬态层按实际职责划分有名根层并明确前后、输入与生命周期。V2 将对象原点和层序映射到布局/显示层合同，V4 在正式场景中检查资源组合、遮挡、最上层命中及关闭/resize 后恢复。这里的渲染分层不把世界对象或特效变成独立 `DISPLAY_LAYER` Work Item。
 
-通用帧动画是场景路线中的动态资源子路线，按[分类入口](../../threejs-frame-animation/SKILL.md#分类入口)选择用途，再按[来源路线](../../threejs-frame-animation/SKILL.md#来源路线)默认视频抽帧；图片递归补帧须用户明确选用。主代理按[执行代理约定](../../threejs-frame-animation/SKILL.md#执行代理)委派动画执行代理，实际图片生成/编辑交图片代理。V2 内部维护行为、阶段、事件、衔接、尺寸、FPS 和批次计划，直接在已有授权内写提示词并制作真实候选，不等待动作时间轴文字确认；只有关键玩法事实存在决定性歧义时询问。视频分辨率与条数按[区域规划](../../threejs-frame-animation/references/region-planning.md)选择并遵守预算；图片默认 768p，确需 2K 时在已有工具与预算授权内直接选择，新增费用或超出授权才询问。V3 验收实际最终抽帧视频后才抽帧，图片首尾、关键帧与递归父图逐张确认后推进，最终验收完整真实序列。只确认文字方案不能代替真实候选验收。保留独立图集、报告、预览、来源与修图成果，V4 完成正式 ThreeJS 消费和事件验证；完整证据与 schema 分派见[接入合同](../../threejs-frame-animation/references/workflow-integration.md)。
+通用帧动画是场景路线中的动态资源子路线，按[分类入口](../../threejs-frame-animation/SKILL.md#分类入口)选择用途，再按[来源路线](../../threejs-frame-animation/SKILL.md#来源路线)默认视频抽帧；图片递归补帧须用户明确选用。主代理按[执行代理约定](../../threejs-frame-animation/SKILL.md#执行代理)按动画用途委派对应职业的设计师，混合任务按动画或区域划分职责并交接事件与锚点；实际图片生成/编辑交图片代理。V2 内部维护行为、阶段、事件、衔接、尺寸、FPS 和批次计划，方案完成后说明目标感受、动作依据与节奏取舍，等待当前动作方案明确确认后才在已有授权内写提示词、制作真实候选和推进实现；只有关键玩法事实存在决定性歧义时先澄清。视频分辨率与条数按[区域规划](../../threejs-frame-animation/references/region-planning.md)选择并遵守预算；图片默认 768p，确需 2K 时在已有工具与预算授权内直接选择，新增费用或超出授权才询问。V3 验收实际最终抽帧视频后才抽帧，图片首尾、关键帧与递归父图逐张确认后推进，最终验收完整真实序列。只确认文字方案不能代替真实候选验收。保留独立图集、报告、预览、来源与修图成果，V4 完成正式 ThreeJS 消费和事件验证；完整证据与 schema 分派见[接入合同](../../threejs-frame-animation/references/workflow-integration.md)。
 
 ## 基础显示约束
 

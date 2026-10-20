@@ -48,7 +48,7 @@ function makeContract() {
     canvasBackingPolicy: { relation: 'logical-size-times-effective-dpr', rounding: 'round' },
     runtimeDprPolicy: { source: 'devicePixelRatio', dynamic: true, invalidFallback: 1, cap: 2, updatesOn: ['resize', 'orientation-change', 'display-density-change', 'same-page-resize'] },
     maxRuntimeDpr: 2,
-    scaleMode: 'RESIZE',
+    scaleMode: 'custom',
     cameraViewportPolicy: { coordinateSpace: 'css-logical-px', mapsTo: 'gameSize' },
     cameraZoomPolicy: { strategy: 'logical-viewport' },
     cameraOriginPolicy: { x: 0, y: 0, coordinateSpace: 'logical' },
@@ -218,13 +218,11 @@ test('固定横竖屏设计基准、填满画布和背景 cover 必须符合合�
   canvasBars.designResolutionPolicy.canvasFit = 'fit';
   assert.match(validateResponsiveContract(canvasBars).join('\n'), /禁止画布黑边/);
 
-  const scaleBars = makeContract();
-  scaleBars.scaleMode = 'FIT';
-  assert.match(validateResponsiveContract(scaleBars).join('\n'), /scaleMode 必须为 RESIZE 或 custom；FIT 会产生黑边/);
-
-  const unsupportedScale = makeContract();
-  unsupportedScale.scaleMode = { mode: 'NONE' };
-  assert.match(validateResponsiveContract(unsupportedScale).join('\n'), /scaleMode 必须为 RESIZE 或 custom/);
+  for (const scaleMode of ['RESIZE', 'FIT', 'CUSTOM', { mode: 'custom' }]) {
+    const invalidScale = makeContract();
+    invalidScale.scaleMode = scaleMode;
+    assert.match(validateResponsiveContract(invalidScale).join('\n'), /scaleMode 必须为字符串 custom/);
+  }
 
   const backgroundBars = makeContract();
   backgroundBars.designResolutionPolicy.backgroundFit.mode = 'contain';

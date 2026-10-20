@@ -44,7 +44,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-threejs-game
 
 `<owner>` 为 `shared`、`scenes/<scene-id>` 或 `display-layers/<display-layer-id>`。送审前将真实候选持久保留，确认后按用途归档；已绑定的审阅文件保持原路径，归档副本不建立第二套确认状态。正式资源与必要证据不能只留在可清理的 `output/`。
 
-Git 按[最小提交集](skills/threejs-game-architecture/references/artifact-storage.md#最小提交集)仅保存运行/构建/必要验证所需的工程文件，以及当前工作项仍读取的规格、有效确认和执行/证据记录。非运行文档、源素材、证据及控制记录默认忽略，执行代理在 `.gitignore` 中逐文件精确放行实际依赖；不自动提交全部 JSON、文本报告、历史记录或已确认归档。忽略的文件留在本地，跨机器验收前恢复被引用媒体；不自动删除或取消既有文件跟踪。
+Git 按[最小提交集](skills/threejs-game-architecture/references/artifact-storage.md#最小提交集)仅保存运行/构建/必要验证所需的工程文件，以及当前工作项仍读取的规格、有效确认和执行/证据记录。非运行文档、源素材、证据及控制记录默认忽略，执行代理在 `.gitignore` 中逐文件精确放行实际依赖；不自动提交全部 JSON、文本报告、历史记录或已确认归档。当前有效记录引用的图片、视频、审阅页及必要附件必须随记录精确入库，保证重新检出可续接；无有效引用的历史产物留在本地，不自动删除或取消既有文件跟踪。
 
 先按[简化工作流视图](skills/threejs-game-workflow-control/references/simplified-workflow.md)理解当前任务：
 
@@ -54,7 +54,7 @@ Git 按[最小提交集](skills/threejs-game-architecture/references/artifact-st
 
 单场景视觉任务在“逐场景生产”内按“场景定义 → 拆解与布局确认 → 正式资源验收 → 正式场景实现、校准与运行验收”推进。V4 直接读取 V2 的结构和目标布局、V3 验收通过的正式资源，在实际场景中迭代还原效果。该视图只简化展示；全局状态、G0-G3、V0/V1/V2/V3/V4、A0-A6、F0-F4 和证据硬门继续由控制面维护，详见[控制模型](skills/threejs-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](skills/threejs-game-workflow-control/references/state-gates.md)。
 
-通用帧动画按普通、角色动作、特效或 UI 选择制作规则，默认视频抽帧，图片递归补帧仅在用户明确选用时启用。内部完成动作分析、时间轴、尺寸与批次方案后，在已有授权内直接制作真实视频或关键帧，不等待文字设计确认；只有玩法事件、时长或行为边界有决定性歧义时才询问。真实视频人工验收后才能抽帧；图片首尾、关键帧和递归父图逐张确认后继续制作，最终真实序列仍由用户验收。分辨率、条数、预算、来源证据和 ThreeJS 接入见[通用帧动画技能](skills/threejs-frame-animation/SKILL.md)与[区域规划](skills/threejs-frame-animation/references/region-planning.md)。
+通用帧动画按普通、角色动作、特效或 UI 选择制作规则，默认视频抽帧，图片递归补帧仅在用户明确选用时启用。按用途委派对应职业的动画设计师，完成动作分析、时间轴、尺寸与批次方案后，先说明设计理念、目标感受和节奏取舍，等待用户明确确认当前方案，再在已有授权内制作真实视频或关键帧。真实视频人工验收后才能抽帧；图片首尾、关键帧和递归父图逐张确认后继续制作，最终真实序列仍由用户验收。分辨率、条数、预算、来源证据和 ThreeJS 接入见[通用帧动画技能](skills/threejs-frame-animation/SKILL.md)与[区域规划](skills/threejs-frame-animation/references/region-planning.md)。
 
 先在目标 ThreeJS 项目根目录初始化一个 Work Item。下面的 PowerShell 示例会以当前 Git HEAD 作为不可变基线，可直接复制执行：
 
@@ -74,7 +74,7 @@ node .\.agents\skills\threejs-game-workflow-control\scripts\workflow-control.mjs
 
 `run` 只读取、校验、推导路线，并连续推进已满足条件的安全控制面状态，进入实施或遇到缺证据、用户决定时停止；它不运行业务代码、测试、服务、外部动作或发布，也不会自动选择 `RETURN`。`check` 完全只读。三个入口可重复传入 `--input <file>` 绑定显式关键输入，默认文本优先显示六阶段/四步视图；JSON 仍输出稳定的 `status/stage/changed/blocking/next/metadata`，并在 `metadata.workflowView` 提供展示映射、`metadata.planFingerprint` 返回不含时间戳的确定性计划指纹。
 
-图片与动画任务遵循[图片优先的确认方式](skills/threejs-game-workflow-control/references/simplified-workflow.md#图片优先的确认方式)：技术记录、拆解分析、布局决策和提示词由代理内部维护，直接展示真实图片或预览供用户确认；同目标返修直接展示前后对照。
+图片与动画任务遵循[图片优先的确认方式](skills/threejs-game-workflow-control/references/simplified-workflow.md#图片优先的确认方式)：技术记录、拆解分析、布局决策和提示词由代理内部维护；帧动画先说明设计理念并取得动作方案确认，其余图片任务直接展示真实图片或预览供用户确认；同目标局部返修直接展示前后对照。
 
 ## 控制面边界
 
@@ -106,7 +106,7 @@ UI 响应式验证按合同的 `orientationPolicy.allowed` 选择视口方向：
 - `$threejs-game-architecture`：工程架构与公开契约。
 - `$threejs-gameplay-development`：玩法规则、状态和交互实现。
 - `$threejs-game-asset-integration`、`$threejs-game-ui-layout`：资源、效果图还原和 UI 布局。
-- [`$threejs-frame-animation`](skills/threejs-frame-animation/SKILL.md)：普通、角色、特效、UI 分类规则；内部设计后直接给真实视频或关键帧确认，默认视频抽帧，可明确选用图片递归补帧。适用于 HUD、billboard 与贴图序列表现，不替代 `SkinnedMesh` 三维骨骼动画；分辨率、批次与预算按[区域规划](skills/threejs-frame-animation/references/region-planning.md)执行，输出独立图集与预览。
+- [`$threejs-frame-animation`](skills/threejs-frame-animation/SKILL.md)：普通、角色、特效、UI 分类规则；设计理念与动作方案确认后制作真实视频或关键帧，再进行素材验收，默认视频抽帧，可明确选用图片递归补帧。适用于 HUD、billboard 与贴图序列表现，不替代 `SkinnedMesh` 三维骨骼动画；分辨率、批次与预算按[区域规划](skills/threejs-frame-animation/references/region-planning.md)执行，输出独立图集与预览。
 - [`$threejs-game-runtime`](skills/threejs-game-runtime/SKILL.md)、[`$threejs-game-model-pipeline`](skills/threejs-game-model-pipeline/SKILL.md)、[`$threejs-game-plugins`](skills/threejs-game-plugins/SKILL.md)：固定步、输入与生命周期；Blender/GLB 模型、材质、灯光、Camera、碰撞和 `AnimationMixer`；物理、导航、解码与后处理插件。
 - `$threejs-game-image-optimization`：图片尺寸、格式、透明度和运行时纹理优化。
 - `$threejs-game-audio`、`$threejs-game-balance`：音频和数值平衡。
@@ -153,6 +153,9 @@ npm run remove:background -- --source art/raw.png --output art/transparent.png -
 npm run test:quick
 npm run test:workflow
 npm run test:frame-animation
+npm run test:minimal-git
+npm run test:production-build
+npm run test:game-build
 npm run test:full
 npm test
 ```
@@ -160,3 +163,5 @@ npm test
 `test:quick` 覆盖稳定输出与指纹，`test:workflow` 覆盖控制面和视觉工作流，`test:frame-animation` 覆盖视频抽帧、图片规划/来源/打包及 accepted 文件门，`test:full`/`test` 保留全量回归。工作流先按风险推荐 T0（仅静态检查）、T1（定向验证）、T2（受影响模块）或 T3（完整验证），说明理由、覆盖和命令后自动执行适用等级；不等待人工选择。T3 仍不包含隐式真机、外部写入或发布。
 
 这些 Node 测试入口统一使用隔离运行器：每次运行的临时目录会在正常结束、失败、超时或可处理信号后回收。默认总超时为 10 分钟，可通过 `THREEJS_TEST_TIMEOUT_MS`（毫秒）覆盖；超时返回 `124`。运行器只终止本次创建的测试进程树，不会停止已有 Vite 或外部服务，也不会删除显式项目路径下的证据输出。
+
+`test:game-build` 在系统临时目录生成实际 ThreeJS 工程，按锁文件安装依赖并执行类型检查、生产构建和 Source Map 产物检查；不启动开发服务或浏览器。
