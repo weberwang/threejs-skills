@@ -1,4 +1,4 @@
 interface:
   display_name: "three.js 三维模型管线"
-  short_description: "为 Web 三维游戏提供可验证的工程工作流、生命周期与交付边界"
-  default_prompt: "使用 $threejs-game-model-pipeline 完成本游戏项目对应领域的实现与验证。"
+  short_description: "编排参考与贴图、GLB 接入、动画及资源生命周期"
+  default_prompt: "使用 $threejs-game-model-pipeline 根据当前模型交接完成贴图编排、资源接入与验证；正式几何制作交给三维建模技能。"

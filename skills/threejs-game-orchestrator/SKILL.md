@@ -45,6 +45,6 @@ description: three.js 游戏领域编排角色；在全局控制面已建立 Wor
 
 ## 三维运行、模型与插件
 
-三维项目基础采用 [运行基础](../threejs-game-runtime/SKILL.md)；正式三维资源交给 [模型与关卡管线](../threejs-game-model-pipeline/SKILL.md)，按实际玩法采用 [插件方案](../threejs-game-plugins/SKILL.md)。真实三维世界由模型/网格、材质、灯光、Camera、关卡与碰撞数据交付；角色骨骼动画使用导入的 clips 与 `AnimationMixer`。固定视角效果图、二维拆解与 HUD 布局不能代替世界模型、相机、碰撞或动画数据。
+三维项目基础采用 [运行基础](../threejs-game-runtime/SKILL.md)；新建、重拓扑或修改正式几何交给 [3D 建模](../threejs-game-3d-modeling/SKILL.md)，参考/贴图编排、已有模型接入、动画与加载优化交给 [模型与关卡管线](../threejs-game-model-pipeline/SKILL.md)，按实际玩法采用 [插件方案](../threejs-game-plugins/SKILL.md)。真实三维世界由模型/网格、材质、灯光、Camera、关卡与碰撞数据交付；角色骨骼动画使用导入的 clips 与 `AnimationMixer`。固定视角效果图、二维拆解与 HUD 布局不能代替世界模型、相机、碰撞或动画数据。
 
-新模型生产在当前场景或资源 Work Item 内按[Blender 模型生产合同](../threejs-game-model-pipeline/references/blender-model-production.md)编排：V1 生成/冻结参考，V2 拆解一致多视图，V3 调用 Blender MCP 控面数建模、制作 AI 纹理与可用法线并进行人工模型审查，验收后在 V4 接入真实场景。图像生成/编辑委派 `image_generator`；几何建模必须委派 `gpt-6.1-sol`、`max` 推理强度的建模子代理，按合同指定参数调用 Blender MCP。预算、文件所有权和审查证据纳入现有实施包；不得另建聊天、用参考图宣称模型完成，或自动判定截图/真机视觉验收通过。
+新模型生产在当前场景或资源 Work Item 内按[Blender 模型生产合同](../threejs-game-model-pipeline/references/blender-model-production.md)编排：V1 规格与必要参考，V2 制作路线/多视图及必要隔离 blockout，V3 正式建模、导出回读、按需贴图及人工模型审查，V4 正式场景消费。建模方拥有拓扑、法线、实际 UV、槽位结构、LOD、碰撞代理和静态导出；贴图/绑定/接入按[模型交接](../threejs-game-3d-modeling/references/model-handoff.md)串行接手同一源与导出目录，不擅自改动交付网格。图像生成/编辑委派 `image_generator`；几何建模按合同使用 `gpt-6.1-sol`、`max` 的 Blender MCP 建模代理。实施单元明确模型清单、专项检查、`validate-model.mjs` 验收命令/报告与适用人工结论，通用文件门通过不代表几何质量或实际加载。预算、文件所有权和证据纳入现有实施包，不新增 `MODEL` 执行类型或第二套阶段。

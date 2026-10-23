@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "asset": {
     "assetId": "guard-character",
-    "file": "public/models/guard-character.glb",
+    "file": "public/assets/scenes/main/models/guard-character/v1/guard-character.glb",
     "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-    "source": "art-source/guard-character.blend（示例，替换为实际来源）",
+    "source": "assets-source/scenes/main/guard-character/v1/guard-character.blend",
     "license": "项目自有（示例，替换为实际许可）",
     "sceneId": "GuardCharacter",
     "coordinateSystem": {

@@ -113,7 +113,8 @@ V2 同时派生[布局执行计划](skills/threejs-game-ui-layout/references/lay
 - `$threejs-gameplay-development`：玩法规则、状态和交互实现。
 - `$threejs-game-asset-integration`、`$threejs-game-ui-layout`：资源、效果图还原和 UI 布局。
 - [`$threejs-frame-animation`](skills/threejs-frame-animation/SKILL.md)：普通、角色、特效、UI 分类规则；设计理念与动作方案确认后制作真实视频或关键帧，再进行素材验收，默认视频抽帧，可明确选用图片递归补帧。适用于 HUD、billboard 与贴图序列表现，不替代 `SkinnedMesh` 三维骨骼动画；分辨率、批次与预算按[区域规划](skills/threejs-frame-animation/references/region-planning.md)执行，输出独立图集与预览。
-- [`$threejs-game-runtime`](skills/threejs-game-runtime/SKILL.md)、[`$threejs-game-model-pipeline`](skills/threejs-game-model-pipeline/SKILL.md)、[`$threejs-game-plugins`](skills/threejs-game-plugins/SKILL.md)：固定步、输入与生命周期；Blender/GLB 模型、材质、灯光、Camera、碰撞和 `AnimationMixer`；物理、导航、解码与后处理插件。
+- [`$threejs-game-3d-modeling`](skills/threejs-game-3d-modeling/SKILL.md)：通过 Blender MCP 制作正式几何、拓扑、法线、UV、槽位、LOD、碰撞代理和版本化导出，向贴图、绑定与接入任务交接真实模型。
+- [`$threejs-game-runtime`](skills/threejs-game-runtime/SKILL.md)、[`$threejs-game-model-pipeline`](skills/threejs-game-model-pipeline/SKILL.md)、[`$threejs-game-plugins`](skills/threejs-game-plugins/SKILL.md)：固定步、输入与生命周期；参考/多视图与贴图编排、GLB 接入、材质、灯光、Camera 和 `AnimationMixer`；物理、导航、解码与后处理插件。
 - `$threejs-game-image-optimization`：图片尺寸、格式、透明度和运行时纹理优化。
 - `$threejs-game-audio`、`$threejs-game-balance`：音频和数值平衡。
 - [`$threejs-game-ad-integration`](skills/threejs-game-ad-integration/SKILL.md)：通过 AppLovin 官方 MAX Cordova 原生插件接入移动端 Banner、插页与激励视频，管理全屏广告位静默预加载与持续重试、Banner 按需创建与布局刷新、视频不可用提示和隐私验收。
@@ -122,7 +123,7 @@ V2 同时派生[布局执行计划](skills/threejs-game-ui-layout/references/lay
 - `$threejs-game-release`：发布候选、渠道和合规交付。
 - `$grilling`：只处理无法由事实确定且会改变范围、行为、预算、合规或数据边界的用户决定。
 
-新三维工程先读 [`threejs-game-runtime`](skills/threejs-game-runtime/SKILL.md) 确定渲染循环、输入、暂停恢复和资源生命周期，再按需用 [`threejs-game-model-pipeline`](skills/threejs-game-model-pipeline/SKILL.md) 交付模型/材质/灯光/Camera/关卡/碰撞与三维骨骼动画，或用 [`threejs-game-plugins`](skills/threejs-game-plugins/SKILL.md) 选物理、导航、模型解码和后处理。二维 V2 图片拆解与九宫格只约束适用的 HUD、DOM 和平面纹理，不用来替代三维场景结构。
+新三维工程先读 [`threejs-game-runtime`](skills/threejs-game-runtime/SKILL.md) 确定渲染循环、输入、暂停恢复和资源生命周期；正式几何由 [`threejs-game-3d-modeling`](skills/threejs-game-3d-modeling/SKILL.md) 生产并交接，已有资产接入、材质/灯光/Camera/关卡与三维骨骼动画由 [`threejs-game-model-pipeline`](skills/threejs-game-model-pipeline/SKILL.md) 编排，物理、导航、解码与后处理按需选用 [`threejs-game-plugins`](skills/threejs-game-plugins/SKILL.md)。二维 V2 图片拆解与九宫格只约束适用的 HUD、DOM 和平面纹理，不用来替代三维场景结构。
 
 ## 生图与去背景
 

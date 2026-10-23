@@ -29,6 +29,7 @@
 | `docs/game-feel.md`（按需） | 当前任务需要独立记录动态反馈意图、事件语义或组合规则时使用；也可复用 GDD/视觉设计文档，不是默认工件或机器必需字段，参考[汁水感设计指南](../../threejs-game-juice/references/design-guide.md) |
 | `docs/asset-license-register.md` | 资源/音频来源、授权与发布资格 |
 | `docs/visual-assets.json` | 含场景或 shared 归属的视觉资源机器清单，不驱动全局状态 |
+| 3D 模型当前工作项的源、运行资产与交接报告 | [建模交接](../../threejs-game-3d-modeling/references/model-handoff.md)包含版本化 `.blend`、自包含 GLB、实际 UV/槽位/LOD/碰撞及导出回读；源放 `assets-source/<owner>/<asset-id>/<version>/`，运行资源放 `public/assets/<owner>/`。模型清单、静态报告、Blender 专项报告和人工结论分别保留并由实施单元实际证据引用，不另造全局工件或阶段 |
 | `docs/confirmed/<owner>/<artifact-id>/<version>/` | 已确认非运行设计成果的交付归档；确认依据仍引用原有实际送审文件与控制记录 |
 | 场景 V2 布局候选目录 | 同批 `layout.png`、`layout-nodes.json`、`layout-decision.json`、离线 `review.html`、`generation-result.json` 及真实 SHA；审阅页规则见[离线布局审阅产物](../../threejs-game-ui-layout/references/layout-review-artifacts.md) |
 | `docs/qa-plan.md` | 测试策略，不得自填通过状态 |

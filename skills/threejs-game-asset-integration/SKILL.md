@@ -5,7 +5,7 @@ description: 为 three.js 游戏规划、生产、登记、验证并集成 UI、
 
 # three.js 游戏美术生产与接入
 
-真实三维世界与角色按模型、材质、灯光、Camera、关卡/碰撞数据和运行逻辑生产；骨骼角色使用导入的网格动画 clips 与 `AnimationMixer`。二维效果图拆解、UI 布局、九宫格和逐帧纹理只约束 HUD、DOM、billboard、平面贴图等适用内容，不能把三维环境或角色替换成整屏/整角色图片；详见[三维模型与关卡管线](../threejs-game-model-pipeline/SKILL.md)。
+真实三维世界与角色按模型、材质、灯光、Camera、关卡/碰撞数据和运行逻辑生产；骨骼角色使用导入的网格动画 clips 与 `AnimationMixer`。正式几何、拓扑、UV、LOD/碰撞和静态导出交给 [3D 建模](../threejs-game-3d-modeling/SKILL.md)，按[模型交接](../threejs-game-3d-modeling/references/model-handoff.md)接收真实文件与专项报告，再由[三维模型与关卡管线](../threejs-game-model-pipeline/SKILL.md)组织贴图和运行接入。二维效果图拆解、UI 布局、九宫格和逐帧纹理只约束 HUD、DOM、billboard、平面贴图等适用内容，不能把三维环境或角色替换成整屏/整角色图片。
 
 ## 全局控制接入
 

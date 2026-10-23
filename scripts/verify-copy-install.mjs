@@ -32,8 +32,14 @@ function main() {
       run(process.platform === "win32" ? "npm.cmd" : "npm", ["ci", "--omit=dev", "--no-audit", "--no-fund"], target, process.platform === "win32");
       run(process.execPath, ["--input-type=module", "-e", "import { createRequire } from 'node:module'; import { pathToFileURL } from 'node:url'; createRequire(process.argv[1])('sharp'); await import(pathToFileURL(process.argv[2]).href);", join(target, "package.json"), join(target, "scripts", entrypoint)], root);
     }
+    // 建模技能与模型管线分工后，两端工件和独立 CLI 都必须能在复制安装目录读取。
+    const modelingRoot = join(skillsRoot, "threejs-game-3d-modeling");
+    for (const file of ["SKILL.md", "agents/openai.yaml", "references/mcp-modeling-workflow.md", "references/model-handoff.md", "references/workflow-integration.md"]) {
+      readFileSync(join(modelingRoot, file), "utf8");
+    }
+    run(process.execPath, [join(skillsRoot, "threejs-game-model-pipeline", "scripts", "validate-model.mjs"), "--help"], root);
     if (readFileSync(projectPackage, "utf8") !== original) throw new Error("目标项目 package.json 被修改");
-    console.log("复制安装验证通过：两个工具技能独立解析依赖，跨技能入口可用，目标项目依赖清单未修改。");
+    console.log("复制安装验证通过：两个工具技能独立解析依赖，建模工件与模型 CLI 可用，跨技能入口可用，目标项目依赖清单未修改。");
   } finally {
     // 递归删除只允许覆盖本次在系统临时目录中创建的专属目录。
     const resolvedRoot = resolve(root);

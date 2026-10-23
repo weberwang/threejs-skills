@@ -77,7 +77,7 @@ V4 直接消费 V2 确认的节点关系、初始布局和锚点，以及 V3 `ac
 
 UI 必须使用 [`threejs-game-ui-layout`](../../threejs-game-ui-layout/SKILL.md) 的版本化合同和唯一布局入口，从显式坐标空间、父容器、双方停靠点、四边相对距离、尺寸、安全区与断点计算；资源锚点、布局停靠点和动画偏移分离。视口、安全区、方向、内容尺寸、运行时有效 DPR（动态封顶 2）和状态是入口输入，重排必须幂等，不能在多个生命周期回调散布无参照坐标。固定尺寸、绝对定位、悬浮 HUD、Camera/`Group` 或 DOM Overlay 和单行省略触发布局专项审核，不凭模式本身判错；合同缺依据或证据时才退回。默认 `usability` 测试关系不变量、可读性、边界、遮挡和交互，允许合理位置/尺寸偏差；`exact` 或明确需求时才启用严格 Golden。装饰屏幕空间背景使用统一适配器；项目自建地图数据、三维碰撞和玩法环境使用独立世界结构，不能扁平化为背景。
 
-二维布局/图片拆解用于 HUD、DOM、billboard 与平面纹理等适用内容，不替代世界模型。真实三维环境与角色交付模型/`SkinnedMesh`、材质、灯光、Camera、关卡与碰撞数据；角色骨骼动画由资产 clips 和 `AnimationMixer` 驱动。需要相应能力时按[三维模型与关卡管线](../../threejs-game-model-pipeline/SKILL.md)与[运行基础](../../threejs-game-runtime/SKILL.md)执行。
+二维布局/图片拆解用于 HUD、DOM、billboard 与平面纹理等适用内容，不替代世界模型。真实三维环境与角色交付模型/`SkinnedMesh`、材质、灯光、Camera、关卡与碰撞数据；角色骨骼动画由资产 clips 和 `AnimationMixer` 驱动。正式几何生产与网格修改按 [3D 建模](../../threejs-game-3d-modeling/SKILL.md)执行，贴图/绑定/接入使用其实际网格、UV、槽位和 LOD 交接；已有模型加载及动画生命周期按[三维模型与关卡管线](../../threejs-game-model-pipeline/SKILL.md)与[运行基础](../../threejs-game-runtime/SKILL.md)执行。模型单元在当前实施包声明静态验收命令、清单和报告，不把静态通过当作人工视觉或 V4 实际消费通过。
 
 ## 视觉证据
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "three.js 游戏 3D 几何建模"
+  short_description: "通过 Blender MCP 制作可验证的游戏静态几何模型"
+  default_prompt: "使用 $threejs-game-3d-modeling 在当前工作项内制作正式静态几何，并完成既定资源路线所需的导出回读与证据。"
