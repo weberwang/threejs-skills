@@ -20,6 +20,13 @@ function appendGenerationRecordEntries(entries, record, label) {
 /** 收集视觉清单全部需要复算的基线、显示层和合同证据路径。 */
 export function collectManifestFileEvidenceEntries(data) {
   const entries = [];
+  for (const [index, asset] of (Array.isArray(data?.assets) ? data.assets : []).entries()) {
+    for (const entry of Array.isArray(asset?.runtime_bindings) ? asset.runtime_bindings : []) {
+      if (entry?.runtime_binding?.kind === "module-import" && nonEmptyString(entry.runtime_binding.importer)) {
+        entries.push([`assets[${index}].runtime_bindings.importer`, entry.runtime_binding.importer]);
+      }
+    }
+  }
   const baseline = data?.visual_baseline;
   if (isObject(baseline)) {
     if (nonEmptyString(baseline.document)) entries.push(["visual_baseline.document", baseline.document]);

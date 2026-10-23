@@ -68,10 +68,10 @@ node <skill-dir>/scripts/video-to-atlas.mjs `
   --input-video art/animation-batch.mp4 `
   --region 16,16,320,288 `
   --anchor 160,264 `
-  --output-sheet public/assets/mechanism-open.png `
+  --output-sheet public/assets/mechanism-open/mechanism-open.png `
+  --project-root . --runtime-kind public --deployment-base /game/ `
   --width 160 --height 144 --fps 12 --no-loop `
   --animation-key mechanism-open --texture-key mechanism-open `
-  --runtime-url assets/mechanism-open.png `
   --remove-background --background-color '#00ff00' `
   --edge-profile hard-edge --color-separation-verified
 
@@ -79,17 +79,19 @@ node <skill-dir>/scripts/video-to-atlas.mjs `
   --input-video art/animation-batch.mp4 `
   --region 352,16,640,400 `
   --anchor 320,200 `
-  --output-sheet public/assets/impact-burst.png `
+  --output-sheet public/assets/impact-burst/impact-burst.png `
+  --project-root . --runtime-kind public --deployment-base /game/ `
   --width 320 --height 200 --fps 12 --no-loop `
   --animation-key impact-burst --texture-key impact-burst `
-  --runtime-url assets/impact-burst.png `
   --remove-background --background-color '#00ff00' `
   --edge-profile hard-edge --color-separation-verified
 ```
 
 工具按固定区域裁剪后才去背景和缩放。纯色去背景须显式声明硬边与颜色分离已确认，复杂/未知边缘需使用真实 Alpha、遮罩或帧图片修复；不要自动加上确认标记。省略输出宽高时使用区域原尺寸；单边输出尺寸等比推导另一边；双边输出尺寸等比缩放并透明留白到指定 cell。每次调用交付独立 PNG、JSON 和 HTML，默认报告与预览和图集同名。
 
-当前 `--fps` 同时控制抽样和播放，示例数值不代表类型默认节奏；游戏时间先按 [action-timing.md](action-timing.md)整理。`--no-loop` 用于计划中的单次播放；结束保持、组合和事件按现有运行时合同记录，不能只改报告来伪造工具能力。未指定 `--region` 时处理整幅画布。`--output-report`、`--output-preview` 可指定证据路径，`--runtime-url` 使用实际部署 URL，并与资源清单 `spritesheet.runtime_url` 一致。
+当前 `--fps` 同时控制抽样和播放，示例数值不代表类型默认节奏；游戏时间先按 [action-timing.md](action-timing.md)整理。`--no-loop` 用于计划中的单次播放；结束保持、组合和事件按现有运行时合同记录，不能只改报告来伪造工具能力。未指定 `--region` 时处理整幅画布。`--output-report`、`--output-preview` 可指定证据路径。
+
+运行加载示例必须显式绑定项目内资源：public 产物使用 `--project-root`、`--runtime-kind public` 和 `--deployment-base /`（或实际部署前缀，如 `/game/`）；模块资源使用 `--runtime-kind module-import`、`--importer` 和 `--specifier`。工具从图集文件路径推导 URL/导入表达式，不根据文件名猜地址。`--runtime-url` 仅可作为与推导值比较的核对参数，单独提供会报错。未绑定时仍可打包并生成预览与 PASS 报告，但 `runtime_binding`、`runtime_url`、`threejs` 均为空；这只表示打包成功，不能提交 accepted。accepted 文件门要求绑定、报告与 `asset.runtime_outputs` 一致。
 
 每个动画的 `frame_animation.settings.region`、报告的 `input.region` 与 `settings.region` 必须一致。人工检查区域内是否完整、是否混入邻区内容、运动与锚点是否稳定、透明边缘、阶段事件与循环/终态；文件门通过仅代表结构和身份一致。
 

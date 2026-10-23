@@ -1,3 +1,4 @@
+import { deriveLayoutExecutionPlans } from "../../threejs-game-ui-layout/scripts/layout-execution.mjs";
 import assert from "node:assert/strict";
 import { nativeRenderContract, nativeRuntimeEvidence } from "./native-render-test-fixtures.mjs";
 import { createHash } from "node:crypto";
@@ -84,6 +85,20 @@ test("effect-image 布局拆解、双向 region 绑定、V4 几何和 V4 逐节�
   assert.deepEqual(validateSceneReconstructionContract(direct, effectImageManifest(direct), { stage: "V3" }), []);
 });
 
+test("V4 几何测量必须来自同批活动组件，不能用旧矩形掩盖实际出屏", () => {
+  for (const mode of ["usability", "exact"]) {
+    const value = effectImageContract();
+    value.visual_validation = { mode };
+    value.combination_preacceptance.layout_geometry.component_snapshots[0].component_snapshot.layout_bounds.x = 9999;
+    const errors = validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V4" });
+    assert(errors.some((item) => item.includes("必须逐字段等于同批组件快照")), errors.join("\n"));
+  }
+  const hidden = effectImageContract();
+  const snapshot = hidden.combination_preacceptance.layout_geometry.component_snapshots[0].component_snapshot;
+  Object.assign(snapshot, { active: false, position_writers: [], size_writers: [], image: null });
+  assert(validateSceneReconstructionContract(hidden, effectImageManifest(hidden), { stage: "V4" }).some((item) => item.includes("同批活动组件快照")));
+});
+
 test("effect-image 缺少布局节点、反向绑定或越界 bounds 时阻断；普通合同不受影响", () => {
   const missing = effectImageContract();
   delete missing.coverage_regions[0].layout_node_ids;
@@ -104,8 +119,11 @@ test("effect-image 缺少布局节点、反向绑定或越界 bounds 时阻断�
 
 test("effect-image 父子布局允许多层关系，并拒绝缺父、循环和越界", () => {
   const nested = effectImageContract();
+  // 多层布局的真实父节点必须显式承担容器职责。
+  nested.layout_decomposition.layout_nodes[1].is_container = true;
   nested.coverage_regions[1].layoutNodeIds.push("board-inner");
-  nested.layout_decomposition.layout_nodes.push({ ...structuredClone(nested.layout_decomposition.layout_nodes[1]), layout_node_id: "board-inner", region_id: "board", reference_id: "board-surface", parent_layout_node_id: "board-surface", parent_target_bounds: { x: 20, y: 160, width: 350, height: 620 }, relative_position: { left: 20, right: 230, top: 20, bottom: 500 }, axis_alignment: { horizontal: "left", vertical: "top" }, self_anchor: "top-left", reference_anchor: "top-left", offset: { x: 20, y: 20 }, target_bounds: { x: 40, y: 180, width: 100, height: 100 } });
+  nested.layout_decomposition.layout_nodes.push({ ...structuredClone(nested.layout_decomposition.layout_nodes[1]), layout_node_id: "board-inner", is_container: false, region_id: "board", reference_id: "board-surface", parent_layout_node_id: "board-surface", parent_target_bounds: { x: 20, y: 160, width: 350, height: 620 }, relative_position: { left: 20, right: 230, top: 20, bottom: 500 }, axis_alignment: { horizontal: "left", vertical: "top" }, self_anchor: "top-left", reference_anchor: "top-left", offset: { x: 20, y: 20 }, target_bounds: { x: 40, y: 180, width: 100, height: 100 } });
+  nested.layout_decomposition.layout_nodes = deriveLayoutExecutionPlans(nested.layout_decomposition.layout_nodes);
   nested.combination_preacceptance.layout_geometry.node_measurements.push({ layout_node_id: "board-inner", target_bounds: { x: 40, y: 180, width: 100, height: 100 }, actual_bounds: { x: 40, y: 180, width: 100, height: 100 }, delta: { x: 0, y: 0, width: 0, height: 0 }, tolerance_reference: "layout-tolerance", result: "passed", evidence: ["board-inner-layout.json"] });
   assert.deepEqual(validateSceneReconstructionContract(nested, effectImageManifest(nested), { stage: "V2" }), []);
 

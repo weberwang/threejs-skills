@@ -11,7 +11,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { decodePngRgba } from "../../threejs-game-asset-integration/scripts/effect_image_raster.mjs";
-import { deriveAutomaticLayoutFacts, validateLayoutAnnotationPng } from "../../threejs-game-asset-integration/scripts/layout_annotation_contract.mjs";
+import { deriveAutomaticLayoutFacts, deriveLayoutNodesFromDecompositionElements, validateLayoutAnnotationPng } from "../../threejs-game-asset-integration/scripts/layout_annotation_contract.mjs";
 import { validateDecompositionElements } from "../../threejs-game-asset-integration/scripts/decomposition-elements.mjs";
 import { validateAutomaticLayoutDecision } from "../../threejs-game-asset-integration/scripts/automatic-layout-decision.mjs";
 import { readAndValidateLayoutReviewPayload, validateLayoutNodesDocument } from "../../threejs-game-asset-integration/scripts/layout_review_bundle.mjs";
@@ -86,10 +86,37 @@ function validateLayoutDecisionDocument(document, record, label, errors, receipt
   if (nonEmptyString(document.accepted_at) && document.accepted_at !== record.accepted_at) errors.push(`${label}.accepted_at 未绑定布局确认时间`);
 }
 
-/** 按场景确认上下文推导同批布局事实，供 HTML/JSON/PNG 做三方比较。 */
-function expectedLayoutFacts(context, nodesDocument, errors, label) {
-  if (!Array.isArray(context.layoutNodes) || !isObject(nodesDocument?.viewport)) return null;
-  try { return deriveAutomaticLayoutFacts(context.layoutNodes, nodesDocument.viewport, { sceneId: context.sceneId, stateId: context.stateId }); } catch (error) { errors.push(`${label} 无法从当前 layout_nodes 重建 PNG 布局事实：${error.message}`); return null; }
+/** 只从绑定 proposal 与 layout-decision 重新推导几何，不能信任工件自报 bounds。 */
+function expectedLayout(proposal, decisionDocument, record, nodesDocument, errors, label) {
+  const elements = proposal?.decomposition_elements;
+  if (!Array.isArray(elements) || !isObject(nodesDocument?.viewport)) {
+    errors.push(`${label} 缺少绑定 proposal.decomposition_elements 或冻结 viewport，无法重算布局`);
+    return null;
+  }
+  const decisionErrors = [];
+  const decisions = validateAutomaticLayoutDecision(decisionDocument, {
+    elements,
+    sceneId: record.scene_id,
+    stateId: record.state_id,
+    decompositionConfirmationId: record.decomposition_confirmation_id,
+  }, decisionErrors, `${label}.layout_decision`);
+  errors.push(...decisionErrors);
+  if (!decisions) return null;
+  try {
+    const layoutNodes = deriveLayoutNodesFromDecompositionElements(elements, nodesDocument.viewport, {
+      alignmentDecisions: decisions,
+      sceneId: record.scene_id,
+      stateId: record.state_id,
+    });
+    const facts = deriveAutomaticLayoutFacts(layoutNodes, nodesDocument.viewport, {
+      sceneId: record.scene_id,
+      stateId: record.state_id,
+    });
+    return { layoutNodes, facts };
+  } catch (error) {
+    errors.push(`${label} 无法从绑定 proposal 与 layout_decision 重建布局事实：${error.message}`);
+    return null;
+  }
 }
 
 /** 读取提案中用于验证父级/语义的区域边界；不从布局节点反推拆解区域。 */
@@ -102,8 +129,8 @@ function proposalRegions(proposal) {
 /** 读取布局节点的真实元素几何，兼容节点文档中的 target_bounds/bounds 同义位置。 */
 function nodeBounds(node) { return node?.target_bounds ?? node?.targetBounds ?? node?.bounds; }
 
-/** 校验手工布局节点必须逐项继承真实 proposal 的语义归属，禁止改 parent 后复用旧确认。 */
-function validateLayoutNodesAgainstProposal(proposal, nodesDocument, context, errors, label) {
+/** 校验手工布局节点逐项继承 proposal 身份，并使用重算后的派生 bounds。 */
+function validateLayoutNodesAgainstProposal(proposal, nodesDocument, expectedLayoutNodes, context, errors, label) {
   const elements = proposal?.decomposition_elements;
   const regions = proposalRegions(proposal);
   const elementErrors = [];
@@ -114,12 +141,33 @@ function validateLayoutNodesAgainstProposal(proposal, nodesDocument, context, er
   if (actualNodes.length !== elements.length) { errors.push(`${label}.layout_nodes 必须与 proposal.decomposition_elements 数量一致`); return; }
   for (const [index, element] of elements.entries()) {
     const node = actualNodes[index];
-    const expectedBounds = element.bounds;
+    const expectedNode = expectedLayoutNodes?.[index];
+    const expectedBounds = expectedNode?.target_bounds;
     const expectedContainer = element.element_type === "container";
     const expectedEmpty = expectedContainer && element.empty_container === true;
-    if (!node || node.layout_node_id !== element.element_id || node.element_id !== element.element_id || node.element_type !== element.element_type || node.is_container !== expectedContainer || node.empty_container !== expectedEmpty || node.parent_layout_node_id !== element.parent_element_id || node.parent_element_id !== element.parent_element_id || canonicalJson(nodeBounds(node)) !== canonicalJson(expectedBounds) || node.scene_id !== element.scene_id || node.state_id !== element.state_id || node.component_id !== element.component_id || node.placement_id !== element.placement_id || canonicalJson(node.semantic_grouping) !== canonicalJson(element.semantic_grouping) || canonicalJson(node.ui_layout) !== canonicalJson(element.ui_layout)) {
-      errors.push(`${label}.layout_nodes[${index}] 未逐项继承 proposal 的元素、bounds、semantic_grouping、ui_layout 或 parent_element_id`);
-    }
+    if (!node || !expectedNode) { errors.push(`${label}.layout_nodes[${index}] 缺少 proposal 派生节点或事实`); continue; }
+    const mismatchedFields = [];
+    // 逐字段记录漂移原因，确认错误可直接指出是语义、身份还是派生几何未继承。
+    const compare = (field, actual, expected) => { if (canonicalJson(actual ?? null) !== canonicalJson(expected ?? null)) mismatchedFields.push(field); };
+    compare("layout_node_id", node.layout_node_id, element.element_id);
+    compare("element_id", node.element_id, element.element_id);
+    compare("element_type", node.element_type, element.element_type);
+    compare("render_kind", node.render_kind, expectedNode.render_kind);
+    compare("is_container", node.is_container, expectedContainer);
+    compare("empty_container", node.empty_container, expectedEmpty);
+    compare("parent_layout_node_id", node.parent_layout_node_id, element.parent_element_id);
+    compare("parent_element_id", node.parent_element_id, element.parent_element_id);
+    compare("target_bounds", nodeBounds(node), expectedBounds);
+    compare("scene_id", node.scene_id, element.scene_id);
+    compare("state_id", node.state_id, element.state_id);
+    compare("component_id", node.component_id, element.component_id);
+    compare("placement_id", node.placement_id, element.placement_id);
+    compare("semantic_grouping", node.semantic_grouping, element.semantic_grouping);
+    compare("ui_layout", node.ui_layout, element.ui_layout);
+    compare("axis_alignment", node.axis_alignment, expectedNode.axis_alignment);
+    compare("center_alignment", node.center_alignment, expectedNode.center_alignment);
+    compare("layout_execution", node.layout_execution, expectedNode.layout_execution);
+    if (mismatchedFields.length > 0) errors.push(`${label}.layout_nodes[${index}] 的 ${mismatchedFields.join("、")} 未逐项继承 proposal 身份/语义，或目标 bounds 与绑定 decision 重算结果不一致`);
   }
 }
 
@@ -127,12 +175,17 @@ function validateLayoutNodesAgainstProposal(proposal, nodesDocument, context, er
 function validateLayoutReviewFiles(record, context, files, image, errors, label) {
   const { review, nodes, layoutDecision } = files;
   if (!review || !nodes) return;
-  const expected = { projectRoot: context.projectRoot, sceneId: record.scene_id, stateId: record.state_id, decompositionConfirmationId: record.decomposition_confirmation_id, layoutDecisionId: record.layout_decision_id, referenceFile: context.referenceFile ?? context.reference_file, proposalFile: context.proposalFile ?? context.proposal_file };
-  const payload = readAndValidateLayoutReviewPayload(review.bytes, nodes.bytes, expected, errors, label);
+  const expectedBindings = { projectRoot: context.projectRoot, sceneId: record.scene_id, stateId: record.state_id, decompositionConfirmationId: record.decomposition_confirmation_id, layoutDecisionId: record.layout_decision_id, referenceFile: context.referenceFile ?? context.reference_file, proposalFile: context.proposalFile ?? context.proposal_file };
+  const payload = readAndValidateLayoutReviewPayload(review.bytes, nodes.bytes, expectedBindings, errors, label);
   if (!payload) return;
-  const expectedFacts = expectedLayoutFacts(context, payload.externalNodes, errors, label);
+  const proposalBinding = payload.bindings.proposal;
+  const proposalPath = readBoundFile(context.projectRoot, proposalBinding.file, `${label}.proposal`, errors, true);
+  const proposal = proposalPath?.json;
+  const rebuilt = expectedLayout(proposal, layoutDecision?.json, record, payload.externalNodes, errors, label);
+  const expectedFacts = rebuilt?.facts ?? null;
+  if (proposal && rebuilt) validateLayoutNodesAgainstProposal(proposal, payload.externalNodes, rebuilt.layoutNodes, context, errors, label);
   const nodeErrors = [];
-  validateLayoutNodesDocument(payload.externalNodes, { ...expected, layoutNodes: expectedFacts?.filter((node) => node.is_root_container !== true), rootNodes: expectedFacts?.filter((node) => node.is_root_container === true) }, nodeErrors, `${label}.layout_nodes`);
+  validateLayoutNodesDocument(payload.externalNodes, { ...expectedBindings, layoutNodes: expectedFacts?.filter((node) => node.is_root_container !== true), rootNodes: expectedFacts?.filter((node) => node.is_root_container === true) }, nodeErrors, `${label}.layout_nodes`);
   errors.push(...nodeErrors);
   // 即使调用方没有提供 context.layoutNodes，也必须把节点 JSON 与 PNG 内的实际 facts 逐项绑定。
   try {
@@ -143,10 +196,7 @@ function validateLayoutReviewFiles(record, context, files, image, errors, label)
   const bindings = payload.bindings;
   const bindingPairs = [["layout_annotation_file", bindings.annotation?.file], ["layout_review_file", record.layout_review_file], ["layout_nodes_file", bindings.nodes?.file], ["layout_decision_file", bindings.decision?.file]];
   for (const [field, actual] of bindingPairs) if (actual !== record[field]) errors.push(`${label}.${field} 未绑定确认记录`);
-  const references = [];
-  for (const [name, item] of [["reference", bindings.reference], ["proposal", bindings.proposal]]) if (isObject(item)) references.push([name, readBoundFile(context.projectRoot, item.file, `${label}.${name}`, errors, name === "proposal")]);
-  const reference = references.find(([name]) => name === "reference")?.[1]; const proposal = references.find(([name]) => name === "proposal")?.[1];
-  if (proposal?.json) validateLayoutNodesAgainstProposal(proposal.json, payload.externalNodes, context, errors, label);
+  if (isObject(bindings.reference)) readBoundFile(context.projectRoot, bindings.reference.file, `${label}.reference`, errors);
 }
 
 /** 校验独立布局确认；布局阶段必须提供上游拆解和完整审阅页上下文。 */
@@ -171,7 +221,8 @@ export function validateLayoutAnnotationConfirmation(record, context = {}, error
     const receipt = readBoundFile(context.projectRoot, record.user_decision_receipt_file, `${label}.user_decision_receipt`, errors, true);
     if (image) {
       const checkErrors = [];
-      const validated = validateLayoutAnnotationPng(image.bytes, { sceneId: record.scene_id, stateId: record.state_id, decompositionConfirmationId: record.decomposition_confirmation_id, layoutDecisionId: record.layout_decision_id, layoutNodes: context.layoutNodes }, checkErrors, label);
+      // 文件门随后会从 bound proposal/decision 重算 facts；这里不采用调用方提供的生成节点对象。
+      const validated = validateLayoutAnnotationPng(image.bytes, { sceneId: record.scene_id, stateId: record.state_id, decompositionConfirmationId: record.decomposition_confirmation_id, layoutDecisionId: record.layout_decision_id }, checkErrors, label);
       errors.push(...checkErrors);
       if (validated) { if (validated.decoded.width !== record.layout_annotation_width || validated.decoded.height !== record.layout_annotation_height) errors.push(`${label} 尺寸与确认记录不一致`); if (validated.metadata.schema !== record.layout_annotation_schema || validated.metadata.layout !== record.layout_annotation_layout) errors.push(`${label} schema/layout 与确认记录不一致`); }
     }
@@ -180,14 +231,7 @@ export function validateLayoutAnnotationConfirmation(record, context = {}, error
       try { nodesDocument = JSON.parse(nodes.bytes.toString("utf8")); } catch (error) { errors.push(`${label}.layout_nodes 不是合法 JSON：${error.message}`); }
     }
     if (layoutDecision) {
-      const decisionErrors = [];
-      const finalNodes = (context.layoutNodes ?? nodesDocument?.layout_nodes ?? []).filter((node) => node?.is_root_container !== true);
-      const elements = finalNodes.map((node) => ({ element_id: node.element_id ?? node.layout_node_id }));
-      const decisionMap = validateAutomaticLayoutDecision(layoutDecision.json, { elements, sceneId: record.scene_id, stateId: record.state_id, decompositionConfirmationId: record.decomposition_confirmation_id }, decisionErrors);
-      errors.push(...decisionErrors.map((message) => `${label}.layout_decision ${message}`));
       if (layoutDecision.json?.decision_id !== record.layout_decision_id) errors.push(`${label}.layout_decision.decision_id 未绑定确认记录`);
-      if (!decisionMap) errors.push(`${label}.layout_decision 必须为每个最终布局元素提供显式对齐`);
-      else for (const node of finalNodes) { const elementId = node.element_id ?? node.layout_node_id; const expected = node.axis_alignment ?? node.axisAlignment; const actual = decisionMap.get(elementId); if (!isObject(expected) || actual?.horizontal !== expected.horizontal || actual?.vertical !== expected.vertical) errors.push(`${label}.layout_decision.${elementId} 与最终布局节点 axis_alignment 不一致`); }
     }
     if (review && nodes && image && layoutDecision) validateLayoutReviewFiles(record, context, { review, nodes, layoutDecision }, image, errors, `${label}.layout_review`);
     if (decision) validateLayoutDecisionDocument(decision.json, record, `${label}.decision_record`, errors);

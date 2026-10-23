@@ -71,7 +71,7 @@
 
 视频发生剪辑或重定时时，`source_video` 绑定实际用于抽帧的派生视频，报告保留实际输入路径；原始视频身份、剪辑命令/配置与时间映射另存设计证据，不新增未经工具支持的 manifest 字段。SHA 可记录用于追踪，但无论缺失、错误或陈旧都不阻断文件验收。结构校验器不会自动执行上述人工节奏检查。
 
-视频路线每个动画的 `asset.frame_animation` 绑定提示词、真实视频、自己的报告、预览和 spritesheet 路径；SHA 字段及预览 meta 仅供可选追踪。共享输入时，提示词和视频绑定可以相同，区域与独立图集不能混用。文件门实际读取各工件并核对路径、区域位置与宽高、真实显示画布边界、FPS、帧数、输出 cell、去背景配置、PNG 图集尺寸和 Three.js 帧范围。图集必须位于 `asset.runtime_outputs`，`spritesheet.runtime_url` 与报告的 `threejs.texture_loader.url` 相同；预览必须是可读 HTML。
+视频路线每个动画的 `asset.frame_animation` 绑定提示词、真实视频、自己的报告、预览和 spritesheet 路径；SHA 字段及预览 meta 仅供可选追踪。共享输入时，提示词和视频绑定可以相同，区域与独立图集不能混用。文件门实际读取各工件并核对路径、区域位置与宽高、真实显示画布边界、FPS、帧数、输出 cell、去背景配置、PNG 图集尺寸和 Three.js 帧范围。图集必须位于 `asset.runtime_outputs`，`spritesheet.runtime_binding.file` 必须等于图集路径，报告的 `artifacts.sheet.file` 也必须与之相同。public 绑定从 `public/assets/<owner>/...` 和 `deployment_base` 推导 `runtime_url`，并要求报告加载 URL 精确一致；module-import 绑定要求报告包含对应的静态 `?url` 导入并以 `loadAsync(atlasUrl)` 加载。未绑定的工具报告仍可表示打包成功（`status: PASS`），但 `runtime_binding`、`runtime_url`、`threejs` 为空，不能用于 accepted 工作流。路径映射和 snippet 合同不启动 HTTP 服务，也不证明生产部署或浏览器实际加载；预览必须是可读 HTML。
 
 视频合同使用 `threejs-video-atlas-workflow/1`；SHA 字段如有仅供追踪，省略也有效。示例：
 
@@ -90,9 +90,15 @@
   "source_video": { "file": "art/animation-batch.mp4" },
   "quality_report": { "file": "evidence/mechanism-open.video-atlas.json" },
   "preview": { "file": "evidence/mechanism-open.preview.html" },
-  "spritesheet": { "file": "public/assets/mechanism-open.png", "runtime_url": "assets/mechanism-open.png" }
+  "spritesheet": {
+    "file": "public/assets/mechanism-open/mechanism-open.png",
+    "runtime_binding": { "kind": "public", "file": "public/assets/mechanism-open/mechanism-open.png", "deployment_base": "/game/" },
+    "runtime_url": "/game/assets/mechanism-open/mechanism-open.png"
+  }
 }
 ```
+
+若图集属于模块源码，绑定可写为 `{"kind":"module-import","file":"src/assets/mechanism-open.png","importer":"src/animation/mechanism-open.ts","specifier":"../assets/mechanism-open.png?url"}`；此时 `runtime_url` 为 `null`，Three.js 示例通过 `import atlasUrl from "../assets/mechanism-open.png?url";` 和 `loadAsync(atlasUrl)` 加载。工具从 `project-root` 内的输出路径解析绑定，不根据 basename 或文件系统绝对路径猜运行 URL。CLI 的 `--runtime-url` 仅作推导结果核对；没有 `runtime-kind` 绑定时不能用它生成运行时示例。public 文件必须放在 `public/assets/<owner>/...`，其中 `<owner>` 是第一层资源目录；示例的文件路径、绑定路径与 `runtime_outputs` 项必须保持完全一致。
 
 `settings.width/height` 是最终 cell 尺寸，`settings.region.width/height` 是源视频裁剪尺寸，两者可以不同。区域模式下，清单的 `settings.region`、报告的 `input.region` 与 `settings.region` 必须逐字段一致；显示画布宽高必须有效且完整容纳区域。整画布模式不填区域字段。工件、视频输入、帧来源、图集和预览中的 SHA 都可选，仅作追踪；缺失、错误或陈旧不阻断验收。文件门仍验证路径和可读内容、图集尺寸与 Three.js 帧合同，并由用户人工确认视频和最终序列。
 

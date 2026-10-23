@@ -7,6 +7,7 @@
  * 验证决策文件与已确认拆解元素逐项按序对应，并把它转换为只读查找表。
  */
 import { isValidAxisAlignment } from "../../threejs-game-workflow-control/scripts/layout-node-parent-geometry.mjs";
+import { normalizeCenterAlignment } from "../../threejs-game-ui-layout/scripts/center-alignment.mjs";
 
 export const AUTOMATIC_LAYOUT_DECISION_SCHEMA = "automatic-layout-decision/1.0";
 export const AUTOMATIC_LAYOUT_DECISION_METHOD = "visual-judgement";
@@ -40,10 +41,21 @@ export function validateAutomaticLayoutDecision(document, context = {}, errors =
     if (seen.has(item.element_id)) errors.push(`${label}.elements[${index}] 重复绑定 element_id：${item.element_id}`);
     seen.add(item.element_id);
     if (!isValidAxisAlignment({ horizontal: item.horizontal_alignment, vertical: item.vertical_alignment })) errors.push(`${label}.elements[${index}] 必须声明合法 horizontal_alignment/vertical_alignment`);
-    else map.set(item.element_id, { horizontal: item.horizontal_alignment, vertical: item.vertical_alignment });
+    else {
+      const alignment = { horizontal: item.horizontal_alignment, vertical: item.vertical_alignment };
+      try {
+        normalizeCenterAlignment(alignment, item.center_alignment, `${label}.elements[${index}].center_alignment`);
+        map.set(item.element_id, { ...alignment, ...(item.center_alignment !== undefined ? { center_alignment: structuredClone(item.center_alignment) } : {}) });
+      } catch (error) { errors.push(error.message); }
+    }
   }
   const actualIds = decisions.map((item) => item?.element_id);
   if (expectedIds.length === 0 || new Set(expectedIds).size !== expectedIds.length || decisions.length !== expectedIds.length || JSON.stringify(actualIds) !== JSON.stringify(expectedIds)) errors.push(`${label}.elements 必须按原顺序与已确认 decomposition_elements 逐项对应`);
+  const needsSafeArea = expectedElements.some((element) => element?.parent_element_id === "safe-area" || element?.ui_layout?.position_reference_id === "safe-area");
+  const safeArea = document.safe_area_bounds;
+  if (needsSafeArea && (!isObject(safeArea) || !["x", "y", "width", "height"].every((key) => Number.isFinite(safeArea[key])) || safeArea.width <= 0 || safeArea.height <= 0)) errors.push(`${label}.safe_area_bounds 必须提供实际安全区的有限正尺寸矩形`);
+  else if (safeArea !== undefined && (!isObject(safeArea) || Object.keys(safeArea).some((key) => !["x", "y", "width", "height"].includes(key)) || !["x", "y", "width", "height"].every((key) => Number.isFinite(safeArea[key])) || safeArea.width <= 0 || safeArea.height <= 0)) errors.push(`${label}.safe_area_bounds 必须是只含有限 x/y 和正数 width/height 的矩形`);
+  if (safeArea !== undefined && isObject(safeArea) && Object.keys(safeArea).every((key) => ["x", "y", "width", "height"].includes(key)) && ["x", "y", "width", "height"].every((key) => Number.isFinite(safeArea[key])) && safeArea.width > 0 && safeArea.height > 0) map.safeAreaBounds = { x: safeArea.x, y: safeArea.y, width: safeArea.width, height: safeArea.height };
   return errors.length > 0 ? null : map;
 }
 

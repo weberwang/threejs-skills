@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
+import { resolveRuntimeResourceBinding } from "./runtime-resource-binding.mjs";
 
 /** 判断普通 JSON 对象，供视频与图片图集报告共同使用。 */
 export function isObject(value) {
@@ -54,6 +55,22 @@ export function validateArtifactBinding(artifact, label, errors) {
   }
   if (!nonEmptyString(artifact.file)) errors.push(label + ".file 必须是非空项目内相对路径");
   else if (!isProjectRelativePath(artifact.file)) errors.push(label + ".file 必须是项目内相对路径：" + artifact.file);
+}
+
+/** 校验帧动画 spritesheet 的路径、部署 URL 或模块导入声明。 */
+export function validateRuntimeResourceBindingContract(artifact, label, errors) {
+  if (!isObject(artifact) || !nonEmptyString(artifact.file)) return null;
+  if (!/\.png$/iu.test(artifact.file)) errors.push(label + ".file 必须是 PNG 图集");
+  try {
+    const resolved = resolveRuntimeResourceBinding(artifact.runtime_binding, { expectedFile: artifact.file });
+    if (artifact.runtime_url !== resolved.runtime_url) {
+      errors.push(label + ".runtime_url 必须等于 runtime_binding 推导的地址（module-import 必须为 null）");
+    }
+    return resolved;
+  } catch (error) {
+    errors.push(label + ".runtime_binding 无效：" + error.message);
+    return null;
+  }
 }
 
 /** 裁剪区域使用显示画布上的整数像素，禁止缺项或静默修正边界。 */
@@ -188,6 +205,15 @@ function defaultResolvePath(projectRoot, file) {
   return candidate;
 }
 
+/** 比较绑定字段和值而忽略 JSON 属性顺序，身份仍按完整字段集合判断。 */
+function sameRuntimeBinding(actual, expected) {
+  if (!isObject(actual) || !isObject(expected)) return false;
+  const actualKeys = Object.keys(actual).sort();
+  const expectedKeys = Object.keys(expected).sort();
+  return actualKeys.length === expectedKeys.length
+    && actualKeys.every((key, index) => key === expectedKeys[index] && actual[key] === expected[key]);
+}
+
 /** 读取绑定工件并复核其真实路径，确保文件可读且没有经链接逃逸项目根目录。 */
 export async function readBoundArtifact(artifact, label, context, errors) {
   if (!isObject(artifact) || !nonEmptyString(artifact.file)) return null;
@@ -283,12 +309,32 @@ export function validateThreeJSContract(report, asset, sheetBinding, label, erro
   const endFrame = frames.length - 1;
   const cell = report.cell;
   const textureLoader = threejs.texture_loader;
+  let expectedRuntime = null;
+  try {
+    expectedRuntime = resolveRuntimeResourceBinding(sheetBinding?.runtime_binding, { expectedFile: sheetBinding?.file });
+  } catch (error) {
+    errors.push(label + ".spritesheet.runtime_binding 无效：" + error.message);
+  }
+  if (expectedRuntime) {
+    if (!sameRuntimeBinding(report.runtime_binding, expectedRuntime.runtime_binding)) {
+      errors.push(label + ".runtime_binding 必须与 manifest spritesheet.runtime_binding 一致");
+    }
+    if (report.runtime_url !== expectedRuntime.runtime_url) {
+      errors.push(label + ".runtime_url 必须与 manifest spritesheet.runtime_url 一致");
+    }
+  }
   if (textureLoader.class !== "THREE.TextureLoader" || textureLoader.method !== "loadAsync") {
     errors.push(label + ".threejs.texture_loader 必须使用 THREE.TextureLoader.loadAsync");
   }
   if (textureLoader.color_space !== "THREE.SRGBColorSpace") errors.push(label + ".threejs.texture_loader.color_space 必须为 THREE.SRGBColorSpace");
-  if (!isRuntimeUrl(textureLoader.url)) errors.push(label + ".threejs.texture_loader.url 必须绑定 spritesheet.runtime_url");
-  else if (textureLoader.url !== sheetBinding?.runtime_url) errors.push(label + ".threejs.texture_loader.url 必须严格等于 spritesheet.runtime_url");
+  if (expectedRuntime?.runtime_binding.kind === "public") {
+    if (!isRuntimeUrl(textureLoader.url) || textureLoader.url !== expectedRuntime.runtime_url || textureLoader.url_expression !== undefined) {
+      errors.push(label + ".threejs.texture_loader.url 必须严格等于绑定推导的 spritesheet.runtime_url");
+    }
+  } else if (expectedRuntime?.runtime_binding.kind === "module-import"
+    && (textureLoader.url !== null || textureLoader.url_expression !== "atlasUrl")) {
+    errors.push(label + ".threejs.texture_loader 必须通过 url_expression=atlasUrl 使用模块导入资源");
+  }
 
   const atlasUv = threejs.atlas_uv;
   const expectedFrameCount = frames.length;
@@ -343,6 +389,22 @@ export function validateThreeJSContract(report, asset, sheetBinding, label, erro
     || !threejs.snippets.factory.includes("texture.offset.x = frameIndex / frameCount")) {
     errors.push(label + ".threejs.snippets.factory 必须是可执行的 three.js 图集动画示例");
   }
+  if (typeof threejs.snippets.factory === "string" && expectedRuntime) {
+    const factory = threejs.snippets.factory;
+    const loaderCalls = [...factory.matchAll(/new\s+THREE\.TextureLoader\(\)\.loadAsync\(\s*([^)]*?)\s*\)/gu)];
+    const expectedArgument = expectedRuntime.runtime_binding.kind === "module-import"
+      ? "atlasUrl" : JSON.stringify(expectedRuntime.runtime_url);
+    if (loaderCalls.length !== 1 || loaderCalls[0][1] !== expectedArgument) {
+      errors.push(label + ".threejs.snippets.factory 的 loadAsync 参数必须严格绑定运行时资源");
+    }
+    if (expectedRuntime.import_statement) {
+      if (!factory.split(/\r?\n/u).includes(expectedRuntime.import_statement)) {
+        errors.push(label + ".threejs.snippets.factory 必须包含与 runtime_binding.specifier 一致的静态导入");
+      }
+    } else if (/^\s*import\s+atlasUrl\b/mu.test(factory)) {
+      errors.push(label + ".threejs.snippets.factory 不得为 public URL 添加模块导入");
+    }
+  }
   if (typeof threejs.snippets.usage !== "string" || !threejs.snippets.usage.includes("animation.update(deltaSeconds)")) {
     errors.push(label + ".threejs.snippets.usage 必须展示逐帧更新调用");
   }
@@ -350,4 +412,5 @@ export function validateThreeJSContract(report, asset, sheetBinding, label, erro
   const sheetFile = sheetBinding?.file;
   const runtimeOutputs = Array.isArray(asset?.runtime_outputs) ? asset.runtime_outputs.map(normalizedPath) : [];
   if (!runtimeOutputs.includes(normalizedPath(sheetFile))) errors.push(label + " spritesheet 必须位于 asset.runtime_outputs");
+  if (report.artifacts?.sheet?.file !== sheetFile) errors.push(label + ".artifacts.sheet.file 必须严格等于 manifest spritesheet.file");
 }

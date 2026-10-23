@@ -84,7 +84,7 @@ function buildFixtureFiles() {
       texture_loader: {
         class: "THREE.TextureLoader",
         method: "loadAsync",
-        url: "assets/hero.png",
+        url: "/assets/hero/hero.png",
         color_space: "THREE.SRGBColorSpace",
       },
       atlas_uv: {
@@ -110,12 +110,14 @@ function buildFixtureFiles() {
         end_behavior: "wrap-to-first-frame",
       },
       snippets: {
-        factory: "async function createFrameAnimation(THREE, scene) { const texture = await new THREE.TextureLoader().loadAsync('assets/hero.png'); const material = new THREE.SpriteMaterial({ map: texture, transparent: true }); const sprite = new THREE.Sprite(material); sprite.scale.set(4, 4, 1); sprite.center.set(0.5, 0.25); texture.repeat.set(1 / 4, 1); texture.offset.x = frameIndex / frameCount; return { sprite, update(deltaSeconds) {} }; }",
+        factory: "async function createFrameAnimation(THREE, scene) { const texture = await new THREE.TextureLoader().loadAsync(\"/assets/hero/hero.png\"); const material = new THREE.SpriteMaterial({ map: texture, transparent: true }); const sprite = new THREE.Sprite(material); sprite.scale.set(4, 4, 1); sprite.center.set(0.5, 0.25); texture.repeat.set(1 / 4, 1); texture.offset.x = frameIndex / frameCount; return { sprite, update(deltaSeconds) {} }; }",
         usage: "animation.update(deltaSeconds);",
       },
     },
+    runtime_binding: { kind: "public", file: "public/assets/hero/hero.png", deployment_base: "/" },
+    runtime_url: "/assets/hero/hero.png",
     artifacts: {
-      sheet: { file: "public/assets/hero.png", width: 16, height: 4, sha256: sha256Bytes(sheet) },
+      sheet: { file: "public/assets/hero/hero.png", width: 16, height: 4, sha256: sha256Bytes(sheet) },
       preview: { file: "reports/hero-preview.html" },
       report: { file: "reports/hero-atlas.json" },
     },
@@ -126,7 +128,7 @@ function buildFixtureFiles() {
     ["input/hero.mp4", video],
     ["reports/hero-atlas.json", reportBytes],
     ["reports/hero-preview.html", preview],
-    ["public/assets/hero.png", sheet],
+    ["public/assets/hero/hero.png", sheet],
   ]);
   const artifact = (file, bytes, extra = {}) => ({ file, sha256: sha256Bytes(bytes), ...extra });
   const contract = {
@@ -140,11 +142,14 @@ function buildFixtureFiles() {
     source_video: artifact("input/hero.mp4", video),
     quality_report: artifact("reports/hero-atlas.json", reportBytes),
     preview: artifact("reports/hero-preview.html", preview),
-    spritesheet: artifact("public/assets/hero.png", sheet, { runtime_url: "assets/hero.png" }),
+    spritesheet: artifact("public/assets/hero/hero.png", sheet, {
+      runtime_binding: { kind: "public", file: "public/assets/hero/hero.png", deployment_base: "/" },
+      runtime_url: "/assets/hero/hero.png",
+    }),
   };
   const asset = {
     texture_key: "hero-texture",
-    runtime_outputs: ["public/assets/hero.png"],
+    runtime_outputs: ["public/assets/hero/hero.png"],
     frame_animation: contract,
   };
   return { files, asset, report, sheet, video };
@@ -370,14 +375,17 @@ test("Sprite.center 必须把左上像素锚点转换为左下归一化坐标", 
   });
 });
 
-test("spritesheet runtime_url 必填且拒绝外部地址和路径逃逸", () => {
+test("spritesheet runtime_binding 必填且 runtime_url 必须由绑定推导", () => {
   for (const runtimeUrl of [undefined, "", "../hero.png", "assets\\hero.png", "https://cdn.example/hero.png", "%252e%252e/hero.png"]) {
     const { asset } = buildFixtureFiles();
     if (runtimeUrl === undefined) delete asset.frame_animation.spritesheet.runtime_url;
     else asset.frame_animation.spritesheet.runtime_url = runtimeUrl;
     const errors = validateFrameAnimationWorkflowContract(asset.frame_animation);
-    assert(errors.some((message) => message.includes("spritesheet.runtime_url 必须是非空且安全的 ThreeJS URL")));
+    assert(errors.some((message) => message.includes("spritesheet.runtime_url 必须等于 runtime_binding 推导的地址")));
   }
+  const { asset } = buildFixtureFiles();
+  delete asset.frame_animation.spritesheet.runtime_binding;
+  assert(validateFrameAnimationWorkflowContract(asset.frame_animation).some((message) => message.includes("runtime_binding 无效")));
 });
 
 test("提示词 JSON 必须可解析且网页预览必须是 HTML", async () => {
@@ -407,16 +415,16 @@ test("解析成功但根节点不是对象的报告不能通过", async () => {
   });
 });
 
-test("Three.js TextureLoader URL 必须严格等于 spritesheet runtime_url", async () => {
+test("Three.js TextureLoader URL 必须严格等于绑定推导的 spritesheet runtime_url", async () => {
   await withFixture(async (root, fixture) => {
     fixture.report.threejs.texture_loader.url = "assets/other.png";
     await writeReport(root, fixture);
     const errors = await runGate(root, fixture.asset);
-    assert(errors.some((message) => message.includes("texture_loader.url 必须严格等于 spritesheet.runtime_url")));
+    assert(errors.some((message) => message.includes("texture_loader.url 必须严格等于绑定推导的 spritesheet.runtime_url")));
   });
 });
 
-test("报告相对工件路径必须匹配 manifest，绝对路径作为诊断信息放行", async () => {
+test("报告工件路径绑定 spritesheet；其它绝对路径仅作为诊断信息放行", async () => {
   await withFixture(async (root, fixture) => {
     fixture.report.artifacts.preview.file = "reports/other-preview.html";
     await writeReport(root, fixture);
@@ -427,7 +435,73 @@ test("报告相对工件路径必须匹配 manifest，绝对路径作为诊断�
     fixture.report.artifacts.preview.file = "C:\\generated\\hero-preview.html";
     fixture.report.artifacts.report.file = "C:\\generated\\hero-report.json";
     await writeReport(root, fixture);
+    assert((await runGate(root, fixture.asset)).some((message) => message.includes("artifacts.sheet.file 必须严格等于 manifest spritesheet.file")));
+    fixture.report.artifacts.sheet.file = fixture.asset.frame_animation.spritesheet.file;
+    await writeReport(root, fixture);
     assert.deepEqual(await runGate(root, fixture.asset), []);
+  });
+});
+
+/** 确保实际 loadAsync 参数和报告中的绑定身份都不能被示例片段篡改。 */
+test("Three.js snippet 和报告必须保留 spritesheet 绑定", async () => {
+  await withFixture(async (root, fixture) => {
+    fixture.report.threejs.snippets.factory = fixture.report.threejs.snippets.factory.replace("/assets/hero/hero.png", "/assets/other.png");
+    await writeReport(root, fixture);
+    assert((await runGate(root, fixture.asset)).some((message) => message.includes("factory 的 loadAsync 参数必须严格绑定运行时资源")));
+  });
+  await withFixture(async (root, fixture) => {
+    fixture.report.runtime_binding = {
+      deployment_base: fixture.report.runtime_binding.deployment_base,
+      file: fixture.report.runtime_binding.file,
+      kind: fixture.report.runtime_binding.kind,
+    };
+    await writeReport(root, fixture);
+    assert.deepEqual(await runGate(root, fixture.asset), [], "JSON 属性顺序不应改变绑定身份");
+    fixture.report.runtime_binding.deployment_base = "/other/";
+    await writeReport(root, fixture);
+    assert((await runGate(root, fixture.asset)).some((message) => message.includes("runtime_binding 必须与 manifest spritesheet.runtime_binding 一致")));
+  });
+});
+
+/** module-import accepted 路线要求实际 importer 文件存在且示例使用 atlasUrl。 */
+test("module-import 文件门检查 importer、specifier 与 atlasUrl 参数", async () => {
+  await withFixture(async (root, fixture) => {
+    const contract = fixture.asset.frame_animation;
+    const binding = {
+      kind: "module-import",
+      file: "src/assets/hero.png",
+      importer: "src/animations/hero.ts",
+      specifier: "../assets/hero.png?url",
+    };
+    const sheetBytes = fixture.files.get("public/assets/hero/hero.png");
+    await mkdir(join(root, "src/assets"), { recursive: true });
+    await writeFile(join(root, "src/assets/hero.png"), sheetBytes);
+    await mkdir(join(root, "src/animations"), { recursive: true });
+    await writeFile(join(root, "src/animations/hero.ts"), "export const hero = true;\n");
+    contract.spritesheet.file = binding.file;
+    contract.spritesheet.runtime_binding = binding;
+    contract.spritesheet.runtime_url = null;
+    fixture.asset.runtime_outputs = [binding.file];
+    fixture.report.runtime_binding = binding;
+    fixture.report.runtime_url = null;
+    fixture.report.artifacts.sheet.file = binding.file;
+    fixture.report.threejs.texture_loader.url = null;
+    fixture.report.threejs.texture_loader.url_expression = "atlasUrl";
+    fixture.report.threejs.snippets.factory = fixture.report.threejs.snippets.factory
+      .replace("async function createFrameAnimation", 'import atlasUrl from "../assets/hero.png?url";\nasync function createFrameAnimation')
+      .replace('loadAsync("/assets/hero/hero.png")', "loadAsync(atlasUrl)");
+    await writeReport(root, fixture);
+    assert.deepEqual(await runGate(root, fixture.asset), []);
+
+    fixture.report.threejs.snippets.factory = fixture.report.threejs.snippets.factory.replace("loadAsync(atlasUrl)", 'loadAsync("../assets/other.png?url")');
+    await writeReport(root, fixture);
+    assert((await runGate(root, fixture.asset)).some((message) => message.includes("factory 的 loadAsync 参数必须严格绑定运行时资源")));
+    fixture.report.threejs.snippets.factory = fixture.report.threejs.snippets.factory.replace('loadAsync("../assets/other.png?url")', "loadAsync(atlasUrl)");
+    await writeReport(root, fixture);
+    assert.deepEqual(await runGate(root, fixture.asset), []);
+
+    await rm(join(root, "src/animations/hero.ts"));
+    assert((await runGate(root, fixture.asset)).some((message) => message.includes("runtime_binding.importer 文件不存在")));
   });
 });
 

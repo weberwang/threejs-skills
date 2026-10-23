@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { encodePngRgba } from "./effect_image_raster.mjs";
-import { readLayoutReviewPayload, renderLayoutReviewPage } from "./layout_review_page.mjs";
+import { readLayoutReviewPayload, renderLayoutReviewPage, validateReviewNodesDocument } from "./layout_review_page.mjs";
 
 /** 计算测试夹具使用的稳定 SHA-256。 */
 function sha256(bytes) {
@@ -22,7 +22,7 @@ function fixture({ longName = false } = {}) {
   const originalBytes = png(120, 80);
   const annotationBytes = png(4, 4, 180);
   const targetSha = sha256(originalBytes);
-  const parent = { x: 10, y: 10, width: 90, height: 60 };
+  const parent = { x: 15, y: 10, width: 90, height: 60 };
   const child = { x: 22, y: 24, width: 30, height: 20 };
   const nodesDocument = {
     schema: "threejs-layout-nodes/1.0",
@@ -48,7 +48,7 @@ function fixture({ longName = false } = {}) {
         parent_target_bounds: { x: 0, y: 0, width: 120, height: 80 },
         target_bounds: parent,
         axis_alignment: { horizontal: "center", vertical: "center" },
-        offset: { x: -5, y: 0 },
+        offset: { x: 0, y: 0 },
         child_layout_node_ids: ["visual:title"],
         marker_id: "L01",
         parent_marker_id: "R01",
@@ -67,7 +67,7 @@ function fixture({ longName = false } = {}) {
         parent_target_bounds: parent,
         target_bounds: child,
         axis_alignment: { horizontal: "left", vertical: "top" },
-        offset: { x: 12, y: 14 },
+        offset: { x: 7, y: 14 },
         child_layout_node_ids: [],
         marker_id: "L02",
         parent_marker_id: "L01",
@@ -76,7 +76,7 @@ function fixture({ longName = false } = {}) {
         state_id: "dialog-open"
       }
     ],
-    root_nodes: [{ layout_node_id: "viewport", parent_layout_node_id: null, target_bounds: { x: 0, y: 0, width: 120, height: 80 }, marker_id: "R01", is_root_container: true }]
+    root_nodes: [{ layout_node_id: "viewport", element_id: "viewport", parent_element_id: null, parent_layout_node_id: null, target_bounds: { x: 0, y: 0, width: 120, height: 80 }, marker_id: "R01", is_root_container: true }]
   };
   const decisionWithoutSha = { decision_id: "layout-decision-1", scene_id: "ExampleScene", state_id: "dialog-open", target_sha256: targetSha };
   const decisionBytes = Buffer.from(JSON.stringify(decisionWithoutSha));
@@ -110,11 +110,31 @@ test("通用页面内嵌离线产物、保持两栏和同 viewport 映射", () =
   assert.match(html, /data:image\/png;base64,/);
   assert.match(html, /data:application\/json;base64,/);
   assert.match(html, /当前节点（蓝色实线）/);
-  assert.match(html, /父节点（橙色虚线）/);
+  assert.match(html, /真实父级（橙色虚线）/);
+  assert.match(html, /定位参照（紫色点线）/);
+  assert.match(html, /reference-box/);
   assert.match(html, /功能分组/);
   assert.match(html, /对话框内部功能组件需要共同停靠/);
   assert.doesNotMatch(html, /fetch\s*\(/i);
   assert.doesNotMatch(html, /localStorage|sessionStorage/);
+});
+
+test("审阅节点保留实际 safe-area 根矩形，不扩展成完整 viewport", () => {
+  const value = fixture();
+  const safeArea = { x: 10, y: 5, width: 100, height: 70 };
+  const panel = value.nodesDocument.layout_nodes[0];
+  panel.parent_layout_node_id = "safe-area";
+  panel.parent_element_id = "safe-area";
+  panel.parent_target_bounds = safeArea;
+  panel.reference_id = "safe-area";
+  panel.reference_target_bounds = safeArea;
+  panel.parent_marker_id = "R01";
+  value.nodesDocument.root_nodes = [{ layout_node_id: "safe-area", element_id: "safe-area", parent_element_id: null, parent_layout_node_id: null, target_bounds: safeArea, marker_id: "R01", is_root_container: true }];
+
+  assert.doesNotThrow(() => validateReviewNodesDocument(value.nodesDocument));
+  const drift = structuredClone(value.nodesDocument);
+  drift.root_nodes[0].target_bounds = { x: 0, y: 0, width: 120, height: 80 };
+  assert.throws(() => validateReviewNodesDocument(drift), /根 bounds|事实不一致/);
 });
 
 test("输出确定且动态名称在 JSON script 中安全转义", () => {

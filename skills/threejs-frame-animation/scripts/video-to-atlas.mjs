@@ -52,6 +52,8 @@ export function normalizeVideoAtlasOptions(input = {}) {
 
   const inputVideo = resolve(videoValue);
   const outputSheet = resolve(sheetValue);
+  const projectRootValue = input.projectRoot ?? input.project_root ?? input["project-root"];
+  const projectRoot = nonEmptyString(projectRootValue) ? resolve(projectRootValue) : undefined;
   const outputReportValue = input.outputReport ?? input.output_report ?? input["output-report"] ?? `${outputSheet.replace(/\.png$/iu, "")}.json`;
   const outputPreviewValue = input.outputPreview ?? input.output_preview ?? input["output-preview"] ?? `${outputSheet.replace(/\.png$/iu, "")}.html`;
   if (!nonEmptyString(outputReportValue) || !nonEmptyString(outputPreviewValue)) throw new VideoAtlasError("output-report 和 output-preview 必须是非空路径");
@@ -68,13 +70,14 @@ export function normalizeVideoAtlasOptions(input = {}) {
     }
   }
 
-  const commonOptions = normalizeCommonAtlasOptions(input, { outputSheet, defaultFps: 12, defaultLoop: true });
+  const commonOptions = normalizeCommonAtlasOptions(input, { outputSheet, projectRoot, defaultFps: 12, defaultLoop: true });
   const commandRunner = input.commandRunner ?? input.runCommand;
   if (commandRunner !== undefined && typeof commandRunner !== "function") throw new VideoAtlasError("commandRunner 必须是函数");
 
   return Object.freeze({
     inputVideo,
     outputSheet,
+    projectRoot,
     outputReport,
     outputPreview,
     ...commonOptions,
@@ -348,8 +351,10 @@ export async function videoToAtlas(input = {}) {
       frames,
       animation,
       threejs,
+      runtime_binding: options.runtimeBinding,
+      runtime_url: options.runtimeUrl,
       artifacts: {
-        sheet: { file: options.outputSheet, width: sheetWidth, height: cellHeight, sha256: sheetHash },
+        sheet: { file: options.runtimeBinding?.file ?? options.outputSheet, width: sheetWidth, height: cellHeight, sha256: sheetHash },
         report: { file: options.outputReport },
         preview: { file: options.outputPreview },
       },
@@ -375,7 +380,12 @@ export function videoAtlasHelp() {
   --output-sheet <file.png>     水平 ThreeJS 图集（必需）
   --output-report <file.json>   JSON 报告（默认与图集同名）
   --output-preview <file.html>  可播放网页（默认与图集同名）
-  --runtime-url <url>            ThreeJS 运行时图集 URL（默认取图集文件名）
+  --runtime-kind <kind>         显式运行绑定：public 或 module-import
+  --project-root <dir>          输出所属项目根目录；有运行绑定时必需
+  --deployment-base <path>      public 站点部署前缀，如 / 或 /game/
+  --importer <file>              module-import 的项目内调用模块
+  --specifier <path?url>         相对 importer 的静态图集导入路径
+  --runtime-url <url>           仅用于核对绑定推导地址，不能单独提供
 
 处理选项：
   --fps <number>                抽帧与动画播放帧率，默认 12
@@ -397,7 +407,7 @@ export function videoAtlasHelp() {
   --ffprobe <path>              ffprobe 可执行文件路径
 
 示例：
-  node video-to-atlas.mjs --input-video walk.mp4 --output-sheet public/assets/hero-attack.png --runtime-url assets/hero-attack.png
+  node video-to-atlas.mjs --input-video walk.mp4 --output-sheet public/assets/hero-attack/hero-attack.png --project-root . --runtime-kind public --deployment-base /game/
 `;
 }
 
@@ -408,6 +418,8 @@ export function parseVideoAtlasArgs(argv = process.argv.slice(2)) {
     ["--input-video", "inputVideo"], ["--output-sheet", "outputSheet"], ["--output-report", "outputReport"], ["--output-preview", "outputPreview"],
     ["--fps", "fps"], ["--width", "width"], ["--height", "height"], ["--region", "region"], ["--anchor", "anchor"], ["--background-color", "backgroundColor"], ["--background-tolerance", "backgroundTolerance"],
     ["--max-width", "maxAtlasWidth"], ["--max-height", "maxAtlasHeight"], ["--animation-key", "animationKey"], ["--texture-key", "textureKey"], ["--runtime-url", "runtimeUrl"],
+    ["--runtime-kind", "runtimeKind"], ["--project-root", "projectRoot"], ["--deployment-base", "deploymentBase"],
+    ["--importer", "importer"], ["--specifier", "specifier"],
     ["--edge-profile", "edgeProfile"], ["--ffmpeg", "ffmpegPath"], ["--ffprobe", "ffprobePath"],
   ]);
   for (let index = 0; index < argv.length; index += 1) {

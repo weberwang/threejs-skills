@@ -59,14 +59,49 @@ test("缺 parent、part 挂 region、容器环和越界父级均被拒绝", () =
   const missing = validElements(); delete missing[3].parent_element_id;
   const missingErrors = []; validateSemanticGrouping(missing, { canvas: CANVAS }, missingErrors, "missing"); assert(missingErrors.some((message) => message.includes("parent_element_id")));
 
-  const wrongParent = validElements(); wrongParent[2].parent_element_id = "hud";
-  const wrongErrors = []; validateSemanticGrouping(wrongParent, { canvas: CANVAS }, wrongErrors, "part-parent"); assert(wrongErrors.some((message) => message.includes("层级不匹配")));
+  const sameLevelParent = validElements(); sameLevelParent[2].parent_element_id = "hud"; sameLevelParent[2].ui_layout.interaction_policy = "NONE";
+  const sameLevelErrors = []; validateSemanticGrouping(sameLevelParent, { canvas: CANVAS }, sameLevelErrors, "independent-parent"); assert.deepEqual(sameLevelErrors, []);
 
   const cycle = validElements(); cycle[0].parent_element_id = "entry";
   const cycleErrors = []; validateSemanticGrouping(cycle, { canvas: CANVAS }, cycleErrors, "cycle"); assert(cycleErrors.some((message) => message.includes("循环")));
 
   const outside = validElements(); outside[2].bounds.x = 80;
   const outsideErrors = []; validateSemanticGrouping(outside, { canvas: CANVAS }, outsideErrors, "outside"); assert(outsideErrors.some((message) => message.includes("超出显式父级")));
+});
+
+test("定位参照与真实父级分离，允许同级/祖先而拒绝联合依赖循环", () => {
+  const sameLevel = validElements();
+  sameLevel[2].ui_layout.grouping_basis.push("POSITION");
+  sameLevel[2].ui_layout.position_reference_id = "entry-title";
+  const sameLevelErrors = []; validateSemanticGrouping(sameLevel, { canvas: CANVAS }, sameLevelErrors, "same-level-reference"); assert.deepEqual(sameLevelErrors, []);
+
+  const cyclic = validElements();
+  cyclic[2].ui_layout.grouping_basis.push("POSITION");
+  cyclic[3].ui_layout.grouping_basis.push("POSITION");
+  cyclic[2].ui_layout.position_reference_id = "entry-title";
+  cyclic[3].ui_layout.position_reference_id = "entry-icon";
+  const cycleErrors = []; validateSemanticGrouping(cyclic, { canvas: CANVAS }, cycleErrors, "reference-cycle"); assert(cycleErrors.some((message) => message.includes("定位依赖") && message.includes("循环")));
+});
+
+test("视觉溢出理由只放宽普通父框且额外结构根须说明用途", () => {
+  const overflow = validElements();
+  overflow[2].bounds.x = 84;
+  overflow[2].ui_layout.visual_overflow = { reason: "图标阴影超出入口内容框" };
+  const allowedErrors = []; validateSemanticGrouping(overflow, { canvas: CANVAS }, allowedErrors, "visual-overflow"); assert.deepEqual(allowedErrors, []);
+  delete overflow[2].ui_layout.visual_overflow;
+  const rejectedErrors = []; validateSemanticGrouping(overflow, { canvas: CANVAS }, rejectedErrors, "missing-overflow-reason"); assert(rejectedErrors.some((message) => message.includes("超出显式父级 bounds")));
+
+  const panelRoot = validElements();
+  panelRoot[1].render_kind = "sprite";
+  panelRoot[1].role = "panel-frame";
+  panelRoot[1].nine_slice_decision_required = true;
+  panelRoot[1].nine_slice = { mode: "not-applicable", reason: "面板比例固定" };
+  panelRoot[0].ui_layout.independent_container_reason = "该区域还负责承载多个互不重排的功能入口";
+  const rootErrors = []; validateSemanticGrouping(panelRoot, { canvas: CANVAS }, rootErrors, "independent-structure-root");
+  assert.deepEqual(rootErrors, []);
+  delete panelRoot[0].ui_layout.independent_container_reason;
+  const missingReason = []; validateSemanticGrouping(panelRoot, { canvas: CANVAS }, missingReason, "missing-independent-reason");
+  assert(missingReason.some((message) => message.includes("independent_container_reason")));
 });
 
 test("缺语义、空理由、非法 kind、保留根 ID 和跨 scene/state 父级均停留待补充", () => {

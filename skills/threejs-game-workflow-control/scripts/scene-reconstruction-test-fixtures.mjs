@@ -1,3 +1,5 @@
+import { deriveLayoutExecutionPlans } from "../../threejs-game-ui-layout/scripts/layout-execution.mjs";
+import { layoutRuntimeFixture } from "../../threejs-game-ui-layout/scripts/layout-runtime-test-fixtures.mjs";
 /** 场景合同测试共用夹具，与测试断言分离以控制单文件规模。 */
 import assert from "node:assert/strict";
 import { nativeRenderContract, nativeRuntimeEvidence } from "./native-render-test-fixtures.mjs";
@@ -259,6 +261,7 @@ function effectImageContract() {
       },
       {
         layoutNodeId: "board-surface",
+        owner_type: "fixed-production-visual",
         regionId: "board",
         coordinateSpace: "viewport",
         ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FLEX", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" },
@@ -279,6 +282,7 @@ function effectImageContract() {
     ],
     layout_annotation: { layout_annotation_file: "evidence/v2/layout-annotation.png", layout_annotation_sha256: SHA, layout_annotation_width: 390, layout_annotation_height: 844, layout_annotation_schema: "layout-annotation/png/1", layout_annotation_layout: "image-plus-right-panel", layout_annotation_metadata_sha256: SHA, layout_annotation_identity_sha256: SHA, layout_review_file: "evidence/v2/layout-review.html", layout_review_sha256: SHA, layout_review_identity_sha256: SHA, layout_nodes_file: "evidence/v2/layout-nodes.json", layout_nodes_sha256: SHA, decomposition_confirmation_id: "v2-confirmation", decomposition_confirmation_sha256: SHA, proposal_sha256: SHA, layout_decision_file: "evidence/v2/automatic-layout-decision.json", layout_decision_sha256: SHA, layout_decision_id: "layout-decision-1", target_sha256: SHA, scene_id: "main", state_id: "default", layout_node_ids: ["hud-main", "board-surface"] }, layout_annotation_confirmation: (() => { const record = { confirmation_schema: "layout-annotation-confirmation/1.0", confirmation_id: "v2-layout-confirmation", status: "accepted", confirmation_mode: "manual", layout_annotation_file: "evidence/v2/layout-annotation.png", layout_annotation_sha256: SHA, layout_annotation_width: 390, layout_annotation_height: 844, layout_annotation_schema: "layout-annotation/png/1", layout_annotation_layout: "image-plus-right-panel", layout_annotation_metadata_sha256: SHA, layout_annotation_identity_sha256: SHA, layout_review_file: "evidence/v2/layout-review.html", layout_review_sha256: SHA, layout_review_identity_sha256: SHA, layout_nodes_file: "evidence/v2/layout-nodes.json", layout_nodes_sha256: SHA, decomposition_confirmation_id: "v2-confirmation", decomposition_confirmation_sha256: SHA, proposal_sha256: SHA, layout_decision_file: "evidence/v2/automatic-layout-decision.json", layout_decision_sha256: SHA, layout_decision_id: "layout-decision-1", target_sha256: SHA, scene_id: "main", state_id: "default", user_original_text: "确认布局标注", user_message_sha256: computeLayoutUserMessageSha256("确认布局标注"), decision_record_file: "evidence/v2/layout-decision.json", decision_record_sha256: SHA, user_decision_receipt_file: "evidence/v2/layout-receipt.json", user_decision_receipt_sha256: SHA, accepted_at: "2026-01-01T00:00:00Z" }; return { ...record, confirmation_sha256: computeLayoutAnnotationConfirmationSha256(record) }; })(),
   };
+  value.layout_decomposition.layout_nodes = deriveLayoutExecutionPlans(value.layout_decomposition.layout_nodes);
   value.combination_preacceptance.formal_assets = ["hud-main", "board-surface"];
   value.combination_preacceptance.visual_fidelity = { contour: "passed", proportion: "passed", pose: "passed", icon_semantics: "passed", full_scene_composition: "passed" };
   value.combination_preacceptance.redesign_check = "none";
@@ -293,6 +297,7 @@ function effectImageContract() {
     ],
     result: "passed",
   };
+  Object.assign(value.combination_preacceptance.layout_geometry, layoutRuntimeFixture(value.layout_decomposition.layout_nodes, { scene_id: "main", state_id: "default", candidate_id: "diff-1", viewport_bounds: { x: 0, y: 0, width: 390, height: 844 } }));
   return value;
 }
 

@@ -1,3 +1,5 @@
+import { deriveLayoutExecutionPlans } from "../../threejs-game-ui-layout/scripts/layout-execution.mjs";
+import { layoutRuntimeFixture } from "../../threejs-game-ui-layout/scripts/layout-runtime-test-fixtures.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -82,10 +84,33 @@ function effectImageContract() {
     layout_annotation: { layout_annotation_file: "evidence/layout-annotation.png", layout_annotation_sha256: targetSha, layout_annotation_width: 360, layout_annotation_height: 800, layout_annotation_schema: "layout-annotation/png/1", layout_annotation_layout: "image-plus-right-panel", layout_annotation_metadata_sha256: targetSha, layout_annotation_identity_sha256: targetSha, layout_review_file: "evidence/layout-review.html", layout_review_sha256: targetSha, layout_review_identity_sha256: targetSha, layout_nodes_file: "evidence/layout-nodes.json", layout_nodes_sha256: targetSha, decomposition_confirmation_id: "v2-confirmation", decomposition_confirmation_sha256: targetSha, proposal_sha256: targetSha, layout_decision_file: "evidence/automatic-layout-decision.json", layout_decision_sha256: targetSha, layout_decision_id: "layout-decision-1", target_sha256: targetSha, scene_id: identity.scene_id, state_id: identity.state_id, layout_node_ids: ["hud.title"] },
     critical_alignments: [{ id: "align-title", layout_node_id: "hud.title", element_id: "title", reference_id: "ui-root", planned_test_id: "align-title", target_sha256: targetSha, candidate_sha256: identity.candidate_sha256, horizontal: { type: "aligned", element_anchor: "center", reference_anchor: "center" }, vertical: { type: "offset", element_anchor: "top", reference_anchor: "top" }, target_measurement: { x: 10, y: 20, width: 100, height: 40 }, target_evidence: ["evidence/target-title.png"], tolerance: { unit: "logical-px", value: 2 } }]
   };
+  document.layout_nodes = deriveLayoutExecutionPlans(document.layout_nodes);
   // 身份哈希必须在节点与场景绑定完整后计算，确保测试覆盖真实合同而非格式占位。
   document.scene_reconstruction_binding.layout_contract_sha256 = computeLayoutContractIdentityHash(document);
   return { document, targetSha };
 }
+
+test("效果图响应式报告需要实际布局快照，旧关键矩形不能替代", () => {
+  const { document } = effectImageContract();
+  const result = evaluateViewport({ viewportRect: { x: 0, y: 0, width: 360, height: 800 }, canvasRect: { x: 0, y: 0, width: 360, height: 800 }, hookSnapshot: hook, contract: document, devicePixelRatio: 1, screenshot });
+  assert.equal(result.status, "unverified");
+  assert(result.unverified.some((item) => item.includes("layoutRuntime")));
+});
+
+test("QA报告保留同批实际布局，拒绝复用旧视口版本和双重写入者", () => {
+  const { document } = effectImageContract();
+  const layoutRuntime = layoutRuntimeFixture(document.layout_nodes, { scene_id: identity.scene_id, state_id: identity.state_id, candidate_id: identity.candidate_sha256, viewport_bounds: { x: 0, y: 0, width: 360, height: 800 } });
+  const input = { viewportRect: { x: 0, y: 0, width: 360, height: 800 }, canvasRect: { x: 0, y: 0, width: 360, height: 800 }, hookSnapshot: { ...hook, layoutRuntime }, contract: document, devicePixelRatio: 1, screenshot };
+  const result = evaluateViewport(input);
+  assert.equal(result.status, "pass", JSON.stringify(result.failures));
+  assert.deepEqual(result.layoutRuntime, layoutRuntime);
+  const oldRevision = structuredClone(input);
+  oldRevision.hookSnapshot.layoutRuntime.component_snapshots[0].component_snapshot.viewport_revision++;
+  assert.equal(evaluateViewport(oldRevision).status, "fail");
+  const competing = structuredClone(input);
+  competing.hookSnapshot.layoutRuntime.component_snapshots[0].component_snapshot.position_writers.push("ANIMATION");
+  assert.equal(evaluateViewport(competing).status, "fail");
+});
 
 test("360x800 中 Canvas [0,80,360,640] 必须失败", () => {
   const result = evaluateViewport({

@@ -9,7 +9,7 @@
 | 文件 | 用途与最低内容 |
 | --- | --- |
 | `layout.png` | `layout-annotation/png/1` 标准布局标注图，继续作为机器验收和可下载的静态证据；在冻结参考图上叠加父子框、编号和右栏说明。 |
-| `layout-nodes.json` | 本批实际节点快照，按已确认 `decomposition_elements` 原顺序保存父子关系、坐标、尺寸、对齐、偏移、锚点、层级和中文显示名；审阅页直接消费它。 |
+| `layout-nodes.json` | 本批实际节点快照，按已确认 `decomposition_elements` 原顺序保存真实父级、独立定位参照、目标 bounds、对齐、中心策略、偏移、锚点、层级和中文显示名；审阅页直接消费它。 |
 | `layout-decision.json` | 本批实际消费的 `automatic-layout-decision/1.0` 决策字节及其 ID；不能让页面或节点快照另行推导对齐结果。 |
 | `review.html` | 通用、自包含、可直接用本地浏览器打开的审阅页；嵌入本批冻结参考图和节点数据，并提供基于内嵌 data URL/原始字节的产物入口。 |
 | `generation-result.json` | 记录 `layout.png`、两份布局 JSON 和 `review.html` 的相对路径、真实文件 SHA，以及上游绑定摘要；自身 SHA 只由 stdout 返回，避免自引用。 |
@@ -26,7 +26,7 @@
 
 - 左栏展示完整冻结参考图，保持原始宽高比，不裁切、不拉伸；右栏按 `layout-nodes.json` 的数组顺序列出全部节点。小屏幕可以改为上下排列，但不能删除左栏或把长 PNG 作为唯一审阅入口。
 - 图片和高亮框使用同一个目标 viewport 坐标映射。映射以图片实际内容框的左上角、显示宽高和目标 viewport 宽高定义；图片与覆盖框共享同一缩放比例，窗口变化或上下排列时保持该映射，不能使用另一套手工百分比或过期的 `target_css`。父框和当前框必须在同一映射下绘制，保证 `target_bounds` 在任意缩放下仍与原图对齐。
-- 节点选择同时显示当前节点和其父节点，当前节点与父节点使用不同颜色；图例明确说明颜色含义。节点卡片展示父子关系、水平左/中/右对齐、垂直上/中/下对齐、双轴偏移、位置和尺寸。根节点明确显示“无上级”。
+- 节点选择分别高亮当前节点、真实父级和定位参照，并用独立图例说明颜色。节点卡片展示真实父级、定位参照、水平左/中/右对齐、垂直上/中/下对齐、中心策略、双轴偏移、位置和尺寸。根节点明确显示“无上级”。
 - 节点卡片还应直接展示确认过的功能分组类别与理由，便于检查部件是否属于对应功能组件；不能仅在大区域里列出全部图标和文字就视为完成分组。语义定义见[功能语义分组约束](functional-semantic-grouping.md)，页面不自行推测或修改归属。
 - 默认视图显示易读的中文名称和中文关系说明；技术 ID、完整原始字段、SHA 和坐标细节放在可展开的详情中。节点名称优先使用节点声明中的中文显示字段（例如 `display_name_zh`；声明的 `display_name` 本身为中文时也可使用），缺失时使用集中维护的通用语义映射（例如容器、视觉组件、运行时文字、交互热区、根视口），不得根据项目专有 ID 写分支或硬编码专有节点名称。
 - 长名称和长列表必须换行、可滚动且完整可见；详情区域不能通过固定高度、单行省略或裁切隐藏信息。无障碍名称、键盘可操作的节点选择和清晰的当前选择状态应保留。
@@ -40,8 +40,8 @@
 
 生成器和文件门必须读取实际文件，不要求提供或复算 SHA：
 
-- 每个节点的父节点必须存在，允许的根只能是 `viewport` 或 `safe-area`；父子关系不能自引用、成环或跨 scene/state。父目标 bounds、子目标 bounds、四边距离和 viewport 边界必须逐项校验。
-- 必须读取已绑定 proposal 的实际拆解元素，核对功能分组及父级继承；仅让 HTML、JSON 和 PNG 互相一致不够，因为三者可能共同使用了错误分组。`semantic_grouping` 的类别、理由或父级漂移不得复用旧拆解确认，缺失归属不能用最小包含容器补齐。
+- 每个节点的真实父级与定位参照必须存在，允许的根只能是 `viewport` 或 `safe-area`；父级边与参照边联合后不能自引用、成环或跨 scene/state。使用安全区时必须由 proposal 绑定的决策提供同批实际唯一矩形；viewport 始终保留完整画布 bounds。父框越界例外必须有 `visual_overflow.reason`，但节点仍必须位于稳定根边界内。
+- 确认门必须从实际绑定 proposal 与 layout-decision 重新推导目标 bounds、中心策略和父/参照几何，再核对 HTML、JSON 和 PNG；不能信任这些产物自报的 bounds 或生成节点。还须核对功能分组、真实父级与定位参照；三种产物彼此一致不能替代对上游事实的重算。
 - `layout-nodes.json` 的节点顺序、节点身份、编号映射、父编号、决策 ID 和 scene/state 必须与布局 PNG 和本批决策逐项一致。缺失父节点、循环关系、非法边界、元素漏绑、调序、跨场景输入或身份不一致都应以明确错误阻断，不能静默丢节点或降级为距离猜测。
 - `review.html`、节点 JSON、决策 JSON、布局 PNG 和冻结参考图都必须存在且可读取；任何路径越界或必要文件缺失都使本批失败，SHA 变化不影响验收。页面模板的布局标识、内嵌数据和下载字节也应由校验器核对。
 - 中文名称、ID、用户可见摘要和 JSON 内嵌值必须正确转义。脚本数据应使用安全的 JSON 序列化并阻断 `</script` 提前闭合；DOM 文本优先使用 `textContent`，不能把节点名称或 ID 拼入未转义的 `innerHTML`，避免名称输入改变页面结构或执行脚本。
@@ -53,7 +53,7 @@
 | 身份 | 必须绑定 |
 | --- | --- |
 | 上游参考与拆解 | 冻结参考图/`target_sha256`、`scene_id`、`state_id`、拆解确认 ID、实际 proposal 文件；页面不能显示一个参考图而绑定另一张图。 |
-| 布局决策 | `layout_decision_file`、`layout_decision_id`；`layout_decision_sha256` 可省略；决策逐元素覆盖确认元素并与节点对齐字段一致。 |
+| 布局决策 | `layout_decision_file`、`layout_decision_id`；`layout_decision_sha256` 可省略；决策逐元素覆盖 proposal 确认元素，并是重算节点对齐、center_alignment 与实际 safe-area bounds 的唯一来源。 |
 | 标准标注图 | `layout_annotation_file`、`layout_annotation_sha256`、尺寸、metadata SHA 和 `layout_annotation_identity_sha256`。 |
 | 节点快照 | `layout_nodes_file`；页面和下载必须指向本批实际节点内容，`layout_nodes_sha256` 可省略。 |
 | 审阅页 | `layout_review_file`、`layout_review_sha256`、`layout_review_identity_sha256`；身份投影还应覆盖页面绑定的参考、决策、节点和 PNG 身份。 |

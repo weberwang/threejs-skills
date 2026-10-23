@@ -94,6 +94,12 @@ node .\.agents\skills\threejs-game-workflow-control\scripts\workflow-control.mjs
 
 UI 响应式验证按合同的 `orientationPolicy.allowed` 选择视口方向：单方向项目只验证支持方向内的窄宽尺寸、DPR 和连续 resize；只有同时支持竖屏与横屏时才验证方向切换。
 
+V2 布局分别记录真实功能父级与位置参照：`parent_element_id` 表示功能、状态、交互或布局管理归属，`ui_layout.position_reference_id` 表示定位参照，省略时使用真实父级。简单组件优先让可承载内容的底板兼任组件根，额外结构容器须说明独立职责；显式视觉溢出不扩大父框，关键内容仍须满足安全区。`center` 默认严格居中，设计偏移必须说明理由；图标和文字可按明确成员的联合框整体居中，角标独立停靠。布局只平移派生矩形，保留原始拆解测量与尺寸，确认入口从绑定的 proposal 和 decision 复算结果。详见[功能语义分组](skills/threejs-game-ui-layout/references/functional-semantic-grouping.md)和[居中策略](skills/threejs-game-ui-layout/references/center-alignment.md)。
+
+V2 同时派生[布局执行计划](skills/threejs-game-ui-layout/references/layout-execution.md)，分别指定 DOM/HUD 的位置与尺寸控制权。V4 和 QA Hook 读取[同批实际组件快照](skills/threejs-game-ui-layout/references/layout-runtime-evidence.md)，校验候选身份、viewport revision、实际参照、单一写入者和图片模式；普通图源像素、局部尺寸与屏幕显示尺寸分别记录。透视世界继续使用独立 world contract。
+
+资源加载按[运行资源路径绑定](skills/threejs-game-asset-integration/references/runtime-resource-binding.md)区分磁盘文件、部署 URL 与模块导入表达式。帧动画生成器允许未绑定候选用于制作预览，正式 accepted 合同要求明确绑定，禁止用图集文件名猜测加载地址。
+
 玩家可见内容遵循[游戏内文案](skills/threejs-game-ui-layout/references/game-copy.md)：优先图片、图标、数字与符号，例如金币图标 `+100`，不重复写「获得 100 金币」；文字只保留必要的短名称、短动作、短状态或说明。该原则贯穿策划、美术 brief、效果图、布局和验收。程序化文本仍须支持英语、简体中文、日语、俄语和西班牙语，并逐语言验证字形宽度、字体回退、基线、断行和容器适配；每种语言独立选择单行或换行，禁止截断，也不把符号表达扩写成解释句。
 
 详细状态、门、Schema 和返工语义见 [`threejs-game-workflow-control`](skills/threejs-game-workflow-control/SKILL.md) 及其 [`control-model.md`](skills/threejs-game-workflow-control/references/control-model.md)、[`state-gates.md`](skills/threejs-game-workflow-control/references/state-gates.md)、[`schemas.md`](skills/threejs-game-workflow-control/references/schemas.md)。

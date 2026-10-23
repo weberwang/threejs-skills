@@ -5,6 +5,10 @@
  * 几何事实，不根据角色、距离、资源 ID 或视觉接近度替用户猜测归属。
  */
 
+import { allowsVisualOverflow, validateUiPositionReferences } from "./ui-layout-organization.mjs";
+import { validateDisplayNodeRole } from "../../threejs-game-ui-layout/scripts/display-node-role.mjs";
+import { validateContainerRootReuse } from "./container-root-policy.mjs";
+
 export const SEMANTIC_GROUPING_KINDS = Object.freeze(["region", "component", "part", "standalone"]);
 export const SEMANTIC_GROUPING_ROOT_IDS = Object.freeze(["viewport", "safe-area"]);
 
@@ -67,6 +71,7 @@ export function validateSemanticGrouping(elements, options = {}, errors = [], la
       errors.push(`${itemLabel} 必须是对象，不能从缺失元素猜测语义`);
       continue;
     }
+    validateDisplayNodeRole(element, errors, `${label}[${index}]`);
     const elementId = element.element_id;
     if (!nonEmptyString(elementId)) errors.push(`${itemLabel}.element_id 必须是非空字符串`);
     else if (ROOT_IDS.has(elementId)) errors.push(`${itemLabel}.element_id 不得占用稳定根 ID：${elementId}`);
@@ -106,6 +111,19 @@ export function validateSemanticGrouping(elements, options = {}, errors = [], la
     return { id: parentId, element: parent ?? null, bounds: parent?.bounds ?? null };
   };
 
+  /** 沿真实父级追到所属 viewport/safe-area，定位参照不改变功能根归属。 */
+  const stableRootOf = (element) => {
+    const seen = new Set([element.element_id]);
+    let parentId = parentById.get(element.element_id);
+    while (nonEmptyString(parentId)) {
+      if (ROOT_IDS.has(parentId)) return parentId;
+      if (seen.has(parentId) || !elementById.has(parentId)) return null;
+      seen.add(parentId);
+      parentId = parentById.get(parentId);
+    }
+    return null;
+  };
+
   for (const element of elements) {
     if (!isObject(element) || !nonEmptyString(element.element_id)) continue;
     const itemLabel = `${label}.${element.element_id}`;
@@ -120,18 +138,17 @@ export function validateSemanticGrouping(elements, options = {}, errors = [], la
       if (element.scene_id !== parentInfo.element.scene_id || element.state_id !== parentInfo.element.state_id) errors.push(`${itemLabel}.parent_element_id 必须与父级处于同一 scene/state`);
     }
     if (!parentInfo.bounds) errors.push(`${itemLabel}.parent_element_id 缺少可复核的父 bounds`);
-    else if (validBounds(element.bounds) && !containsBounds(parentInfo.bounds, element.bounds)) errors.push(`${itemLabel}.bounds 超出显式父级 bounds`);
+    else if (validBounds(element.bounds) && !containsBounds(parentInfo.bounds, element.bounds)
+      // 装饰可以超出普通功能父框，但根边界始终是硬边界。
+      && (ROOT_IDS.has(parentInfo.id) || !allowsVisualOverflow(element.ui_layout))) errors.push(`${itemLabel}.bounds 超出显式父级 bounds`);
+  }
 
-    const grouping = semanticGroupingOf(element);
-    const parentGrouping = semanticGroupingOf(parentInfo.element);
-    if (!isObject(grouping) || !KINDS.has(grouping.kind)) continue;
-    const parentKind = parentInfo.element && isObject(parentGrouping) ? parentGrouping.kind : null;
-    let allowed = false;
-    if (grouping.kind === "region") allowed = ROOT_IDS.has(parentInfo.id) || parentKind === "region";
-    else if (grouping.kind === "component") allowed = ROOT_IDS.has(parentInfo.id) || parentKind === "region" || parentKind === "component";
-    else if (grouping.kind === "part") allowed = parentKind === "component";
-    else if (grouping.kind === "standalone") allowed = ROOT_IDS.has(parentInfo.id) || parentKind === "region";
-    if (!allowed) errors.push(`${itemLabel}.semantic_grouping.kind=${grouping.kind} 与父级 ${parentInfo.id} 的功能分组层级不匹配`);
+  for (const element of elements) {
+    if (!isObject(element) || !nonEmptyString(element.element_id) || !validBounds(element.bounds)) continue;
+    const rootId = stableRootOf(element);
+    if (!rootId || parentById.get(element.element_id) === rootId) continue;
+    const bounds = rootBoundsOf(rootId);
+    if (bounds && !containsBounds(bounds, element.bounds)) errors.push(`${label}.${element.element_id}.bounds 超出所属稳定根 ${rootId} bounds`);
   }
 
   for (const element of elements) {
@@ -139,6 +156,10 @@ export function validateSemanticGrouping(elements, options = {}, errors = [], la
     const expectedEmpty = (childCounts.get(element.element_id) ?? 0) === 0;
     if (element.empty_container !== expectedEmpty) errors.push(`${label}.${element.element_id}.empty_container 与实际直接子项数不一致`);
   }
+
+  // 归属父级与定位参照是两种独立依赖，合并校验可发现跨关系循环。
+  validateUiPositionReferences(elements, errors, label);
+  validateContainerRootReuse(elements, errors, label);
 
   // 仅沿显式 parent_element_id 追链；任何循环都必须失败，不能靠几何排序打破。
   for (const element of elements) {

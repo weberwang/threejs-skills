@@ -109,13 +109,13 @@ node <skill-dir>/scripts/image-inbetween-plan.mjs `
 node <skill-dir>/scripts/images-to-atlas.mjs `
   --source-manifest evidence/animation.image-source.json `
   --project-root <project-root> `
-  --output-sheet public/assets/animation.png `
+  --output-sheet public/assets/animation/animation.png `
   --width 128 --height 128 --anchor 384,767 `
   --animation-key animation --texture-key animation `
-  --runtime-url assets/animation.png --no-remove-background
+  --runtime-kind public --deployment-base /game/ --no-remove-background
 ```
 
-此例假设源画布 768×768、底部语义根为 `(384,767)`；尺寸和根点必须取当前设计值。图片命令的相对来源和输出路径均以 `--project-root` 为基准。打包从来源清单读取 FPS/loop，不能另用 CLI 覆盖，不支持独立逐帧时长。`--output-report/--output-preview` 可指定独立证据路径；输出默认拒绝覆盖，修订时使用新候选路径。区域、等比缩放、Alpha 和内容矩形/锚点变换复用视频工具语义。
+此例假设源画布 768×768、底部语义根为 `(384,767)`；尺寸和根点必须取当前设计值。图片命令的相对来源和输出路径均以 `--project-root` 为基准。打包从来源清单读取 FPS/loop，不能另用 CLI 覆盖，不支持独立逐帧时长。`--output-report/--output-preview` 可指定独立证据路径；输出默认拒绝覆盖，修订时使用新候选路径。区域、等比缩放、Alpha 和内容矩形/锚点变换复用视频工具语义。运行加载需显式绑定 `runtime-kind`：public 根据 `project-root` 内的图集路径和 `deployment-base` 推导 URL；module-import 通过 `importer` 与精确相对 `specifier` 生成静态 `?url` 导入。`runtime-url` 只能核对已推导地址，不能独立提供来猜测路径。未绑定时可打包，但报告不生成 Three.js 加载合同，不能进入 accepted。
 
 图片报告使用 `threejs-image-atlas/1`，绑定来源清单路径、每帧实际图与记录，SHA 仅可选追踪、游戏时点、cell 和 ThreeJS 配置；不用 `video_path/source_timestamp`。accepted 使用 `threejs-image-atlas-workflow/1`：
 
@@ -129,11 +129,16 @@ node <skill-dir>/scripts/images-to-atlas.mjs `
   "source_manifest": { "file": "evidence/animation.image-source.json", "sha256": "sha256:<实际摘要>" },
   "quality_report": { "file": "evidence/animation.image-atlas.json", "sha256": "sha256:<实际摘要>" },
   "preview": { "file": "evidence/animation.preview.html", "sha256": "sha256:<实际摘要>" },
-  "spritesheet": { "file": "public/assets/animation.png", "runtime_url": "assets/animation.png", "sha256": "sha256:<实际摘要>" }
+  "spritesheet": {
+    "file": "public/assets/animation/animation.png",
+    "runtime_binding": { "kind": "public", "file": "public/assets/animation/animation.png", "deployment_base": "/game/" },
+    "runtime_url": "/game/assets/animation/animation.png",
+    "sha256": "sha256:<实际摘要>"
+  }
 }
 ```
 
-以上摘要须替换为实际 64 位小写十六进制。资产继续登记 `route: frame-animation`；spritesheet 在 `runtime_outputs`，运行时 URL 与报告一致。通用资源清单的来源、许可和人工证据仍须填写，嵌套来源清单不会替代它们。固定 cell/透明留白属于帧动画合同，不把每个帧登记成普通静态资产来绕过帧动画文件门。若上游已经冻结为静态生成图片的 `individual/atlas_allowed=false` 合同，先按既有变更流程明确选择帧动画路线；本技能不自动覆盖该合同，也不通过虚报生产方法解除其限制。
+以上摘要须替换为实际 64 位小写十六进制。模块导入路线的 spritesheet 绑定形如 `{ "kind": "module-import", "file": "src/assets/animation.png", "importer": "src/animation/loader.ts", "specifier": "../assets/animation.png?url" }`，其 `runtime_url` 为 `null`，报告 factory 含 `import atlasUrl from ...` 并以 `loadAsync(atlasUrl)` 加载。资产继续登记 `route: frame-animation`；spritesheet 在 `runtime_outputs`，报告的图集工件路径与 spritesheet 路径、绑定路径一致。通用资源清单的来源、许可和人工证据仍须填写，嵌套来源清单不会替代它们。固定 cell/透明留白属于帧动画合同，不把每个帧登记成普通静态资产来绕过帧动画文件门。若上游已经冻结为静态生成图片的 `individual/atlas_allowed=false` 合同，先按既有变更流程明确选择帧动画路线；本技能不自动覆盖该合同，也不通过虚报生产方法解除其限制。
 
 打包后或局部修图后重建图集、报告和预览，按实际改动重验受影响内容，摘要变化不使验收失效；需要时完成当前人工审阅再 accepted。分类、优化取舍、内部时间轴推导、逐张关键帧确认、后代缺陷审查与最终人工验收保存在设计工件，不扩展为额外报告字段。保留已修图成果，避免全序列重做。
 

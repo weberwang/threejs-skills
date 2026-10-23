@@ -1,3 +1,5 @@
+import { deriveLayoutExecutionPlans } from "../../threejs-game-ui-layout/scripts/layout-execution.mjs";
+import { layoutRuntimeFixture } from "../../threejs-game-ui-layout/scripts/layout-runtime-test-fixtures.mjs";
 /** 场景合同测试共用夹具，与测试断言分离以控制单文件规模。 */
 import assert from "node:assert/strict";
 import { nativeRenderContract, nativeRuntimeEvidence } from "../../threejs-game-workflow-control/scripts/native-render-test-fixtures.mjs";
@@ -235,16 +237,19 @@ function attachSceneReconstructionContract(manifest) {
       } : {}),
     };
   });
-  const layoutNodes = manifest.coverage_audit.regions.map((region, index) => {
+  let layoutNodes = manifest.coverage_audit.regions.map((region, index) => {
     const bounds = { ...region.bounds }; const parentBounds = { x: 0, y: 0, width: 390, height: 844 }; const left = bounds.x - parentBounds.x; const right = parentBounds.x + parentBounds.width - bounds.x - bounds.width; const top = bounds.y - parentBounds.y; const bottom = parentBounds.y + parentBounds.height - bounds.y - bounds.height;
-    /* 测试夹具用预设枚举模拟智能视觉判断，不能通过四边距离反推对齐方向。 */ const horizontal = ["left", "center", "right"][index % 3]; const vertical = ["top", "center", "bottom"][index % 3]; const centerX = bounds.x + bounds.width / 2 - parentBounds.width / 2; const centerY = bounds.y + bounds.height / 2 - parentBounds.height / 2;
-    const component = region.component_inventory?.components?.[0]; const placement = component?.placements?.[0]; return { layout_node_id: region.layout_node_ids[0], element_id: region.layout_node_ids[0], element_type: "component", region_id: region.id, scene_id: region.scene_id, state_id: region.state_id, component_id: component?.component_id ?? `${region.id}-component`, placement_id: placement?.placement_id ?? `${region.layout_node_ids[0]}-placement`, parent_element_id: "viewport", semantic_grouping: { kind: "standalone", rationale: "测试夹具中的完整视觉元素独立布局" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: region.layer === "background" ? "STRETCH" : "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: region.layer === "background" ? "FULL_BLEED" : "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, empty_container: false, coordinate_space: "viewport", reference_id: "viewport", parent_layout_node_id: "viewport", parent_target_bounds: parentBounds, relative_position: { left, right, top, bottom }, axis_alignment: { horizontal, vertical }, self_anchor: `${vertical}-${horizontal}`, reference_anchor: `${vertical}-${horizontal}`, offset: { x: horizontal === "left" ? left : horizontal === "right" ? -right : centerX, y: vertical === "top" ? top : vertical === "bottom" ? -bottom : centerY }, target_bounds: bounds, size_policy: { mode: "target-bound" }, z_order: index, clip_policy: "none", responsive_rule: "preserve-relative-anchors", planned_test_id: `layout-${region.id}` };
+    /* 这些 manifest 示例表达按 viewport 左上锚定的固定位置；保留测量 bounds，不伪报居中策略。 */ const horizontal = "left"; const vertical = "top";
+    const component = region.component_inventory?.components?.[0]; const placement = component?.placements?.[0]; return { owner_type: region.owner_type, region_layer: region.layer, layout_node_id: region.layout_node_ids[0], element_id: region.layout_node_ids[0], element_type: "component", region_id: region.id, scene_id: region.scene_id, state_id: region.state_id, component_id: component?.component_id ?? `${region.id}-component`, placement_id: placement?.placement_id ?? `${region.layout_node_ids[0]}-placement`, parent_element_id: "viewport", semantic_grouping: { kind: "standalone", rationale: "测试夹具中的完整视觉元素独立布局" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: region.layer === "background" ? "STRETCH" : "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: region.layer === "background" ? "FULL_BLEED" : "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, empty_container: false, coordinate_space: "viewport", reference_id: "viewport", parent_layout_node_id: "viewport", parent_target_bounds: parentBounds, relative_position: { left, right, top, bottom }, axis_alignment: { horizontal, vertical }, self_anchor: `${vertical}-${horizontal}`, reference_anchor: `${vertical}-${horizontal}`, offset: { x: left, y: top }, target_bounds: bounds, size_policy: { mode: "target-bound" }, z_order: index, clip_policy: "none", responsive_rule: "preserve-relative-anchors", planned_test_id: `layout-${region.id}` };
   });
+  // 夹具通过与生产相同的计划派生入口生成字段；运行快照仍只是假数据测试输入。
+  layoutNodes = deriveLayoutExecutionPlans(layoutNodes);
   const layoutGeometry = {
     formal_layout_structure: "MainGameplayScene/ContainerGraph",
     result: "passed",
     node_measurements: layoutNodes.map((node) => ({ layout_node_id: node.layout_node_id, target_bounds: { ...node.target_bounds }, actual_bounds: { ...node.target_bounds }, delta: { x: 0, y: 0, width: 0, height: 0 }, tolerance_reference: "layout-tolerance", result: "passed", evidence: [`evidence/fidelity/${node.layout_node_id}.json`] })),
   };
+  Object.assign(layoutGeometry, layoutRuntimeFixture(layoutNodes, { scene_id: "main-gameplay", state_id: "default", candidate_id: manifest.candidate_identity.diff_fingerprint, viewport_bounds: { x: 0, y: 0, width: 390, height: 844 } }));
   manifest.scene_reconstruction_contract = {
     contract_version: "1.0",
     reference_technical_conflicts: [],

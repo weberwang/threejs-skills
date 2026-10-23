@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
+import { validateLayoutRuntimeSnapshots } from "../../threejs-game-ui-layout/scripts/layout-runtime.mjs";
 import { validateContract as validateUiLayoutContract } from "../../threejs-game-ui-layout/scripts/validate_ui_layout_contract.mjs";
 import { calculateFullBleedCoverTransform } from "../../threejs-game-asset-integration/scripts/full-bleed-background-adapter.mjs";
 import { DEFAULT_DPR, isDeviceDprInput, isWorkflowDpr, parseDeviceDpr, workflowDprError } from "../../threejs-game-workflow-control/scripts/workflow-dpr-contract.mjs";
@@ -76,7 +77,8 @@ export function readHookData(snapshot) {
       cameraZoom: null,
       cameraOrigin: null,
       inputHitResults: null,
-      displayLayerTrajectory: null
+      displayLayerTrajectory: null,
+      layoutRuntime: null
     };
   }
   const logical = snapshot.logicalCanvas ?? snapshot.logicalSize;
@@ -114,6 +116,7 @@ export function readHookData(snapshot) {
     cameraOrigin: snapshot.cameraOrigin ?? null,
     inputHitResults: snapshot.inputHitResults ?? null,
     displayLayerTrajectory: snapshot.displayLayerTrajectory ?? null,
+    layoutRuntime: snapshot.layoutRuntime ?? null,
     raw: snapshot
   };
 }
@@ -192,6 +195,8 @@ export function normalizeContract(raw = {}) {
       name: source.hook?.name ? String(source.hook.name) : DEFAULT_HOOK_NAME
     },
     effectImageApplicability: source.effect_image_reconstruction?.applicability ?? source.effectImageApplicability ?? null,
+    layoutNodes: source.layout_nodes ?? source.layoutNodes ?? [],
+    layoutRuntimeIdentity: { scene_id: source.scene_reconstruction_binding?.scene_id, state_id: source.scene_reconstruction_binding?.state_id, candidate_id: source.scope?.bindings?.code_candidate },
     identityContract: {
       trusted: trustedUiContract,
       validationErrors: trustedUiContract ? [] : uiValidation.errors,
@@ -364,6 +369,20 @@ export function evaluateViewport({ viewportRect, canvasRect, backingSize = null,
   if (strictRuntimeEvidence && (!Array.isArray(hook.inputHitResults) || hook.inputHitResults.length === 0)) unverified.push("缺少输入命中映射结果");
   if (strictRuntimeEvidence && Array.isArray(hook.inputHitResults) && hook.inputHitResults.some((item) => item?.hit !== true && item?.passed !== true)) failures.push("输入命中映射存在失败结果");
 
+  // effect-image 的逐视口报告消费同一次真实采集，不由 keyUiRects 或截图声明代替。
+  if (normalized.effectImageApplicability === "effect-image") {
+    if (!Array.isArray(normalized.layoutNodes) || normalized.layoutNodes.length === 0) decisionGaps.push("effect-image 缺少 layout_nodes，无法校验完整布局快照");
+    else if (!hook.layoutRuntime) unverified.push("缺少当前 viewport 的实际 layoutRuntime 快照");
+    else {
+      const runtimeErrors = [];
+      validateLayoutRuntimeSnapshots(normalized.layoutNodes, hook.layoutRuntime, runtimeErrors, "layoutRuntime", {
+        ...normalized.layoutRuntimeIdentity,
+        viewport_bounds: hook.logicalSize ? { x: 0, y: 0, width: hook.logicalSize.width, height: hook.logicalSize.height } : undefined,
+      });
+      failures.push(...runtimeErrors);
+    }
+  }
+
   let status = failures.length > 0 ? "fail" : decisionGaps.length > 0 ? "decision_gap" : unverified.length > 0 ? "unverified" : "pass";
   if (status === "pass" && normalized.viewport.strategy === "FIT") status = "fit_only";
   const scaling = deriveScaling(canvas, normalizedBacking, hook.logicalSize, measuredDpr, hook.cssScale);
@@ -387,6 +406,7 @@ export function evaluateViewport({ viewportRect, canvasRect, backingSize = null,
     keyUiRects: hook.keyUiRects,
     inputHitResults: hook.inputHitResults,
     displayLayerTrajectory: hook.displayLayerTrajectory,
+    layoutRuntime: hook.layoutRuntime,
     cameraViewport: hook.cameraViewport,
     cameraZoom: hook.cameraZoom,
     cameraOrigin: hook.cameraOrigin,

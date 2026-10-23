@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { computeLayoutAnnotationConfirmationSha256, computeLayoutUserMessageSha256 } from "../../threejs-game-workflow-control/scripts/layout_annotation_confirmation.mjs";
 import { buildLayoutNodesDocument, buildLayoutReviewBindings, computeLayoutReviewIdentitySha256, renderLayoutReviewBundle, serializeJson, sha256 as layoutBundleSha256 } from "./layout_review_bundle.mjs";
-import { computeLayoutAnnotationIdentitySha256, deriveAutomaticLayoutFacts, renderLayoutAnnotation } from "./layout_annotation_contract.mjs";
+import { computeLayoutAnnotationIdentitySha256, deriveAutomaticLayoutFacts, deriveLayoutNodesFromDecompositionElements, renderLayoutAnnotation } from "./layout_annotation_contract.mjs";
 
 /** 计算测试夹具文件的标准 SHA-256。 */
 function sha256Bytes(bytes) { return `sha256:${createHash("sha256").update(bytes).digest("hex")}`; }
@@ -20,8 +20,19 @@ export async function writeLayoutReviewFixtureArtifacts(root, manifest) {
   if (!decomposition || !Array.isArray(decomposition.layout_nodes) || !layoutAnnotation || !layoutConfirmation || !target || !canvas || !upstream) return;
 
   const originalBytes = await readFile(join(root, manifest.reference_target.original_file));
-  const facts = deriveAutomaticLayoutFacts(decomposition.layout_nodes, canvas, { sceneId: target.scene_id, stateId: target.state_id });
-  const layoutDecision = { decision_schema: "automatic-layout-decision/1.0", decision_id: layoutAnnotation.layout_decision_id, decision_method: "visual-judgement", target_sha256: manifest.reference_target.target_sha256, scene_id: target.scene_id, state_id: target.state_id, decomposition_confirmation_id: upstream.confirmation_id, decomposition_confirmation_sha256: upstream.confirmation_sha256, proposal_sha256: upstream.proposal_sha256, elements: decomposition.layout_nodes.map((node) => ({ element_id: node.element_id ?? node.layout_node_id, horizontal_alignment: node.axis_alignment.horizontal, vertical_alignment: node.axis_alignment.vertical })) };
+  const proposal = JSON.parse(await readFile(join(root, upstream.proposal_file), "utf8"));
+  const safeAreaNodes = decomposition.layout_nodes.filter((node) => node.parent_layout_node_id === "safe-area" || node.ui_layout?.position_reference_id === "safe-area");
+  const safeAreaBounds = safeAreaNodes[0]?.[safeAreaNodes[0].parent_layout_node_id === "safe-area" ? "parent_target_bounds" : "reference_target_bounds"];
+  const layoutDecision = {
+    decision_schema: "automatic-layout-decision/1.0", decision_id: layoutAnnotation.layout_decision_id, decision_method: "visual-judgement", target_sha256: manifest.reference_target.target_sha256, scene_id: target.scene_id, state_id: target.state_id, decomposition_confirmation_id: upstream.confirmation_id, decomposition_confirmation_sha256: upstream.confirmation_sha256, proposal_sha256: upstream.proposal_sha256,
+    ...(safeAreaBounds ? { safe_area_bounds: { ...safeAreaBounds } } : {}),
+    elements: decomposition.layout_nodes.map((node) => ({ element_id: node.element_id ?? node.layout_node_id, horizontal_alignment: node.axis_alignment.horizontal, vertical_alignment: node.axis_alignment.vertical, ...(node.center_alignment !== undefined ? { center_alignment: node.center_alignment } : {}) })),
+  };
+  // 文件级测试工件必须复用正式布局推导链，不能把 layout_nodes 自报坐标当作事实来源。
+  const alignmentDecisions = new Map(layoutDecision.elements.map((item) => [item.element_id, { horizontal: item.horizontal_alignment, vertical: item.vertical_alignment, ...(item.center_alignment !== undefined ? { center_alignment: item.center_alignment } : {}) }]));
+  if (layoutDecision.safe_area_bounds) alignmentDecisions.safeAreaBounds = layoutDecision.safe_area_bounds;
+  const layoutNodes = deriveLayoutNodesFromDecompositionElements(proposal.decomposition_elements, canvas, { alignmentDecisions, sceneId: target.scene_id, stateId: target.state_id });
+  const facts = deriveAutomaticLayoutFacts(layoutNodes, canvas, { sceneId: target.scene_id, stateId: target.state_id });
   const layoutDecisionBytes = Buffer.from(`${JSON.stringify(layoutDecision, null, 2)}\n`);
   const layoutDecisionPath = join(root, layoutAnnotation.layout_decision_file);
   await mkdir(dirname(layoutDecisionPath), { recursive: true });

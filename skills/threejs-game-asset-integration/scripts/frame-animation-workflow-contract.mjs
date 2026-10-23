@@ -11,7 +11,6 @@ import {
   finitePositive,
   isObject,
   isProjectRelativePath,
-  isRuntimeUrl,
   nonEmptyString,
   readBoundArtifact,
   readPngDimensions,
@@ -23,6 +22,7 @@ import {
   validateReportedAnchor,
   validateReportedArtifactPath,
   validateReportedRegion,
+  validateRuntimeResourceBindingContract,
   validateSettings,
 } from "./frame-atlas-contract-core.mjs";
 import {
@@ -70,9 +70,7 @@ function validateVideoFrameAnimationWorkflowContract(value, options = {}) {
   for (const artifact of FRAME_ANIMATION_WORKFLOW_ARTIFACTS) {
     validateArtifactBinding(value[artifact], label + "." + artifact, errors);
   }
-  if (isObject(value.spritesheet) && !isRuntimeUrl(value.spritesheet.runtime_url)) {
-    errors.push(label + ".spritesheet.runtime_url 必须是非空且安全的 ThreeJS URL");
-  }
+  validateRuntimeResourceBindingContract(value.spritesheet, label + ".spritesheet", errors);
   return [...new Set(errors)];
 }
 
@@ -191,6 +189,18 @@ async function checkVideoFrameAnimationWorkflowFiles(asset, context = {}) {
 
   const contract = asset.frame_animation;
   const artifacts = {};
+  if (contract.spritesheet.runtime_binding?.kind === "module-import") {
+    if (!nonEmptyString(context.projectRoot)) {
+      errors.push(label + ".spritesheet.runtime_binding.importer 文件门必须显式提供 projectRoot");
+    } else {
+      await readBoundArtifact(
+        { file: contract.spritesheet.runtime_binding.importer },
+        label + ".spritesheet.runtime_binding.importer",
+        context,
+        errors,
+      );
+    }
+  }
   for (const key of FRAME_ANIMATION_WORKFLOW_ARTIFACTS) {
     artifacts[key] = await readBoundArtifact(contract[key], label + "." + key, context, errors);
   }

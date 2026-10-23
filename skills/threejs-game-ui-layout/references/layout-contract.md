@@ -4,7 +4,9 @@
 
 ## 合同身份与范围
 
-schema 1.2.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes`、`critical_alignments` 和 `parity_cases`。普通布局使用 `not-applicable/not-applicable`，`layout_nodes`、`critical_alignments` 和 `parity_cases` 都是空数组；冻结目标使用 `specified` 或 `verified`，场景先绑定拆解确认中的 `decomposition_elements`，再登记后置生成的布局节点。冻结目标还记录 `visual_baseline_version`。verified parity 的 scene/state 必须属于 scope，合同版本和视觉基线版本必须分别等于根合同与冻结目标；`actual_test_id` 必须等于 `planned_test_id`。冻结目标节点的 `ui_layout` 按[节点组织规则](layout-hierarchy.md)声明，并纳入布局合同身份哈希；职责变化须重新确认受影响的 V2 方案。
+schema 1.3.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes`、`critical_alignments` 和 `parity_cases`。普通布局使用 `not-applicable/not-applicable`，`layout_nodes`、`critical_alignments` 和 `parity_cases` 都是空数组；冻结目标使用 `specified` 或 `verified`，场景先绑定拆解确认中的 `decomposition_elements`，再登记后置生成的布局节点。冻结目标还记录 `visual_baseline_version`。verified parity 的 scene/state 必须属于 scope，合同版本和视觉基线版本必须分别等于根合同与冻结目标；`actual_test_id` 必须等于 `planned_test_id`。冻结目标节点的 `ui_layout` 按[节点组织规则](layout-hierarchy.md)声明，并纳入布局合同身份哈希；职责变化须重新确认受影响的 V2 方案。
+
+每个业务节点必须携带从已确认职责派生的 [`layout_execution`](layout-execution.md)，分别声明位置、尺寸控制权和图片模式。`verified` 冻结目标还须在根对象提供 [`runtime_batch` 与 `component_snapshots`](layout-runtime-evidence.md)，绑定当前场景、状态、候选和实际视口；缺失时不能以静态几何或截图替代。候选 ID 是控制面的不透明身份标识，不要求是文件摘要。
 
 `regions` 是声明式布局区域；`decomposition_elements` 是效果图拆解阶段确认的元素事实，`layout_nodes` 则是确认后由元素 bounds 与显式功能归属推导出的可装配几何节点。普通布局 `fidelity.applicability=not-applicable` 必须使用空数组；`frozen-target` 合同在布局完成门才声明至少一个布局节点。布局节点把效果图的目标几何与 ThreeJS 运行时的唯一布局入口绑定，不能用整屏截图、隐藏覆盖层或散落的绝对坐标替代。
 
@@ -28,7 +30,7 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 ## V2 串行拆解与布局标注
 
-拆解先按[功能语义分组约束](functional-semantic-grouping.md)确认区域、功能组件、部件和独立元素。最终元素必须包含显式 `parent_element_id` 与 `semantic_grouping.kind/rationale`；位置依赖方必须成为被依赖元素所对应布局容器的子元素，共同表达同一信息且互不依赖位置的元素必须列入同一个功能组件并保持同级。布局父级严格继承该归属，不按几何包含自动挑父容器。文字保持独立节点并归属对应信息组，不按类型集中归组。新增容器或归属变化必须回到拆解确认。
+拆解先按[功能语义分组约束](functional-semantic-grouping.md)确认区域、功能组件、部件和独立元素。最终元素必须包含显式 `parent_element_id` 与 `semantic_grouping.kind/rationale`；真实父级表达功能、状态、交互和布局管理归属，位置依赖通过可选 `ui_layout.position_reference_id` 单独记录，共同表达同一信息且互不依赖位置的元素必须列入同一个功能组件并保持同级。布局父级严格继承该归属，不按几何包含自动挑父容器。文字保持独立节点并归属对应信息组，不按类型集中归组。新增容器或归属变化必须回到拆解确认。
 
 冻结目标进入 V2 后，机器门固定执行两个串行阶段：阶段 A 先从冻结原图、区域与组件事实生成拆解标注图及技术 JSON，并产出有序 `decomposition_elements`；代理内部维护完整技术事实，用户只看拆解 PNG，可按图号提出修改，修改后重新生成 PNG，再以 `visual-decomposition-confirmation/1.0` 确认。阶段 B 只有在阶段 A 的最终图像确认通过后才能启动，布局入口必须按原顺序消费该确认绑定的 `proposal.decomposition_elements`，再推导后置布局节点，不得从预存 `layout_nodes`、未确认清单草案或原图自行识别元素。
 
@@ -51,13 +53,13 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 `layout_node_id` 在节点集合内唯一；同一 `region_id` 可以绑定多个元素/layout nodes，但该区域 ID 必须同时存在于 `regions` 和 `scope.ui_ids`，`coordinate_space` 必须存在于 `coordinate_spaces`。`target_bounds` 使用目标 viewport 的逻辑坐标，四边均须为有限数值，宽高为正数，并完全落在 `scene_reconstruction_binding.target_viewport` 内。`offset` 是双轴偏移对象，可以是数值或项目定义的非空表达式；`size_policy`、`clip_policy`、`responsive_rule` 和 `planned_test_id` 不得为空。
 
-效果图还原节点必须先建立父子几何图：`parent_layout_node_id` 只能引用另一个已声明的 `layout_node_id`，或稳定根 `viewport`/`safe-area`；`reference_id` 必须逐字等于该父 ID，父子图不得自引用或成环。`parent_target_bounds` 必须逐字段等于父节点 `target_bounds`；`viewport` 根固定为 `{x:0,y:0,width:target_viewport.width,height:target_viewport.height}`，`safe-area` 根以首次有效测量冻结唯一 bounds，所有引用必须一致且位于 viewport 内。子 `target_bounds` 必须完整落在父内容框内。`relative_position` 必须按 `left=child.x-parent.x`、`right=parent.x+parent.width-child.x-child.width`、`top=child.y-parent.y`、`bottom=parent.y+parent.height-child.y-child.height` 逐项测量，不接受手填近似或负距离；允许的浮点误差不超过 `1e-6`。
+效果图还原节点必须分别建立真实父级图与定位参照：`parent_layout_node_id` 只能引用另一个已声明的 `layout_node_id`，或稳定根 `viewport`/`safe-area`；`reference_id` 等于已确认的 `ui_layout.position_reference_id`，未声明时等于真实父级。独立定位参照只能指向同级、祖先或稳定根；父级边与参照边联合后不得自引用或成环。`parent_target_bounds` 必须逐字段等于真实父节点 `target_bounds`；`viewport` 根固定为 `{x:0,y:0,width:target_viewport.width,height:target_viewport.height}`，`safe-area` 根使用同批实际测量的唯一 bounds，所有根引用必须一致且位于 viewport 内。普通子节点应落在父框内；仅当 `ui_layout.visual_overflow.reason` 非空时允许视觉边界越出普通父框，父框自身不扩展，且节点仍必须位于稳定根安全区内。`relative_position` 必须按 `left=child.x-parent.x`、`right=parent.x+parent.width-child.x-child.width`、`top=child.y-parent.y`、`bottom=parent.y+parent.height-child.y-child.height` 相对真实父框逐项测量，允许有理由的负值；不接受手填近似，浮点误差不超过 `1e-6`。
 
 `axis_alignment.horizontal` 由智能视觉判断显式选择 `left/center/right`，`vertical` 显式选择 `top/center/bottom`。判断主要依据原图构图、视觉重心和元素语义，不按最近边或测量阈值自动推断。四边距离只记录几何事实；运行时 `offset` 按选定对齐轴计算，其中 `center` 使用子中心相对父中心的有符号偏移。`self_anchor` 与 `reference_anchor` 必须是 `${vertical}-${horizontal}`（例如 `top-center` 或 `center-center`）。视觉决策文件、父子关系、相对距离、对齐、偏移和锚点都属于布局身份，任一变化都必须让旧确认失效。
 
 模板的 `layout_node_example` 是可直接复制到 `layout_nodes` 的完整 effect-image 节点示例；它不是普通 `not-applicable` 合同的活动节点。切换到冻结目标时，应复制该示例、改成项目稳定 ID 和目标几何，并补齐场景绑定与关键对齐证据。
 
-布局节点的 `reference_id` 在普通布局中可以指向已声明的 `regions` 或其他 `layout_node_id`；在 `effect-image` 中必须与 `parent_layout_node_id` 相等，父级只能是具体节点或 `viewport`/`safe-area`。当一个 region 只有一个布局节点时，普通布局可直接用该 region ID 作为参照；当一个 region 绑定多个布局节点时，region ID 参照会产生歧义，必须改用具体 `layout_node_id`。所有节点参照组成有向图，禁止自引用和环；因此不能通过一个孤立或循环的节点绕过布局合同。
+布局节点的 `reference_id` 在普通布局中可以指向已声明的 `regions` 或其他 `layout_node_id`；在 `effect-image` 中，它由可选 `ui_layout.position_reference_id` 决定，未声明时回退到真实父级。独立参照只能指向同级、祖先或 `viewport`/`safe-area`。当一个 region 只有一个布局节点时，普通布局可直接用该 region ID 作为参照；当一个 region 绑定多个布局节点时，region ID 参照会产生歧义，必须改用具体 `layout_node_id`。所有节点参照组成有向图，禁止自引用和环；因此不能通过一个孤立或循环的节点绕过布局合同。
 
 `regions` 自身仍是声明式布局区域，每个区域至少包含：
 

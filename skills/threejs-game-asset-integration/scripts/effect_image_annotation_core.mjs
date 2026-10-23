@@ -45,6 +45,7 @@ function normalizeDecompositionElementDefinition(value) {
   return {
     element_id: firstDefined(value, ["element_id", "elementId"], ""),
     element_type: firstDefined(value, ["element_type", "elementType", "type"], ""),
+    render_kind: firstDefined(value, ["render_kind", "renderKind"], null),
     role: firstDefined(value, ["role", "layout_role", "layoutRole", "node_type", "nodeType"], ""),
     bounds: bounds ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null,
     scene_id: firstDefined(value, ["scene_id", "sceneId"], ""),
@@ -70,6 +71,7 @@ function normalizeComponentInventoryDefinition(value) {
     component_id: firstDefined(component, ["component_id", "componentId"], ""),
     atomic_visual_key: firstDefined(component, ["atomic_visual_key", "atomicVisualKey"], ""),
     role: firstDefined(component, ["role", "component_role"], ""),
+    render_kind: firstDefined(component, ["render_kind", "renderKind"], null),
     reusable: component?.reusable,
     parent_element_id: firstDefined(component, ["parent_element_id", "parentElementId"], null),
     semantic_grouping: semanticGroupingDefinition(firstDefined(component, ["semantic_grouping"], undefined)),
@@ -85,6 +87,7 @@ function normalizeComponentInventoryDefinition(value) {
       placement_id: firstDefined(placement, ["placement_id", "placementId"], ""),
       element_id: firstDefined(placement, ["element_id", "elementId"], null),
       layout_node_id: firstDefined(placement, ["layout_node_id", "layoutNodeId"], ""),
+      render_kind: firstDefined(placement, ["render_kind", "renderKind"], null),
       parent_element_id: firstDefined(placement, ["parent_element_id", "parentElementId"], null),
       semantic_grouping: semanticGroupingDefinition(firstDefined(placement, ["semantic_grouping"], undefined)),
       ui_layout: normalizeUiLayout(firstDefined(placement, ["ui_layout"], undefined)) ?? null,

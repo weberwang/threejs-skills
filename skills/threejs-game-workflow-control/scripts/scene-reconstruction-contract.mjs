@@ -392,7 +392,7 @@ export function validateSceneCombinationPreacceptance(contract, stage = "V4", op
     const decomposition = field(contract, "layout_decomposition", "layoutDecomposition", "layout_decomposition_contract", "layoutDecompositionContract");
     const nodes = isObject(decomposition) && Array.isArray(field(decomposition, "layout_nodes", "layoutNodes")) ? field(decomposition, "layout_nodes", "layoutNodes") : [];
     const nodeById = new Map(nodes.map((node) => [field(node, "layout_node_id", "layoutNodeId"), node]).filter(([id]) => nonEmptyString(id)));
-    validateLayoutGeometryFacts(contract, preacceptance, stage, errors, { nodes, nodeById }, { visual_validation: { mode } });
+    validateLayoutGeometryFacts(contract, preacceptance, stage, errors, { nodes, nodeById }, { ...options, visual_validation: { mode } });
   }
   return errors;
 }

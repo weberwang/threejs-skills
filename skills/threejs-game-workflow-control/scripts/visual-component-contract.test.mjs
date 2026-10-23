@@ -26,6 +26,22 @@ test("V2 派生标记参与规范化身份，false 不能与 true 决策等价",
   assert(visualComponentContractDifferences(region, bypassAttempt).includes("component_inventory"));
 });
 
+test("底板功能根在资产规范化和身份比较中保留渲染身份", () => {
+  const region = { component_inventory: { components: [{
+    component_id: "button", atomic_visual_key: "button", role: "button-skin",
+    element_type: "container", is_container: true, render_kind: "sprite", reusable: false,
+    placements: [{ placement_id: "button-main", render_kind: "sprite", bounds: { x: 0, y: 0, width: 96, height: 64 } }],
+  }] } };
+  const normalized = normalizeComponentInventory(region.component_inventory).components[0];
+  assert.equal(normalized.element_type, "container");
+  assert.equal(normalized.is_container, true);
+  assert.equal(normalized.render_kind, "sprite");
+  assert.equal(normalized.placements[0].render_kind, "sprite");
+  const changed = structuredClone(region);
+  delete changed.component_inventory.components[0].render_kind;
+  assert(visualComponentContractDifferences(region, changed).includes("component_inventory"));
+});
+
 /** 构造只用于验证 V3 九宫格职责边界的最小生产区域。 */
 function nineSliceRegion(role, layer = "hud", routeType = undefined) {
   return {
@@ -48,4 +64,12 @@ test("V3沿用权威视觉路线判断角色冲突，并拒绝真实背景层和
 
   const containerErrors = validateVisualComponentContract(nineSliceRegion("container", "hud", "panel"), { stage: "V3", region_id: "panel-region" });
   assert(containerErrors.some((item) => item.includes("九宫格 stretch")));
+});
+
+test("V3允许图片底板兼任九宫格容器，拒绝丢失图片身份的同一组件", () => {
+  const region = nineSliceRegion("panel-frame");
+  Object.assign(region.component_inventory.components[0], { element_type: "container", is_container: true, render_kind: "sprite" });
+  assert.equal(validateVisualComponentContract(region, { stage: "V3", region_id: "panel-region" }).some((message) => /九宫格 stretch|render_kind/.test(message)), false);
+  delete region.component_inventory.components[0].render_kind;
+  assert(validateVisualComponentContract(region, { stage: "V3", region_id: "panel-region" }).some((message) => message.includes("render_kind")));
 });

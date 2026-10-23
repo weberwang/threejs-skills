@@ -30,6 +30,8 @@
 
 初始装配、容器 resize、方向变化、安全区变化、DPR 变化和 HUD 状态变化都进入同一幂等 `reflowHud(input)` 入口。输入至少包含 CSS rect、安全区、有效 DPR、HUD 坐标合同、Camera 身份和状态；入口重算 Canvas backing 与相关 Camera，并向 DOM、Orthographic HUD 与指针适配器发布同一 viewport revision。监听器随显示服务销毁。
 
+执行前读取每个节点的[唯一执行计划](layout-execution.md)，防止 CSS 布局、共享 reflow 与动画同时改写同一属性。装配与重排后用[运行采集器](layout-runtime-evidence.md)同步读取真实 DOM/HUD 状态。DOM 显式转换 CSS rect 到逻辑坐标；HUD 由项目适配器读取实际对象、Camera 与驱动状态。V4 组合几何和 QA Hook 复用同一批 `runtime_batch/component_snapshots`，不得从冻结目标或计划回填实际读数。
+
 装饰性屏幕空间满幅 HUD 背景只在 HUD 坐标系内执行 cover；关卡天空盒、远景、地形和可交互环境属于 world contract，由世界 Camera、世界尺寸和场景数据控制。屏幕背景适配器不能替代 3D 世界的构图或关卡几何。
 
 ## 验收证据

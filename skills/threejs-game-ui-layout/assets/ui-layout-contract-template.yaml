@@ -1,5 +1,7 @@
 {
-  "schema_version": "1.2.0",
+  "schema_version": "1.3.0",
+  "runtime_batch": null,
+  "component_snapshots": [],
   "contract_id": "main-menu-layout",
   "contract_version": "1.0.0",
   "scope": {
@@ -324,7 +326,8 @@
     "z_order": 10,
     "clip_policy": "none",
     "responsive_rule": "preserve-center-and-top-gap",
-    "planned_test_id": "tests/layout/hud-title"
+    "planned_test_id": "tests/layout/hud-title",
+    "layout_execution": {"position_driver": "SHARED", "size_driver": "CONTENT", "reference_id": "safe-area", "image_mode": "NONE"}
   },
   "content": {
     "max_width": 720,

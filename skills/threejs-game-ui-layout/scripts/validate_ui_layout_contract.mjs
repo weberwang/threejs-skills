@@ -9,6 +9,8 @@ import { DESIGN_RESOLUTIONS } from "./fixed-design-viewport.mjs";
 import { layoutNodeIdentityProjection, validateEffectImageParentChildLayoutNodes } from "../../threejs-game-workflow-control/scripts/layout-node-parent-geometry.mjs";
 import { resolveVisualValidationMode, validateVisualValidationPolicy } from "../../threejs-game-workflow-control/scripts/visual-validation-policy.mjs";
 import { matchesRepresentativeViewport, measuredOrientation, resolveOrientationCoverage } from "../../threejs-game-workflow-control/scripts/orientation-validation-scope.mjs";
+import { validateLayoutRuntimeSnapshots } from "./layout-runtime.mjs";
+import { validateMeasuredLayoutBounds } from "./layout-runtime-measurement.mjs";
 import { validateUiInteractionTree, validateUiLayout } from "../../threejs-game-asset-integration/scripts/ui-layout-organization.mjs";
 
 const ROOT_REQUIRED = ["schema_version", "contract_id", "contract_version", "scope", "fidelity", "frozen_visual_target", "logicalViewportSpace", "designResolutionPolicy", "canvasBackingPolicy", "runtimeDprPolicy", "maxRuntimeDpr", "scaleMode", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "representativeViewports", "requiredRuntimeEvidence", "targets", "coordinate_spaces", "regions", "layout_nodes", "content", "platform_insets", "scrolling", "dynamic_content", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "evidence_matrix"];
@@ -98,7 +100,7 @@ function validateRoot(document, errors) {
   if (!isObject(document)) { errors.push("根对象必须是 JSON 对象"); return; }
   for (const field of ROOT_REQUIRED) if (!(field in document)) errors.push(`缺少根字段：${field}`);
   for (const field of ["schema_version", "contract_id", "contract_version"]) if (field in document && !isString(document[field])) errors.push(`字段 ${field} 必须是非空字符串`);
-  if (document.schema_version !== "1.2.0") errors.push("schema_version 必须为 1.2.0");
+  if (document.schema_version !== "1.3.0") errors.push("schema_version 必须为 1.3.0");
   for (const field of ["coordinate_spaces", "regions", "layout_nodes", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "representativeViewports"]) if (field in document && !Array.isArray(document[field])) errors.push(`字段 ${field} 必须是数组`);
   for (const field of ["scope", "fidelity", "targets", "content", "platform_insets", "scrolling", "dynamic_content", "evidence_matrix", "logicalViewportSpace", "designResolutionPolicy", "canvasBackingPolicy", "runtimeDprPolicy", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "requiredRuntimeEvidence"]) if (field in document && !isObject(document[field])) errors.push(`字段 ${field} 必须是对象`);
 }
@@ -154,10 +156,11 @@ function validateDelta(value, label, errors) {
 }
 
 /** 验证冻结视觉目标下的关键 UI/HUD 对齐合同。 */
-function validateCriticalAlignments(items, ids, layoutNodes, status, errors, mode = "usability") {
+function validateCriticalAlignments(items, ids, layoutNodes, status, errors, mode = "usability", snapshots = []) {
   const exact = mode === "exact";
   if (!Array.isArray(items) || items.length === 0) { errors.push("critical_alignments 必须是非空数组"); return; }
   const alignmentIds = new Set();
+  const runtimeById = new Map((Array.isArray(snapshots) ? snapshots : []).filter(isObject).map((entry) => [entry.layout_node_id, entry.component_snapshot]));
   items.forEach((item, index) => {
     const label = `critical_alignments[${index}]`;
     if (!isObject(item)) { errors.push(`${label} 必须是对象`); return; }
@@ -186,6 +189,7 @@ function validateCriticalAlignments(items, ids, layoutNodes, status, errors, mod
       if (!isString(item.actual_test_id)) errors.push(`${label}.actual_test_id 必须是非空字符串`);
       else if (item.actual_test_id !== item.planned_test_id) errors.push(`${label}.actual_test_id 必须等于 planned_test_id`);
       validateMeasurement(runtimeMeasurement, `${label}.runtime_measurement`, errors);
+      validateMeasuredLayoutBounds(runtimeById.get(item.layout_node_id), runtimeMeasurement, errors, `${label}.runtime_measurement`);
       if (exact || item.delta != null) validateDelta(item.delta, `${label}.delta`, errors);
       if (isObject(item.target_measurement) && isObject(runtimeMeasurement) && isObject(item.delta) && ["x", "y", "width", "height"].every((field) => isNumber(item.target_measurement[field]) && isNumber(runtimeMeasurement[field]) && isNumber(item.delta[field]))) {
         if (enforceGeometry) for (const field of ["x", "y", "width", "height"]) if (item.delta[field] !== runtimeMeasurement[field] - item.target_measurement[field]) errors.push(`${label}.delta.${field} 必须等于 runtime_measurement 与 target_measurement 的差值`);
@@ -613,7 +617,7 @@ function validateLayoutNodes(document, fidelity, binding, spaces, regionIds, err
       if (!scopedIds.has(node.region_id)) errors.push(`${label}.region_id 未绑定 scope.ui_ids：${node.region_id}`);
     }
     if (isString(node.coordinate_space) && !spaces.has(node.coordinate_space)) errors.push(`${label}.coordinate_space 引用不存在的坐标空间：${node.coordinate_space}`);
-    if (requiresLayoutNodes) validateUiLayout(node.ui_layout, { rootParent: ["viewport", "safe-area"].includes(node.parent_layout_node_id), container: node.is_container === true || node.element_type === "container", emptyContainer: node.empty_container === true }, errors, `${label}.ui_layout`);
+    if (requiresLayoutNodes) validateUiLayout(node.ui_layout, { rootParent: ["viewport", "safe-area"].includes(node.parent_layout_node_id), parentId: node.parent_layout_node_id, container: node.is_container === true || node.element_type === "container", emptyContainer: node.empty_container === true }, errors, `${label}.ui_layout`);
     validateLayoutOffset(node.offset, label, errors);
     if (!isNumber(node.z_order)) errors.push(`${label}.z_order 必须是有限数值`);
     validateMeasurement(node.target_bounds, `${label}.target_bounds`, errors);
@@ -624,8 +628,13 @@ function validateLayoutNodes(document, fidelity, binding, spaces, regionIds, err
   });
   if (requiresLayoutNodes) validateUiInteractionTree(nodes.map((node) => ({ element_id: node?.layout_node_id, parent_element_id: node?.parent_layout_node_id, ui_layout: node?.ui_layout })), errors, "layout_nodes");
   if (isEffectImageContract(document)) {
-    // 父容器、相对测量和显式视觉对齐必须与场景拆解入口使用同一规则。
-    for (const issue of validateEffectImageParentChildLayoutNodes(nodes, viewport, { label: "layout_nodes" })) errors.push(issue.message);
+    // 父容器、独立参照和派生执行计划与场景入口共用规则，verified 读取同一份正式快照。
+    if (document.fidelity?.status === "verified") validateLayoutRuntimeSnapshots(nodes, document, errors, "layout_runtime", {
+      scene_id: binding?.scene_id, state_id: binding?.state_id,
+      candidate_id: document.scope?.bindings?.code_candidate,
+      viewport_bounds: viewport ? { x: 0, y: 0, width: viewport.width, height: viewport.height } : undefined,
+    });
+    for (const issue of validateEffectImageParentChildLayoutNodes(nodes, viewport, { label: "layout_nodes", requireExecutionPlan: true })) errors.push(issue.message);
   }
   const graph = new Map(); const stableRoots = new Set(["viewport", "safe-area"]);
   nodes.forEach((node, index) => {
@@ -746,7 +755,7 @@ export function validateContract(document) {
   const mode = resolveVisualValidationMode(document); validateVisualValidationPolicy(errors, "visual_validation", document);
   validateScope(document.scope, errors); const fidelity = validateFidelityLifecycle(document, errors); const requiresFrozenLayout = fidelity?.applicability === "frozen-target" || isEffectImageContract(document); if (requiresFrozenLayout) validateFrozenVisualTarget(document.frozen_visual_target, errors); const binding = validateSceneReconstructionBinding(document, fidelity, errors); const coverage = resolveOrientationCoverage(document.orientationPolicy); errors.push(...coverage.errors); validateTargets(document.targets, errors, coverage); validateResponsiveContract(document, errors, coverage); const spaces = validateCoordinateSpaces(document.coordinate_spaces, errors); const ids = validateRegions(document, spaces, errors, specialized); validateScopeRegionIds(document.scope, ids, errors); validateReferenceGraph(document, ids, errors); const layoutNodes = validateLayoutNodes(document, fidelity, binding, spaces, ids, errors); validateLayoutAnnotationBinding(document, binding, layoutNodes, errors); validateContent(document.content, errors); validateBreakpoints(document.breakpoints, errors); validatePlatformAndScrolling(document, ids, errors); validateDynamicContent(document.dynamic_content, ids, errors); validateOverlays(document.overlay_rules, ids, errors, specialized); validateOverlayCoverage(document, ids, errors); validateInvariants(document.invariants, ids, errors, mode);
   if (requiresFrozenLayout) {
-    validateCriticalAlignments(document.critical_alignments, ids, layoutNodes, fidelity?.status, errors, mode);
+    validateCriticalAlignments(document.critical_alignments, ids, layoutNodes, fidelity?.status, errors, mode, document.component_snapshots);
     if (fidelity?.status === "verified") {
       validateParityCases(document.parity_cases, document.scope, document.contract_version, document.frozen_visual_target, errors, mode, coverage);
       if (mode === "exact" && Array.isArray(document.parity_cases) && document.parity_cases.some((item) => item?.conclusion !== "passed")) errors.push("verified 的 parity_cases 必须全部 passed");

@@ -9,7 +9,9 @@ description: 为 three.js 游戏建立可验证的 UI 布局合同、坐标空�
 
 UI 布局参照按[场景与弹窗尺寸参照](references/layout-hierarchy.md#场景与弹窗尺寸参照)统一确定：全屏 UI 的父级是场景，按场景逻辑尺寸相对布局；弹窗有底板时，内容按底板对应功能容器的宽高相对布局；弹窗没有底板时，按宿主场景逻辑尺寸相对布局。弹窗底板容器本身相对场景定位，底板位图与内容一起归属该容器；全屏装饰背景仍是独立显示层。安全区约束关键内容的可见范围，不替换这三种尺寸参照。
 
-效果图 V2 拆解与布局遵守[功能语义分组约束](references/functional-semantic-grouping.md)和[ThreeJS UI 节点组织](references/layout-hierarchy.md)：先在编号拆解图上确认位置依赖与信息分组，再由代理自动整理停靠方案并展示布局图/预览确认；不先发文字方案要求确认。位置依赖方必须成为被依赖元素所对应布局容器的子元素，共同表达同一信息且彼此无位置依赖的元素列为同组同级项。父容器职责、布局所有者、尺寸、溢出、安全区和输入归属仍在技术合同中维护；禁止按文字类型或几何最小包含关系自动归父级。
+效果图 V2 拆解与布局遵守[功能语义分组约束](references/functional-semantic-grouping.md)和[ThreeJS UI 节点组织](references/layout-hierarchy.md)：先在编号拆解图上确认位置依赖与信息分组，再由代理自动整理停靠方案并展示布局图/预览确认；不先发文字方案要求确认。真实父级表达功能、状态、交互和布局管理归属，位置依赖通过可选 `ui_layout.position_reference_id` 单独记录，共同表达同一信息且彼此无位置依赖的元素列为同组同级项。父容器职责、布局所有者、尺寸、溢出、安全区和输入归属仍在技术合同中维护；禁止按文字类型或几何最小包含关系自动归父级。
+
+V2 从已确认字段派生位置与尺寸的唯一驱动器，具体决策见[执行计划](references/layout-execution.md)。V4 通过[实际运行快照](references/layout-runtime-evidence.md)核对全部业务布局节点的真实父级、参照、写入者、中心和图片尺寸；`usability` 的关键节点测量与 `exact` 的完整测量仍沿用既有范围。图片源像素与 CSS/HUD 显示尺寸分开，透视世界继续使用 world contract。
 
 ## 全局控制接入
 
@@ -42,7 +44,7 @@ UI 布局参照按[场景与弹窗尺寸参照](references/layout-hierarchy.md#�
 正式场景的布局校准与关键几何验收读取[布局校准与参考还原](references/layout-calibration.md)。V4 直接消费冻结 V2 布局与 V3 正式资源，在实际 ThreeJS Scene 中调整并复验受影响范围；布局矩形与素材可见边界分别检查，不能用可用性通过代替参考还原。
 
 1. 读取项目的 GDD/TDD、当前候选、总控审核漏斗和适用视觉阶段；确定稳定 UI ID、坐标空间、参照物、状态与平台输入。
-2. 复制 schema 1.2.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified`。同时冻结上述根级视口/DPR/Camera/Input/性能字段，禁止使用旧 `targets.scale` 字段绕过新门禁。V2 先按位置依赖建立父子、按共同信息建立同级分组，代理内部维护完整技术 JSON 和 `decomposition_elements`，直接展示编号拆解图供人工确认；屏幕 UI 的 `ui_layout` 职责字段也保留在技术合同中。拆解图确认后由智能视觉判断生成逐元素 `left/center/right × top/center/bottom` 决策，再由同一入口同步生成布局 PNG、`layout-nodes.json`、`layout-decision.json`、离线 `review.html` 和 `generation-result.json`，用户直接检查最终布局图/审阅页并独立确认。无需先后确认文字提案或技术记录。随后登记由已确认元素和视觉决策共同推导的非空 `layout_nodes` 与关键对齐合同。
+2. 复制 schema 1.3.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified`。同时冻结上述根级视口/DPR/Camera/Input/性能字段，禁止使用旧 `targets.scale` 字段绕过新门禁。V2 先确认真实功能父级、独立定位参照与共同信息分组，代理内部维护完整技术 JSON 和 `decomposition_elements`，直接展示编号拆解图供人工确认；屏幕 UI 的 `ui_layout` 职责字段也保留在技术合同中。拆解图确认后由智能视觉判断生成逐元素 `left/center/right × top/center/bottom` 决策，再由同一入口同步生成布局 PNG、`layout-nodes.json`、`layout-decision.json`、离线 `review.html` 和 `generation-result.json`，用户直接检查最终布局图/审阅页并独立确认。无需先后确认文字提案或技术记录。随后登记由已确认元素和视觉决策共同推导的非空 `layout_nodes` 与关键对齐合同。
 3. V3 正式资源验收后直接进入 V4：按[正式场景视觉还原与校准](../threejs-game-asset-integration/references/visual-alignment-authoring.md)在正式 Scene 中消费 V2 节点与布局合同、V3 验收资源，接入实际交互、动态数据和 required state。坐标、尺寸和响应式调整写入正式布局配置；冻结的 V2 节点结构仍按上游合同管理。具体 ThreeJS 视口、Camera、输入与幂等重排规则见[ThreeJS 适配参考](references/threejs-adapter.md)。
 4. specified 阶段运行结构检查 `node scripts/validate_ui_layout_contract.mjs <contract>`；verified 正式验收必须运行 `node scripts/validate_ui_layout_contract.mjs <contract> --check-files --project-root .`，读取冻结原图并检查目标/运行/parity 证据文件。
 5. 按 [证据矩阵](references/evidence-matrix.md) 生成 `orientationPolicy.allowed` 对应的代表性视口、关键状态和窄/宽尺寸证据；只支持单一方向时不验证另一方向，但仍覆盖同方向尺寸、DPR 和同页连续 resize。关键 UI/HUD 记录稳定 element/reference ID、双轴关系、目标/运行测量、实际测试 ID/状态、视觉证据和项目定义容差。V4 还必须记录 CSS/backing 尺寸、raw/effective DPR、Camera、输入命中、同页 resize 和独立 DISPLAY_LAYER 轨迹。`exact` 或明确的全覆盖需求才扩展到完整矩阵和严格 delta，方向轴仅覆盖项目支持方向。
@@ -58,7 +60,7 @@ UI 布局参照按[场景与弹窗尺寸参照](references/layout-hierarchy.md#�
 
 V2 的布局决策顺序固定为“代理内部生成拆解事实和技术 JSON → 展示编号拆解图并人工确认 → 代理自动生成双轴对齐决策及独立布局图/审阅页 → 展示布局图并独立确认 → 冻结 V2”。用户可直接按图号指出拆解或布局需要调整，代理更新技术事实并重出相应图片；不另行等待文字方案确认。布局生成入口仍拒绝未确认拆解、缺失决策、元素漏绑或未绑定当前 scene/state/target 的输入；两次图像确认分别绑定上游拆解、视觉决策文件和最终布局图身份。
 
-效果图节点还必须声明 `parent_layout_node_id`、`parent_target_bounds`、`relative_position` 和 `axis_alignment`。拆解确认后，智能布局结合原图构图、视觉重心和元素语义，为每个元素显式判断水平 `left/center/right` 与垂直 `top/center/bottom`；该判断不能由四边距离自动反推。`relative_position` 仍由父子 bounds 测量，用于复核包含关系和几何漂移；`offset`、`self_anchor`、`reference_anchor` 则按已选 `axis_alignment` 计算。`reference_id` 必须等于父 ID，父级仅可为具体节点或 `viewport`/`safe-area`，不得循环。视觉决策文件及其 ID 会进入布局图和确认记录，缺失决策必须阻断布局生成。
+效果图节点还必须声明真实 `parent_layout_node_id`、`parent_target_bounds`、`relative_position` 和 `axis_alignment`。拆解确认后，智能布局结合原图构图、视觉重心和元素语义，为每个元素显式判断水平 `left/center/right` 与垂直 `top/center/bottom`；该判断不能由四边距离自动反推。`relative_position` 按真实父级 bounds 测量；可选 `ui_layout.position_reference_id` 单独决定停靠参照，未声明时使用真实父级。`offset`、`self_anchor`、`reference_anchor` 按已选轴向和定位参照计算。普通父框外的视觉溢出须有 `visual_overflow.reason`，但不得越过 viewport/safe-area。父级和定位参照只能使用已确认节点或稳定根，联合依赖不得成环。视觉决策文件及其 ID 会进入布局图和确认记录，缺失决策必须阻断布局生成。
 
 ## 资源导航
 

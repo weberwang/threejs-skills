@@ -116,7 +116,7 @@ async function createFixtureRoot({ sourceWidth = 4, sourceHeight = 4, cellWidth 
   await mkdir(dirname(join(root, sourceManifestFile)), { recursive: true });
   await writeFile(join(root, sourceManifestFile), sourceManifestBytes);
 
-  const sheetFile = "public/assets/image-atlas.png";
+  const sheetFile = "public/assets/hero-loop/image-atlas.png";
   const previewFile = "reports/image-preview.html";
   const reportFile = "reports/image-atlas.json";
   let sheetBytes;
@@ -167,7 +167,7 @@ async function createFixtureRoot({ sourceWidth = 4, sourceHeight = 4, cellWidth 
     anchor: settings.anchor,
     animationKey: "hero-loop",
     textureKey: "hero-loop-texture",
-    runtimeUrl: "assets/image-atlas.png",
+    runtimeBinding: { kind: "public", deployment_base: "/" },
   }) : null;
   if (actualReport) {
     sheetBytes = await readFile(join(root, sheetFile));
@@ -183,7 +183,10 @@ async function createFixtureRoot({ sourceWidth = 4, sourceHeight = 4, cellWidth 
     source_manifest: artifact(sourceManifestFile, sourceManifestBytes),
     quality_report: null,
     preview: artifact(previewFile, previewBytes),
-    spritesheet: artifact(sheetFile, sheetBytes, { runtime_url: "assets/image-atlas.png" }),
+    spritesheet: artifact(sheetFile, sheetBytes, {
+      runtime_binding: { kind: "public", file: sheetFile, deployment_base: "/" },
+      runtime_url: "/assets/hero-loop/image-atlas.png",
+    }),
   };
   const asset = {
     id: "hero-loop",
@@ -241,16 +244,20 @@ async function createFixtureRoot({ sourceWidth = 4, sourceHeight = 4, cellWidth 
       };
     }),
     animation: { key: "hero-loop", texture_key: asset.texture_key, frame_rate: 2, loop: true },
+    runtime_binding: structuredClone(contract.spritesheet.runtime_binding),
+    runtime_url: contract.spritesheet.runtime_url,
     threejs: createThreeJSAtlasContract({
       animationKey: "hero-loop",
       textureKey: asset.texture_key,
       runtimeUrl: contract.spritesheet.runtime_url,
+      runtimeBinding: contract.spritesheet.runtime_binding,
+      runtimeUrlExpression: contract.spritesheet.runtime_url,
       outputSheet: sheetFile,
       fps: 2,
       loop: true,
     }, { width: cellWidth, height: cellHeight, target_anchor: targetAnchor }, 2),
     artifacts: {
-      sheet: { file: join(root, sheetFile), width: cellWidth * 2, height: cellHeight, sha256: sha256Bytes(sheetBytes) },
+      sheet: { file: sheetFile, width: cellWidth * 2, height: cellHeight, sha256: sha256Bytes(sheetBytes) },
       preview: { file: join(root, previewFile) },
       report: { file: join(root, "reports/image-atlas.json") },
     },
@@ -336,7 +343,10 @@ function imageContract() {
     source_manifest: artifact("evidence/source.json"),
     quality_report: artifact("reports/image-atlas.json"),
     preview: artifact("reports/image-preview.html"),
-    spritesheet: artifact("public/assets/image-atlas.png", { runtime_url: "assets/image-atlas.png" }),
+    spritesheet: artifact("public/assets/hero-loop/image-atlas.png", {
+      runtime_binding: { kind: "public", file: "public/assets/hero-loop/image-atlas.png", deployment_base: "/" },
+      runtime_url: "/assets/hero-loop/image-atlas.png",
+    }),
   };
 }
 

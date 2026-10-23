@@ -24,6 +24,7 @@ import { isWorkflowDpr, workflowDprError } from "../../threejs-game-workflow-con
 import { VISUAL_STAGE_IDS, VISUAL_STAGE_STATES } from "../../threejs-game-workflow-control/scripts/visual-stage-prerequisites.mjs";
 import { validateEffectImageLayoutBindings, validatePngLayoutMetadata, validateTechnicalLayoutNodeIds, validateTechnicalRegionLayout, validateV4LayoutMeasurements } from "./validate_visual_layout_mapping.mjs";
 import { checkFrameAnimationWorkflowFiles, validateFrameAnimationWorkflowContract } from "./frame-animation-workflow-contract.mjs";
+import { validateAssetRuntimeBindings } from "./runtime-resource-contract.mjs";
 export { computeRegionDefinitionSha256 } from "./effect_image_annotation_core.mjs";
 export { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateEvidenceIdentity, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV4ProductionGate } from "../../threejs-game-workflow-control/scripts/visual-production-contract.mjs";
 export { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../threejs-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
@@ -407,6 +408,7 @@ export function validateManifest(data, options = {}) {
   data.assets.forEach((asset, index) => {
     const label = `assets[${index}]`;
     if (!isObject(asset)) { errors.push(`${label} 必须是对象`); return; }
+    validateAssetRuntimeBindings(asset, errors, label);
     for (const field of ["id", "texture_key", "route", "status"]) if (!nonEmptyString(asset[field])) errors.push(`${label}.${field} 必须是非空字符串`);
     if (reconstruction?.applicability === "effect-image") {
       const mapped = new Set(fixedMappings.get(asset.id) ?? []);

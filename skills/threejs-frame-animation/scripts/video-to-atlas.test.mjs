@@ -7,7 +7,7 @@ import { runInNewContext } from "node:vm";
 import sharp from "sharp";
 import { checkFrameAnimationWorkflowFiles, FRAME_ANIMATION_WORKFLOW_SCHEMA, sha256Bytes as contractSha256Bytes } from "../../threejs-game-asset-integration/scripts/frame-animation-workflow-contract.mjs";
 import { createThreeJSAtlasContract } from "./frame-atlas-core.mjs";
-import { parseVideoAtlasArgs, videoAtlasHelp, videoToAtlas, VideoAtlasError } from "./video-to-atlas.mjs";
+import { normalizeVideoAtlasOptions, parseVideoAtlasArgs, videoAtlasHelp, videoToAtlas, VideoAtlasError } from "./video-to-atlas.mjs";
 
 /** 建立指定颜色的 RGBA PNG，测试不依赖系统安装 ffmpeg。 */
 async function solidPng(width, height, color, patches = []) {
@@ -105,7 +105,7 @@ function createPreviewHarness(html) {
 test("视频抽帧生成单行 ThreeJS 图集、尺寸与网页预览", async (t) => {
   const directory = await testDirectory(t);
   const inputVideo = join(directory, "walk.mp4");
-  const outputSheet = join(directory, "walk.png");
+  const outputSheet = join(directory, "public", "assets", "walk", "walk.png");
   const outputReport = join(directory, "walk.json");
   const outputPreview = join(directory, "walk.html");
   await writeFile(inputVideo, "fake video bytes");
@@ -120,9 +120,10 @@ test("视频抽帧生成单行 ThreeJS 图集、尺寸与网页预览", async (t
     outputSheet,
     outputReport,
     outputPreview,
+    projectRoot: directory,
+    runtimeBinding: { kind: "public", deployment_base: "/game/" },
     fps: 6,
     width: 2,
-    runtimeUrl: "assets/walk.png",
     ffmpegPath: "ffmpeg-test",
     ffprobePath: "ffprobe-test",
     commandRunner: fakeRunner(frameBytes, observed),
@@ -144,7 +145,8 @@ test("视频抽帧生成单行 ThreeJS 图集、尺寸与网页预览", async (t
   assert.match(report.artifacts.sheet.sha256, /^sha256:[a-f0-9]{64}$/u);
   assert.equal(report.threejs.texture_loader.class, "THREE.TextureLoader");
   assert.equal(report.threejs.texture_loader.method, "loadAsync");
-  assert.equal(report.threejs.texture_loader.url, "assets/walk.png");
+  assert.equal(report.runtime_url, "/game/assets/walk/walk.png");
+  assert.equal(report.threejs.texture_loader.url, "/game/assets/walk/walk.png");
   assert.equal(report.threejs.atlas_uv.frame_index.end, 2);
   assert.deepEqual(report.threejs.atlas_uv.repeat, { x: 1 / 3, y: 1 });
   assert.equal(report.threejs.sprite.material_class, "THREE.SpriteMaterial");
@@ -162,7 +164,7 @@ test("视频抽帧生成单行 ThreeJS 图集、尺寸与网页预览", async (t
   assert.match(preview, /抽帧动画/u);
   assert.match(preview, /逐帧缩略图/u);
   assert.match(preview, /<video controls/u);
-  assert.match(preview, /src="walk\.png"/u);
+  assert.match(preview, /src="public\/assets\/walk\/walk\.png"/u);
   assert.match(preview, new RegExp(`<meta name="threejs-atlas-sha256" content="${report.artifacts.sheet.sha256}">`, "u"));
   assert.match(await readFile(outputReport, "utf8"), /"schema": "threejs-video-atlas\/1"/u);
 });
@@ -172,8 +174,10 @@ test("报告中的 Three.js factory 可创建 Sprite 并按 deltaSeconds 播放"
   const contract = createThreeJSAtlasContract({
     animationKey: "hero-run",
     textureKey: "hero-texture",
-    runtimeUrl: "assets/hero.png",
-    outputSheet: "public/assets/hero.png",
+    runtimeBinding: { kind: "public", file: "public/assets/hero/hero.png", deployment_base: "/" },
+    runtimeUrl: "/assets/hero/hero.png",
+    runtimeUrlExpression: "/assets/hero/hero.png",
+    outputSheet: "public/assets/hero/hero.png",
     fps: 2,
     loop: false,
   }, { width: 2, height: 4, target_anchor: { x: 1, y: 3 } }, 3);
@@ -185,7 +189,7 @@ test("报告中的 Three.js factory 可创建 Sprite 并按 deltaSeconds 播放"
   /** 返回测试纹理，验证 factory 传入配置过的图集 URL。 */
   class TextureLoader {
     /** 模拟异步纹理加载并检查运行时 URL。 */
-    async loadAsync(url) { assert.equal(url, "assets/hero.png"); return texture; }
+    async loadAsync(url) { assert.equal(url, "/assets/hero/hero.png"); return texture; }
   }
   /** 记录透明材质选项并模拟资源释放。 */
   class SpriteMaterial {
@@ -229,6 +233,40 @@ test("报告中的 Three.js factory 可创建 Sprite 并按 deltaSeconds 播放"
   animation.dispose();
   assert.deepEqual(removed, [animation.sprite]);
   assert.equal(texture.disposed, true);
+});
+
+/** 验证模块资源路线生成静态 ?url 导入，不把构建器表达式伪装成 URL。 */
+test("module-import 图集报告用 atlasUrl 绑定静态导入", async (t) => {
+  const directory = await testDirectory(t);
+  const inputVideo = join(directory, "hero.mp4");
+  await writeFile(inputVideo, "fake video bytes");
+  const runtimeBinding = {
+    kind: "module-import",
+    file: "src/assets/hero/run.png",
+    importer: "src/animation/hero.ts",
+    specifier: "../assets/hero/run.png?url",
+  };
+  const report = await videoToAtlas({
+    inputVideo,
+    projectRoot: directory,
+    outputSheet: join(directory, runtimeBinding.file),
+    runtimeBinding,
+    ffmpegPath: "ffmpeg-test",
+    ffprobePath: "ffprobe-test",
+    commandRunner: fakeRunner([await solidPng(2, 2, [30, 40, 50])]),
+  });
+  assert.deepEqual(report.runtime_binding, runtimeBinding);
+  assert.equal(report.runtime_url, null);
+  assert.equal(report.threejs.texture_loader.url, null);
+  assert.equal(report.threejs.texture_loader.url_expression, "atlasUrl");
+  assert.match(report.threejs.snippets.factory, /^import atlasUrl from "\.\.\/assets\/hero\/run\.png\?url";/u);
+  assert.match(report.threejs.snippets.factory, /loadAsync\(atlasUrl\)/u);
+  assert.throws(() => normalizeVideoAtlasOptions({
+    inputVideo,
+    projectRoot: directory,
+    outputSheet: join(directory, runtimeBinding.file),
+    runtimeBinding: { ...runtimeBinding, specifier: "../assets/hero/other.png?url" },
+  }), /specifier 解析结果必须严格等于/u);
 });
 
 /** 验证带旋转元数据的视频尺寸以自动旋转后的首帧 PNG 为准。 */
@@ -332,8 +370,8 @@ test("同一源帧的不同区域生成独立图集并记录精确区域", async
   assert.deepEqual([...leftPixels.subarray(0, 4)], [240, 20, 10, 255]);
   assert.deepEqual([...rightPixels.subarray(0, 4)], [10, 40, 240, 255]);
   assert.ok(Math.abs(bottomPixels[0] - 20) <= 1 && bottomPixels[1] === 30 && bottomPixels[2] === 40 && bottomPixels[3] === 255, "高宽单边推导后仍应保留对应区域颜色");
-  assert.equal(first.threejs.atlas_uv.frame_count, first.frames.length);
-  assert.equal(second.threejs.atlas_uv.frame_count, second.frames.length);
+  assert.equal(first.threejs, null, "未显式绑定的图集不得生成误导性加载示例");
+  assert.equal(second.threejs, null, "未显式绑定的图集不得生成误导性加载示例");
 });
 
 /** 验证去背景先使用裁剪区域，并在显式宽高时等比缩放到透明固定单元格。 */
@@ -413,13 +451,7 @@ test("4x2内容缩放到4x4时记录透明留白和局部锚点", async (t) => {
   assert.deepEqual(explicitReport.cell.target_anchor, { x: 1.5, y: 1.5 });
   assert.deepEqual(explicitReport.input.anchor, anchor);
   assert.deepEqual(explicitReport.settings.anchor, anchor);
-  assert.deepEqual(explicitReport.threejs.sprite.center, {
-    x: 0.375,
-    y: 0.625,
-    target_anchor: { x: 1.5, y: 1.5 },
-    unit: "normalized-cell",
-    source_origin: "top-left",
-  });
+  assert.equal(explicitReport.threejs, null, "未绑定的图集不应生成 Sprite 加载合同");
   const parsed = parseVideoAtlasArgs(["--input-video", "x.mp4", "--output-sheet", "x.png", "--anchor", "1.5,0.5"]);
   assert.deepEqual(parsed.anchor, anchor);
   assert.throws(() => parseVideoAtlasArgs(["--input-video", "x.mp4", "--output-sheet", "x.png", "--anchor", "1,2,3"]), /--anchor/u);
@@ -566,15 +598,18 @@ test("非循环网页预览在末帧停止并支持重播", async (t) => {
     outputPreview,
     fps: 1,
     loop: false,
-    runtimeUrl: "assets/hero-attack.png",
     ffmpegPath: "ffmpeg-test",
     ffprobePath: "ffprobe-test",
     commandRunner: fakeRunner([frame, frame, frame]),
   });
   assert.equal(report.animation.loop, false);
-  assert.equal(report.threejs.texture_loader.url, "assets/hero-attack.png");
-  assert.equal(report.threejs.animation.end_behavior, "hold-last-frame");
-  assert.match(parseVideoAtlasArgs(["--input-video", "x.mp4", "--output-sheet", "x.png", "--runtime-url", "assets/hero-attack.png"]).runtimeUrl, /^assets\//u);
+  assert.equal(report.threejs, null);
+  assert.equal(report.runtime_url, null);
+  assert.equal(report.animation.loop, false);
+  assert.equal(parseVideoAtlasArgs(["--input-video", "x.mp4", "--output-sheet", "x.png", "--runtime-url", "/assets/hero-attack.png"]).runtimeUrl, "/assets/hero-attack.png");
+  assert.throws(() => normalizeVideoAtlasOptions({
+    inputVideo: "x.mp4", outputSheet: "x.png", runtimeUrl: "/assets/hero-attack.png",
+  }), /不能单独指定/u);
   const preview = await readFile(outputPreview, "utf8");
   assert.match(preview, /"loop":false/u);
   const harness = createPreviewHarness(preview);
@@ -602,7 +637,7 @@ test("非循环网页预览在末帧停止并支持重播", async (t) => {
 test("工具输出可直接通过视频图集工作流文件门", async (t) => {
   const directory = await testDirectory(t);
   const inputVideo = join(directory, "source.mp4");
-  const outputSheet = join(directory, "public", "assets", "hero-attack.png");
+  const outputSheet = join(directory, "public", "assets", "hero-attack", "atlas) 测试.png");
   const outputReport = join(directory, "reports", "hero-attack.json");
   const outputPreview = join(directory, "public", "hero-attack.html");
   const promptFile = join(directory, "prompts", "hero-attack.txt");
@@ -618,10 +653,13 @@ test("工具输出可直接通过视频图集工作流文件门", async (t) => {
     outputSheet,
     outputReport,
     outputPreview,
+    projectRoot: directory,
+    runtimeBinding: { kind: "public", deployment_base: "/game/" },
+    animationKey: "hero-attack",
+    textureKey: "hero-attack",
     region,
     anchor,
     fps: 2,
-    runtimeUrl: "assets/hero-attack.png",
     ffmpegPath: "ffmpeg-test",
     ffprobePath: "ffprobe-test",
     commandRunner: fakeRunner([frame, frame]),
@@ -631,7 +669,7 @@ test("工具输出可直接通过视频图集工作流文件门", async (t) => {
     source: "source.mp4",
     report: "reports/hero-attack.json",
     preview: "public/hero-attack.html",
-    sheet: "public/assets/hero-attack.png",
+    sheet: "public/assets/hero-attack/atlas) 测试.png",
   };
   // 读取文件后计算合同要求的内容摘要，避免文件门测试依赖伪造哈希。
   const shaFor = async (path) => contractSha256Bytes(await readFile(join(directory, path)));
@@ -648,7 +686,12 @@ test("工具输出可直接通过视频图集工作流文件门", async (t) => {
     spritesheet: {
       file: relativeFiles.sheet,
       sha256: await shaFor(relativeFiles.sheet),
-      runtime_url: "assets/hero-attack.png",
+      runtime_binding: {
+        kind: "public",
+        file: relativeFiles.sheet,
+        deployment_base: "/game/",
+      },
+      runtime_url: "/game/assets/hero-attack/atlas%29%20%E6%B5%8B%E8%AF%95.png",
     },
   };
   const asset = {
@@ -661,7 +704,7 @@ test("工具输出可直接通过视频图集工作流文件门", async (t) => {
     workItemId: "work-item-video-atlas",
     candidateVersion: "candidate-1",
   }), []);
-  assert.equal(JSON.parse(await readFile(outputReport, "utf8")).threejs.texture_loader.url, "assets/hero-attack.png");
+  assert.equal(JSON.parse(await readFile(outputReport, "utf8")).threejs.texture_loader.url, "/game/assets/hero-attack/atlas%29%20%E6%B5%8B%E8%AF%95.png");
 });
 
 /** 证明启用去背景时复用本地算法，输出透明背景并保留前景像素。 */

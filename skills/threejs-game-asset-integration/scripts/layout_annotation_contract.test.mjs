@@ -13,9 +13,9 @@ function sha256(bytes) { return `sha256:${createHash("sha256").update(bytes).dig
 /** 构造同时包含普通叶子和显式空容器的已确认节点集合。 */
 function confirmedNodes() {
   return [
-    { layout_node_id: "panel", element_id: "panel", element_type: "container", parent_layout_node_id: "viewport", parent_element_id: "viewport", semantic_grouping: { kind: "component", rationale: "面板内元素需要共同停靠" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, layout_role: "container", axis_alignment: { horizontal: "center", vertical: "top" }, target_bounds: { x: 8, y: 6, width: 48, height: 34 } },
+    { layout_node_id: "panel", element_id: "panel", element_type: "container", parent_layout_node_id: "viewport", parent_element_id: "viewport", semantic_grouping: { kind: "component", rationale: "面板内元素需要共同停靠" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, layout_role: "container", axis_alignment: { horizontal: "left", vertical: "top" }, target_bounds: { x: 8, y: 6, width: 48, height: 34 } },
     { layout_node_id: "empty-slot", element_id: "empty-slot", element_type: "container", parent_layout_node_id: "panel", parent_element_id: "panel", semantic_grouping: { kind: "component", rationale: "预留一个明确用途的空功能容器" }, ui_layout: { grouping_basis: ["LAYOUT"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, node_type: "container", axis_alignment: { horizontal: "left", vertical: "top" }, target_bounds: { x: 12, y: 10, width: 12, height: 10 } },
-    { layout_node_id: "icon", element_id: "icon", element_type: "component", parent_layout_node_id: "panel", parent_element_id: "panel", semantic_grouping: { kind: "part", rationale: "图标属于面板功能组件" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "PARENT", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, node_type: "element", axis_alignment: { horizontal: "center", vertical: "center" }, target_bounds: { x: 30, y: 20, width: 10, height: 10 } },
+    { layout_node_id: "icon", element_id: "icon", element_type: "component", parent_layout_node_id: "panel", parent_element_id: "panel", semantic_grouping: { kind: "part", rationale: "图标属于面板功能组件" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "PARENT", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, node_type: "element", axis_alignment: { horizontal: "left", vertical: "top" }, target_bounds: { x: 30, y: 20, width: 10, height: 10 } },
   ];
 }
 
@@ -99,7 +99,8 @@ test("同一几何允许不同视觉对齐决策，中心选项不由测量反�
   const makeFact = (horizontal, vertical) => deriveAutomaticLayoutFacts(deriveLayoutNodesFromDecompositionElements([element], canvas, { alignmentDecisions: new Map([[element.element_id, { horizontal, vertical }]]) }), canvas).find((item) => item.element_id === element.element_id);
   const centered = makeFact("center", "center");
   const edged = makeFact("left", "top");
-  assert.deepEqual(centered.bounds, edged.bounds);
+  assert.deepEqual(centered.bounds, { x: 16, y: 12, width: 8, height: 6 });
+  assert.deepEqual(edged.bounds, { x: 10, y: 8, width: 8, height: 6 });
   assert.deepEqual(centered.axis_alignment, { horizontal: "center", vertical: "center" });
   assert.deepEqual(edged.axis_alignment, { horizontal: "left", vertical: "top" });
   assert.notDeepEqual(centered.offset, edged.offset);
@@ -144,10 +145,7 @@ test("V2九宫格正反决策在确认旁栏显示源尺寸与四边切片值", 
 
   const backgroundRegion = structuredClone(region);
   backgroundRegion.layer = "background";
-  const backgroundElements = buildDecompositionElements([backgroundRegion]);
-  const backgroundErrors = [];
-  validateDecompositionElements(backgroundElements, [backgroundRegion], canvas, "decomposition_elements", backgroundErrors);
-  assert(backgroundErrors.some((message) => message.includes("九宫格 stretch")), "权威 background layer 即使使用 background-frame role 也必须拒绝 stretch");
+  assert.throws(() => buildDecompositionElements([backgroundRegion]), /九宫格 stretch/, "权威 background layer 即使使用 background-frame role 也必须拒绝 stretch");
 
   const routeOverrideRegion = structuredClone(region);
   routeOverrideRegion.component_inventory.components[0].role = "background";
@@ -159,7 +157,7 @@ test("V2九宫格正反决策在确认旁栏显示源尺寸与四边切片值", 
 
   const containerRegion = structuredClone(region);
   containerRegion.component_inventory.components[0].role = "container";
-  assert.throws(() => buildDecompositionElements([containerRegion]), /只能声明在叶子 component 图片皮肤上/);
+  assert.throws(() => buildDecompositionElements([containerRegion]), /stretch 只能用于图片节点或显式 Sprite 底板容器/);
 });
 
 /** 固定生产 UI 皮肤必须在 V2 决策，后续 false/缺失不能伪造“无需评估”。 */
@@ -204,21 +202,21 @@ test("每个节点拥有可追溯短编号，父容器和空容器都有自身�
   const roots = facts.filter((fact) => fact.is_root_container); const panel = facts.find((fact) => fact.layout_node_id === "panel"); const empty = facts.find((fact) => fact.layout_node_id === "empty-slot");
   assert.deepEqual(facts.filter((fact) => !fact.is_root_container).map((fact) => fact.marker_id), ["L01", "L02", "L03"]);
   assert.deepEqual(roots.map((fact) => fact.marker_id), ["R01"]); assert.equal(roots[0].parent_layout_node_id, null); assert.equal(roots[0].axis_alignment, null); assert.match(deriveLayoutAnnotationRows(facts).find((row) => row.kind === "root").text, /R01.*无上级/);
-  assert.equal(panel.parent_marker_id, "R01"); assert.equal(empty.parent_marker_id, "L01"); assert.deepEqual(panel.docking, { horizontal: "center", vertical: "top", self_anchor: "top-center", reference_anchor: "top-center", offset: panel.offset });
+  assert.equal(panel.parent_marker_id, "R01"); assert.equal(empty.parent_marker_id, "L01"); assert.deepEqual(panel.docking, { horizontal: "left", vertical: "top", self_anchor: "top-left", reference_anchor: "top-left", offset: panel.offset });
   for (const fact of [panel, empty, facts.find((item) => item.layout_node_id === "icon")]) { const row = deriveLayoutAnnotationRows(facts).find((item) => item.marker_id === fact.marker_id); assert.equal(row.parent_marker_id, fact.parent_marker_id); assert.match(row.text, new RegExp(`\\[${fact.marker_id}\\]`)); assert.match(row.text, /停靠=水平/); }
 });
 
 test("长技术 ID 和负小数停靠偏移完整换行，物理行不越过右栏", () => {
   const canvas = { width: 96, height: 64 }; const longId = "container:home-top-status-very-long-confirmed-element-id-0123456789"; const childId = "child-with-a-negative-offset-and-a-long-id-987654321"; const nodes = [
-    { layout_node_id: longId, element_id: longId, parent_layout_node_id: "viewport", ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, layout_role: "container", axis_alignment: { horizontal: "center", vertical: "top" }, target_bounds: { x: 2, y: 2, width: 70, height: 48 } },
-    { layout_node_id: childId, element_id: childId, parent_layout_node_id: longId, ui_layout: { grouping_basis: ["LAYOUT"], layout_owner: "PARENT", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, node_type: "element", axis_alignment: { horizontal: "center", vertical: "center" }, target_bounds: { x: 4, y: 4, width: 9, height: 9 } },
+    { layout_node_id: longId, element_id: longId, parent_layout_node_id: "viewport", ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, layout_role: "container", axis_alignment: { horizontal: "center", vertical: "top" }, target_bounds: { x: 13, y: 2, width: 70, height: 48 } },
+    { layout_node_id: childId, element_id: childId, parent_layout_node_id: longId, ui_layout: { grouping_basis: ["LAYOUT"], layout_owner: "PARENT", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, node_type: "element", axis_alignment: { horizontal: "right", vertical: "bottom" }, target_bounds: { x: 20, y: 4, width: 9.5, height: 9.5 } },
   ];
   const source = solidPng(canvas.width, canvas.height, 220); const context = { targetSha256: sha256(source), sceneId: "main", stateId: "default", decompositionConfirmationId: "decomp-1", decompositionConfirmationSha256: SHA, decompositionProposalSha256: SHA }; const facts = deriveAutomaticLayoutFacts(nodes, canvas, context); const rendered = renderLayoutAnnotation(source, canvas, facts, context); const rows = rendered.metadata.visible_rows; const longFact = facts.find((fact) => fact.layout_node_id === longId); const longText = rows.filter((row) => row.marker_id === longFact.marker_id).sort((a, b) => a.line_index - b.line_index).map((row) => row.text).join("");
   assert(longText.includes(longId)); assert(rendered.metadata.visible_row_count > deriveLayoutAnnotationRows(facts).length); assert(rows.every((row) => row.bounds.x >= canvas.width && row.bounds.x + row.bounds.width <= rendered.width && row.bounds.y >= 0 && row.bounds.y + row.bounds.height <= rendered.height)); const childFact = rendered.metadata.nodes.find((fact) => fact.layout_node_id === childId); assert(childFact.offset.x < 0 && !Number.isInteger(childFact.offset.x)); assert(childFact.offset.y < 0 && !Number.isInteger(childFact.offset.y));
 });
 
 test("密集小框的编号标签确定性避让且不互相重叠", () => {
-  const canvas = { width: 180, height: 100 }; const nodes = Array.from({ length: 6 }, (_, index) => ({ layout_node_id: `small-${index + 1}`, element_id: `small-${index + 1}`, parent_layout_node_id: "viewport", ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, node_type: "element", axis_alignment: { horizontal: index % 2 ? "right" : "left", vertical: index % 3 ? "center" : "top" }, target_bounds: { x: 8 + (index % 3) * 54, y: 8 + Math.floor(index / 3) * 42, width: 8, height: 8 } })); const facts = deriveAutomaticLayoutFacts(nodes, canvas, {}); const source = solidPng(canvas.width, canvas.height); const rendered = renderLayoutAnnotation(source, canvas, facts, {}); const placements = rendered.metadata.marker_layouts;
+  const canvas = { width: 180, height: 100 }; const nodes = Array.from({ length: 6 }, (_, index) => ({ layout_node_id: `small-${index + 1}`, element_id: `small-${index + 1}`, parent_layout_node_id: "viewport", ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, node_type: "element", axis_alignment: { horizontal: index % 2 ? "right" : "left", vertical: "top" }, target_bounds: { x: 8 + (index % 3) * 54, y: 8 + Math.floor(index / 3) * 42, width: 8, height: 8 } })); const facts = deriveAutomaticLayoutFacts(nodes, canvas, {}); const source = solidPng(canvas.width, canvas.height); const rendered = renderLayoutAnnotation(source, canvas, facts, {}); const placements = rendered.metadata.marker_layouts;
   assert.deepEqual(placements, computeLayoutMarkerPlacements(facts, canvas, rendered.metadata.text_scale)); assert.equal(new Set(placements.map((item) => item.marker_id)).size, placements.length); for (let index = 0; index < placements.length; index += 1) for (let next = index + 1; next < placements.length; next += 1) { const left = placements[index].bounds; const right = placements[next].bounds; assert(left.x + left.width <= right.x || right.x + right.width <= left.x || left.y + left.height <= right.y || right.y + right.height <= left.y); }
 });
 

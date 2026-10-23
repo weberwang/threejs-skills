@@ -76,15 +76,15 @@ async function testDirectory(t) {
 test("图片打包按 index 排列、排除循环闭合帧并保持固定锚点和空终态 Alpha", async (t) => {
   const directory = await testDirectory(t);
   const { manifestPath } = await createImageSource(directory);
-  const outputSheet = join(directory, "packed.png");
+  const outputSheet = join(directory, "public", "assets", "hero", "packed.png");
   const report = await imagesToAtlas({
     sourceManifest: manifestPath,
     projectRoot: directory,
+    runtimeBinding: { kind: "public", deployment_base: "/game/" },
     outputSheet,
     width: 12,
     height: 12,
     anchor: { x: 3, y: 14 },
-    runtimeUrl: "assets/packed.png",
   });
 
   assert.equal(report.schema, "threejs-image-atlas/1");
@@ -92,7 +92,8 @@ test("图片打包按 index 排列、排除循环闭合帧并保持固定锚点�
   assert.equal(report.animation.loop, true, "循环必须来自来源清单");
   assert.equal(report.threejs.texture_loader.class, "THREE.TextureLoader");
   assert.equal(report.threejs.texture_loader.method, "loadAsync");
-  assert.equal(report.threejs.texture_loader.url, "assets/packed.png");
+  assert.equal(report.runtime_url, "/game/assets/hero/packed.png");
+  assert.equal(report.threejs.texture_loader.url, "/game/assets/hero/packed.png");
   assert.deepEqual(report.threejs.atlas_uv.repeat, { x: 1 / 3, y: 1 });
   assert.equal(report.threejs.atlas_uv.offset_formula, "frameIndex / frameCount");
   assert.equal(report.threejs.sprite.material_class, "THREE.SpriteMaterial");
@@ -146,6 +147,9 @@ test("API 与 CLI 的相对路径均以 project-root 为根", async (t) => {
   assert.equal(apiReport.artifacts.sheet.file, join(directory, "api/hero.png"));
   assert.equal(apiReport.artifacts.report.file, join(directory, "api/hero-report.json"));
   assert.equal(apiReport.artifacts.preview.file, join(directory, "api/hero-preview.html"));
+  assert.equal(apiReport.runtime_binding, null);
+  assert.equal(apiReport.runtime_url, null);
+  assert.equal(apiReport.threejs, null, "无运行绑定时仍可打包和预览，但不生成加载示例");
   await readFile(join(directory, "api/hero.png"));
 
   const stdout = [];

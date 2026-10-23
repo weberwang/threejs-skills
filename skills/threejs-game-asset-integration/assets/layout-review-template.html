@@ -32,12 +32,14 @@
     .highlight { position: absolute; border-radius: 4px; }
     .highlight.target { border: 2px solid #1674d1; background: rgb(22 116 209 / 12%); box-shadow: 0 0 0 1px rgb(255 255 255 / 70%); }
     .highlight.parent { border: 2px dashed #e48b2b; background: rgb(228 139 43 / 8%); }
+    .highlight.reference { border: 2px dotted #8b5cf6; background: rgb(139 92 246 / 7%); }
     .stage-label { position: absolute; inset: 9px auto auto 9px; padding: 4px 7px; border-radius: 6px; color: #fff; background: rgb(21 34 56 / 78%); font-size: 11px; line-height: 1.3; }
     .legend { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-top: 12px; color: #59677a; font-size: 12px; }
     .legend-item { display: inline-flex; align-items: center; gap: 6px; }
     .legend-mark { width: 22px; height: 11px; border-radius: 3px; }
     .legend-mark.target { border: 2px solid #1674d1; background: rgb(22 116 209 / 12%); }
     .legend-mark.parent { border: 2px dashed #e48b2b; background: rgb(228 139 43 / 8%); }
+    .legend-mark.reference { border: 2px dotted #8b5cf6; background: rgb(139 92 246 / 7%); }
     .field-label { display: block; margin: 0 0 6px; color: #334155; font-size: 13px; font-weight: 700; }
     .search { width: 100%; min-height: 36px; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 8px; color: #1f2937; background: #f8fafc; font: inherit; }
     .search:focus, .node-button:focus-visible, a:focus-visible { outline: 3px solid rgb(22 116 209 / 30%); outline-offset: 2px; }
@@ -101,6 +103,7 @@
             <img id="reference-image" src="__REFERENCE_DATA_URL__" alt="冻结参考图">
             <div class="overlay" aria-hidden="true">
               <div class="highlight parent" id="parent-box" hidden></div>
+              <div class="highlight reference" id="reference-box" hidden></div>
               <div class="highlight target" id="target-box" hidden></div>
             </div>
             <span class="stage-label" id="stage-label"></span>
@@ -108,7 +111,8 @@
         </div>
         <div class="legend" aria-label="高亮图例">
           <span class="legend-item"><i class="legend-mark target"></i>当前节点（蓝色实线）</span>
-          <span class="legend-item"><i class="legend-mark parent"></i>父节点（橙色虚线）</span>
+          <span class="legend-item"><i class="legend-mark parent"></i>真实父级（橙色虚线）</span>
+          <span class="legend-item"><i class="legend-mark reference"></i>定位参照（紫色点线）</span>
         </div>
         <p class="footer-note">参考图按原始比例缩放，标注框与参考图共用冻结 viewport 坐标映射。</p>
       </section>
@@ -159,6 +163,7 @@
     const stage = document.getElementById("stage");
     const targetBox = document.getElementById("target-box");
     const parentBox = document.getElementById("parent-box");
+    const referenceBox = document.getElementById("reference-box");
     const details = document.getElementById("details");
     const nodeList = document.getElementById("node-list");
     const emptyState = document.getElementById("empty-state");
@@ -198,7 +203,7 @@
       };
     }
 
-    /** 更新高亮框，两个框始终使用同一组 viewport 百分比映射。 */
+    /** 更新高亮框，真实父级、定位参照和节点共用 viewport 坐标映射。 */
     function applyBox(box, rect) {
       const value = cssRect(rect);
       box.hidden = !value;
@@ -260,7 +265,8 @@
       heading.textContent = displayNames[index];
       details.appendChild(heading);
       addDetailRow("顺序 / 标记", `${index + 1} / ${node.marker_id || "—"}`);
-      addDetailRow("父节点", relationName(node.parent_layout_node_id));
+      addDetailRow("真实父级", relationName(node.parent_layout_node_id));
+      addDetailRow("定位参照", relationName(node.reference_id));
       const grouping = node.semantic_grouping;
       addDetailRow("功能分组", grouping?.kind ? `${SEMANTIC_GROUPING_LABELS[grouping.kind] || grouping.kind}（kind=${grouping.kind}）` : "—");
       addDetailRow("分组理由", grouping?.rationale || "—");
@@ -269,12 +275,16 @@
       addDetailRow("布局控制 / 尺寸", uiLayout ? `${uiLayout.layout_owner} / ${uiLayout.size_policy}` : "—");
       addDetailRow("溢出 / 安全区", uiLayout ? `${uiLayout.overflow_policy} / ${uiLayout.safe_area_policy}` : "—");
       addDetailRow("输入命中", uiLayout?.interaction_policy || "—");
+      if (uiLayout?.visual_overflow) addDetailRow("视觉溢出理由", uiLayout.visual_overflow.reason);
+      if (uiLayout?.independent_container_reason) addDetailRow("独立容器理由", uiLayout.independent_container_reason);
       if (uiLayout?.minimum_size) addDetailRow("最小尺寸", `${uiLayout.minimum_size.width} × ${uiLayout.minimum_size.height}`);
       addDetailRow("子节点", relationNames(node.child_layout_node_ids));
       addDetailRow("水平 / 垂直对齐", formatAlignment(node.axis_alignment));
+      if (node.center_alignment) addDetailRow("中心策略 / 成员", JSON.stringify(node.center_alignment));
       addDetailRow("偏移", node.offset ? `x=${node.offset.x ?? "—"}，y=${node.offset.y ?? "—"}` : "—");
       addDetailRow("位置与尺寸", formatBounds(node.target_bounds));
-      addDetailRow("父节点边界", formatBounds(node.parent_target_bounds));
+      addDetailRow("真实父级边界", formatBounds(node.parent_target_bounds));
+      addDetailRow("定位参照边界", formatBounds(node.reference_target_bounds));
       addDetailRow("层级深度", node.depth ?? "—");
       const technical = document.createElement("details");
       technical.className = "technical";
@@ -293,6 +303,7 @@
       const node = nodes[index];
       applyBox(targetBox, node.target_bounds);
       applyBox(parentBox, node.parent_target_bounds);
+      applyBox(referenceBox, node.reference_target_bounds);
       nodeButtons.forEach((button, buttonIndex) => {
         button.setAttribute("aria-selected", buttonIndex === selectedIndex ? "true" : "false");
       });

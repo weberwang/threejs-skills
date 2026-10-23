@@ -3,6 +3,10 @@ import { mkdir, open, readFile, realpath, rm, stat, writeFile } from "node:fs/pr
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import sharp from "sharp";
 import { removeBackgroundLocal } from "../../threejs-game-asset-integration/scripts/remove-background-local.mjs";
+import {
+  projectRelativeResourceFile,
+  resolveRuntimeResourceBinding,
+} from "../../threejs-game-asset-integration/scripts/runtime-resource-binding.mjs";
 
 /** 图集选项、帧处理或输出保护失败时抛出，供视频与图片 CLI 共用。 */
 export class VideoAtlasError extends Error {
@@ -93,33 +97,61 @@ export function normalizeKey(value, field) {
   return value.trim();
 }
 
-/** 校验 ThreeJS 运行时 URL，阻止 scheme、空格、反斜杠和编码路径逃逸。 */
-export function normalizeRuntimeUrl(value) {
-  if (!nonEmptyString(value) || value.trim() !== value || /\s/u.test(value)) throw new VideoAtlasError("runtime-url 必须是无空白的非空 URL 路径");
-  if (value.includes("\\") || /^[A-Za-z][A-Za-z\d+.-]*:/u.test(value) || value.startsWith("//")) {
-    throw new VideoAtlasError("runtime-url 不得包含外部 scheme、反斜杠或网络路径");
+/** 将 API 或 CLI 的显式绑定解析为真实项目文件与唯一运行时地址。 */
+function normalizeAtlasRuntimeBinding(input, { outputSheet, projectRoot }) {
+  const runtimeUrl = input.runtimeUrl ?? input.runtime_url ?? input["runtime-url"];
+  let binding = input.runtimeBinding ?? input.runtime_binding;
+  const runtimeKind = input.runtimeKind ?? input.runtime_kind ?? input["runtime-kind"];
+  const deploymentBase = input.deploymentBase ?? input.deployment_base ?? input["deployment-base"];
+  const importer = input.importer;
+  const specifier = input.specifier;
+  const hasBindingOptions = runtimeKind !== undefined || deploymentBase !== undefined || importer !== undefined || specifier !== undefined;
+
+  if (runtimeUrl !== undefined && binding === undefined && runtimeKind === undefined) {
+    throw new VideoAtlasError("runtime-url 不能单独指定；请提供 runtimeBinding 或 --runtime-kind 绑定实际输出文件");
   }
-  const urlPath = value.split(/[?#]/u, 1)[0];
-  if (!urlPath) throw new VideoAtlasError("runtime-url 必须包含资源路径");
-  let decoded = urlPath;
-  for (let round = 0; round < 3; round += 1) {
-    if (decoded.includes("\\") || decoded.split("/").some((segment) => segment === "." || segment === "..")) {
-      throw new VideoAtlasError("runtime-url 不得包含目录跳转段");
+  if (binding === undefined && runtimeKind !== undefined) {
+    if (runtimeKind === "public") {
+      if (importer !== undefined || specifier !== undefined) throw new VideoAtlasError("public 绑定不得提供 importer 或 specifier");
+      binding = { kind: "public", ...(deploymentBase === undefined ? {} : { deployment_base: deploymentBase }) };
+    } else if (runtimeKind === "module-import") {
+      if (deploymentBase !== undefined) throw new VideoAtlasError("module-import 绑定不得提供 deployment-base");
+      binding = {
+        kind: "module-import",
+        ...(importer === undefined ? {} : { importer }),
+        ...(specifier === undefined ? {} : { specifier }),
+      };
+    } else {
+      throw new VideoAtlasError("runtime-kind 必须是 public 或 module-import");
     }
-    let next;
-    try { next = decodeURIComponent(decoded); }
-    catch { throw new VideoAtlasError("runtime-url 含无效百分号编码"); }
-    if (next === decoded) return value;
-    decoded = next;
+  } else if (binding !== undefined && hasBindingOptions) {
+    throw new VideoAtlasError("runtimeBinding 与 CLI 绑定选项不能同时提供");
   }
-  if (decoded.includes("\\") || decoded.split("/").some((segment) => segment === "." || segment === "..")) {
-    throw new VideoAtlasError("runtime-url 不得包含编码后的目录跳转段");
+
+  if (binding === undefined && hasBindingOptions) {
+    throw new VideoAtlasError("部署前缀、importer 和 specifier 必须与 runtime-kind 一起提供");
   }
-  return value;
+  if (binding === undefined) return { runtimeBinding: null, runtimeUrl: null, runtimeUrlExpression: null, runtimeImportStatement: null };
+  try {
+    const expectedFile = projectRelativeResourceFile(projectRoot, outputSheet);
+    const resolved = resolveRuntimeResourceBinding(binding, { expectedFile });
+    if (!/\.png$/iu.test(resolved.runtime_binding.file)) throw new Error("帧动画图集输出必须是 PNG 文件");
+    if (runtimeUrl !== undefined && runtimeUrl !== resolved.runtime_url) {
+      throw new Error("runtime-url 必须与 runtimeBinding 根据实际输出路径推导的地址完全一致");
+    }
+    return {
+      runtimeBinding: resolved.runtime_binding,
+      runtimeUrl: resolved.runtime_url,
+      runtimeUrlExpression: resolved.url_expression,
+      runtimeImportStatement: resolved.import_statement,
+    };
+  } catch (error) {
+    throw new VideoAtlasError(error.message, { cause: error });
+  }
 }
 
 /** 解析视频与图片工具共同使用的帧尺寸、去背、锚点及 ThreeJS 选项。 */
-export function normalizeCommonAtlasOptions(input, { outputSheet, defaultFps = 12, defaultLoop = true }) {
+export function normalizeCommonAtlasOptions(input, { outputSheet, projectRoot, defaultFps = 12, defaultLoop = true }) {
   const widthValue = input.width ?? input["width"];
   const heightValue = input.height ?? input["height"];
   const width = widthValue === undefined ? null : positiveInteger(widthValue, "width");
@@ -142,7 +174,7 @@ export function normalizeCommonAtlasOptions(input, { outputSheet, defaultFps = 1
 
   const animationKey = normalizeKey(input.animationKey ?? input["animation-key"] ?? basename(outputSheet, extname(outputSheet)), "animation-key");
   const textureKey = normalizeKey(input.textureKey ?? input["texture-key"] ?? animationKey, "texture-key");
-  const runtimeUrl = normalizeRuntimeUrl(input.runtimeUrl ?? input.runtime_url ?? input["runtime-url"] ?? basename(outputSheet));
+  const runtimeBinding = normalizeAtlasRuntimeBinding(input, { outputSheet, projectRoot });
   const backgroundColor = input.backgroundColor ?? input["background-color"] ?? "#00ff00";
   const backgroundTolerance = nonNegativeNumber(input.backgroundTolerance ?? input["background-tolerance"] ?? 24, "background-tolerance");
   return {
@@ -150,7 +182,7 @@ export function normalizeCommonAtlasOptions(input, { outputSheet, defaultFps = 1
     edgeProfile,
     colorSeparationVerified: colorSeparationVerified ?? false,
     removeBackground, backgroundColor, backgroundTolerance,
-    animationKey, textureKey, runtimeUrl, loop,
+    animationKey, textureKey, ...runtimeBinding, loop,
   };
 }
 
@@ -215,8 +247,10 @@ export async function preflightAtlasOutputs(outputPaths, inputPaths, inputLabel 
 /** 生成 TextureLoader、SpriteMaterial、UV 与逐帧播放配置，供视频和图片图集共用。 */
 export function createThreeJSAtlasContract(options, cell, frameCount) {
   if (!Number.isInteger(frameCount) || frameCount <= 0) throw new VideoAtlasError("frameCount 必须是正整数");
+  if (!options.runtimeBinding) return null;
   const endFrame = frameCount - 1;
-  const url = options.runtimeUrl ?? basename(options.outputSheet);
+  const url = options.runtimeUrl;
+  const urlExpression = options.runtimeUrlExpression;
   const center = {
     x: cell.target_anchor.x / cell.width,
     y: 1 - cell.target_anchor.y / cell.height,
@@ -229,6 +263,7 @@ export function createThreeJSAtlasContract(options, cell, frameCount) {
     method: "loadAsync",
     url,
     color_space: "THREE.SRGBColorSpace",
+    ...(options.runtimeBinding.kind === "module-import" ? { url_expression: urlExpression } : {}),
   };
   const atlasUv = {
     layout: "horizontal",
@@ -254,8 +289,9 @@ export function createThreeJSAtlasContract(options, cell, frameCount) {
   };
 
   // 示例按水平 cell 采样；deltaSeconds 由游戏主循环提供，非循环播放在末帧停住。
-  const factory = `async function createFrameAnimation(THREE, scene, worldUnitsPerPixel = 1) {
-  const texture = await new THREE.TextureLoader().loadAsync(${JSON.stringify(url)});
+  const loadArgument = options.runtimeBinding.kind === "module-import" ? urlExpression : JSON.stringify(url);
+  const factory = `${options.runtimeImportStatement ? `${options.runtimeImportStatement}\n` : ""}async function createFrameAnimation(THREE, scene, worldUnitsPerPixel = 1) {
+  const texture = await new THREE.TextureLoader().loadAsync(${loadArgument});
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;

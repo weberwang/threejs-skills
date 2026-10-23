@@ -34,7 +34,7 @@
 
 ```json
 {
-  "schema_version": "1.2.0",
+  "schema_version": "1.3.0",
   "contract_version": "1.2.0",
   "scope": {
     "scenes": ["MainScene"],
@@ -109,6 +109,8 @@
 `matrix.status: decision_gap`；默认 `usability` 允许使用代表性矩阵并记录实际覆盖。
 
 ## 只读验证 Hook
+
+effect-image 候选的 Hook 须返回 `layoutRuntime: { runtime_batch, component_snapshots }`，由[同步运行采集器](../../threejs-game-ui-layout/references/layout-runtime-evidence.md)产生；与 V4 组合几何共用同一事实来源。它绑定本次 scene/state/candidate、实际 viewport 和 revision，候选 ID 按原值比较，不要求文件摘要。仅返回关键 UI 矩形而缺少该快照时结果为 `unverified`；驱动冲突、参照错绑或跨批次证据为失败。普通非 effect-image 合同保持原验证范围。截图显示效果仍由用户人工检查。
 
 ThreeJS 内部背景、安全区、逻辑尺寸和关键 UI 无法从通用 DOM 泛化时，项目必须在
 `window.__THREEJS_VISUAL_VALIDATION__` 提供只读 Hook（可通过 `--hook` 改名）：

@@ -122,9 +122,10 @@ export function validateReviewNodesDocument(nodesDocument) {
     rootIds.add(root.layout_node_id);
     const rootBounds = targetBoundsOf(root);
     validateBounds(rootBounds, viewport, `nodesDocument.root_nodes[${index}].target_bounds`);
-    if (!sameBounds(rootBounds, { x: 0, y: 0, width: viewport.width, height: viewport.height })) throw new Error(`根节点 ${root.layout_node_id} bounds 必须覆盖完整冻结 viewport`);
+    if (root.layout_node_id === "viewport" && !sameBounds(rootBounds, { x: 0, y: 0, width: viewport.width, height: viewport.height })) throw new Error("viewport 根 bounds 必须覆盖完整冻结 viewport");
     if (root.is_root_container !== true) throw new Error(`根节点 ${root.layout_node_id} 必须标记为 is_root_container`);
     if (root.parent_layout_node_id !== null) throw new Error(`根节点 ${root.layout_node_id} 必须显式声明空 parent_layout_node_id`);
+    if (root.element_id !== root.layout_node_id || root.parent_element_id !== null) throw new Error(`根节点 ${root.layout_node_id} 只能使用保留 element_id 且无业务父级`);
     roots.push(root);
   }
 
@@ -136,7 +137,7 @@ export function validateReviewNodesDocument(nodesDocument) {
     nodeIds.add(node.layout_node_id);
     if (node.is_root_container === true) throw new Error(`nodesDocument.layout_nodes[${index}] 必须是非 root 节点`);
     const uiErrors = [];
-    validateUiLayout(node.ui_layout, { rootParent: ROOT_IDS.has(node.parent_layout_node_id), container: node.is_container === true, emptyContainer: node.empty_container === true }, uiErrors, `nodesDocument.layout_nodes[${index}].ui_layout`);
+    validateUiLayout(node.ui_layout, { rootParent: ROOT_IDS.has(node.parent_layout_node_id), parentId: node.parent_layout_node_id, container: node.is_container === true, emptyContainer: node.empty_container === true }, uiErrors, `nodesDocument.layout_nodes[${index}].ui_layout`);
     if (uiErrors.length > 0) throw new Error(uiErrors[0]);
     if (node.scene_id !== undefined && node.scene_id !== nodesDocument.scene_id) throw new Error(`布局节点 ${node.layout_node_id} 的 scene_id 与文档不一致`);
     if (node.state_id !== undefined && node.state_id !== nodesDocument.state_id) throw new Error(`布局节点 ${node.layout_node_id} 的 state_id 与文档不一致`);
@@ -168,10 +169,10 @@ export function validateReviewNodesDocument(nodesDocument) {
   // 这里只比对现有 facts 与推导结果；页面展示仍使用传入节点原顺序和原字段。
   const derivedById = new Map(derivedFacts.map((fact) => [fact.layout_node_id, fact]));
   const comparableFields = [
-    "layout_node_id", "element_id", "display_name", "layout_role", "parent_layout_node_id", "parent_target_bounds",
+    "layout_node_id", "element_id", "element_type", "render_kind", "display_name", "layout_role", "parent_layout_node_id", "parent_element_id", "parent_target_bounds", "reference_id", "reference_target_bounds",
     "target_bounds", "bounds", "depth", "color", "is_container", "empty_container", "child_layout_node_ids",
     "relative_position", "axis_alignment", "offset", "self_anchor", "reference_anchor", "docking",
-    "is_root_container", "scene_id", "state_id", "marker_id", "parent_marker_id", "ui_layout"
+    "is_root_container", "scene_id", "state_id", "marker_id", "parent_marker_id", "reference_marker_id", "ui_layout", "center_alignment"
   ];
   const compareFact = (fact, derived, label) => {
     for (const field of comparableFields) if (fact[field] !== undefined && canonicalJson(fact[field]) !== canonicalJson(derived[field])) throw new Error(`${label}.${field} 与既有自动布局事实不一致`);

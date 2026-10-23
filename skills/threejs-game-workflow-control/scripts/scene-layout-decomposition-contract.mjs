@@ -5,6 +5,8 @@
  * 运行时 placement 能够在 V3/V4 形成确定性的双向绑定与逐节点证据。
  */
 
+import { validateLayoutRuntimeSnapshots } from "../../threejs-game-ui-layout/scripts/layout-runtime.mjs";
+import { validateMeasuredLayoutBounds } from "../../threejs-game-ui-layout/scripts/layout-runtime-measurement.mjs";
 import { validateEffectImageParentChildLayoutNodes } from "./layout-node-parent-geometry.mjs";
 import { resolveVisualValidationMode, visualGeometryDifferenceExceeds, visualBoundsOutsideViewport } from "./visual-validation-policy.mjs";
 
@@ -282,7 +284,7 @@ export function validateLayoutDecomposition(contract, targetInfo, stage, errors,
     else nodeById.set(nodeId, node);
   }
   // effect-image 的父容器、相对测量和显式视觉对齐统一由共享几何合同校验。
-  for (const issue of validateEffectImageParentChildLayoutNodes(nodes, targetInfo?.viewport, { label: "layout_nodes" })) {
+  for (const issue of validateEffectImageParentChildLayoutNodes(nodes, targetInfo?.viewport, { label: "layout_nodes", requireExecutionPlan: true })) {
     const node = issue.index >= 0 ? nodes[issue.index] : decomposition;
     errors.push(contractError(stage, contract, node, issue.message, { returnStage: "V1/PROPOSAL" }));
   }
@@ -372,6 +374,16 @@ export function validateLayoutGeometryFacts(contract, preacceptance, stage, erro
   const mode = resolveVisualValidationMode(options, contract);
   const exact = mode === "exact";
   const geometry = field(preacceptance, "layout_geometry", "layoutGeometry", "layout_geometry_check", "layoutGeometryCheck");
+  // 结构快照覆盖全部业务节点，与 usability/exact 的几何测量范围分别验证。
+  const runtimeErrors = [];
+  const target = contract.target_conditions ?? contract.target ?? {};
+  const viewport = target.viewport ?? target.target_viewport;
+  validateLayoutRuntimeSnapshots(layoutInfo.nodes, geometry, runtimeErrors, "layout_geometry", {
+    scene_id: target.scene_id ?? target.sceneId, state_id: target.state_id ?? target.stateId,
+    candidate_id: options.manifest?.candidate_identity?.diff_fingerprint,
+    viewport_bounds: viewport ? { x: 0, y: 0, width: viewport.width, height: viewport.height } : undefined,
+  });
+  for (const message of runtimeErrors) errors.push(contractError(stage, contract, preacceptance, message, { returnStage: "V4", rootCause: "执行问题" }));
   if (!isObject(geometry)) {
     if (exact) errors.push(contractError(stage, contract, preacceptance, "V4 同屏组合缺少 layout_geometry 几何检查", { missing: "layout_geometry", returnStage: "V3/V4", rootCause: "执行问题" }));
     return;
@@ -391,6 +403,8 @@ export function validateLayoutGeometryFacts(contract, preacceptance, stage, erro
     ...(Array.isArray(geometry.critical_node_ids) ? geometry.critical_node_ids : Array.isArray(geometry.criticalNodeIds) ? geometry.criticalNodeIds : []).filter(nonEmptyString),
   ]);
   const seenIds = new Set();
+  const runtimeById = new Map((Array.isArray(geometry.component_snapshots) ? geometry.component_snapshots : [])
+    .filter(isObject).map((entry) => [entry.layout_node_id, entry.component_snapshot]));
   const sceneRegions = new Map((field(contract, "coverage_regions", "coverageRegions", "regions") ?? []).map((region) => [field(region, "region_id", "regionId", "id"), region]));
   const tolerances = field(contract, "predeclared_tolerances", "predeclaredTolerances", "tolerance_set", "toleranceSet", "tolerances");
   const toleranceDefinitions = new Map((Array.isArray(tolerances) ? tolerances : []).filter(isObject).map((item) => [field(item, "id", "tolerance_id", "toleranceId"), item]).filter(([id]) => nonEmptyString(id)));
@@ -413,6 +427,9 @@ export function validateLayoutGeometryFacts(contract, preacceptance, stage, erro
     if (!node) errors.push(contractError(stage, contract, measurement, `${label} 引用 extra/orphan layout_node_id`, { actual: nodeId, returnStage: "V3/V4", rootCause: "执行问题" }));
     const targetBounds = field(measurement, "target_bounds", "targetBounds", "target_measurement", "targetMeasurement") ?? field(node, "target_bounds", "targetBounds", "bounds");
     const actualBounds = field(measurement, "actual_bounds", "actualBounds", "candidate_bounds", "candidateBounds", "runtime_bounds", "runtimeBounds", "candidate_measurement", "candidateMeasurement", "measurement");
+    // 仅绑定原有测量覆盖的节点，不扩大 usability 的几何验收范围。
+    const measurementErrors = validateMeasuredLayoutBounds(runtimeById.get(nodeId), actualBounds, [], label);
+    for (const message of measurementErrors) errors.push(contractError(stage, contract, measurement, message, { returnStage: "V3/V4", rootCause: "执行问题" }));
     const delta = field(measurement, "delta", "delta_measurement", "deltaMeasurement");
     const toleranceId = field(measurement, "tolerance_reference", "toleranceReference", "tolerance_id", "toleranceId");
     const result = String(field(measurement, "result", "status", "verdict") ?? "").toLowerCase();

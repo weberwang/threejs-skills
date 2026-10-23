@@ -83,6 +83,7 @@ export async function imagesToAtlas(input = {}) {
   // 时间轴永远服从来源清单；即使调用方带入多余的 fps/loop，也不会改变动画定义。
   const sharedOptions = normalizeCommonAtlasOptions({ ...input, fps: source.fps, loop: source.loop }, {
     outputSheet: paths.outputSheet,
+    projectRoot,
     defaultFps: source.fps,
     defaultLoop: source.loop,
   });
@@ -210,8 +211,10 @@ export async function imagesToAtlas(input = {}) {
       frames,
       animation,
       threejs,
+      runtime_binding: sharedOptions.runtimeBinding,
+      runtime_url: sharedOptions.runtimeUrl,
       artifacts: {
-        sheet: { file: paths.outputSheet, width: sheetWidth, height: cellHeight, sha256: sheetHash },
+        sheet: { file: sharedOptions.runtimeBinding?.file ?? paths.outputSheet, width: sheetWidth, height: cellHeight, sha256: sheetHash },
         report: { file: paths.outputReport },
         preview: { file: paths.outputPreview },
       },
@@ -237,7 +240,11 @@ export function imagesAtlasHelp() {
   --output-sheet <file.png>     水平 ThreeJS 图集（必需；相对路径基于 project-root）
   --output-report <file.json>   JSON 报告（相对路径基于 project-root；默认与图集同名）
   --output-preview <file.html>  可播放网页（相对路径基于 project-root；默认与图集同名）
-  --runtime-url <url>           ThreeJS 运行时图集 URL（默认取图集文件名）
+  --runtime-kind <kind>         显式运行绑定：public 或 module-import
+  --deployment-base <path>      public 站点部署前缀，如 / 或 /game/
+  --importer <file>             module-import 的项目内调用模块
+  --specifier <path?url>        相对 importer 的静态图集导入路径
+  --runtime-url <url>           仅用于核对绑定推导地址，不能单独提供
 
 处理选项：
   --width <pixels>              输出帧宽；单独指定时等比缩放
@@ -258,7 +265,7 @@ export function imagesAtlasHelp() {
 FPS 与 loop 固定读取来源清单，不能由 CLI 覆盖。预览提供播放、暂停、重播、逐帧选择及透明背景对比。
 
 示例：
-  node images-to-atlas.mjs --source-manifest source.json --project-root . --output-sheet public/assets/hero.png --width 128 --height 128 --anchor 384,767 --runtime-url assets/hero.png --no-remove-background
+  node images-to-atlas.mjs --source-manifest source.json --project-root . --output-sheet public/assets/hero/hero.png --runtime-kind public --deployment-base /game/ --width 128 --height 128 --anchor 384,767 --no-remove-background
 `;
 }
 
@@ -272,6 +279,8 @@ export function parseImagesAtlasArgs(argv = process.argv.slice(2)) {
     ["--background-color", "backgroundColor"], ["--background-tolerance", "backgroundTolerance"],
     ["--max-width", "maxAtlasWidth"], ["--max-height", "maxAtlasHeight"],
     ["--animation-key", "animationKey"], ["--texture-key", "textureKey"], ["--runtime-url", "runtimeUrl"],
+    ["--runtime-kind", "runtimeKind"], ["--deployment-base", "deploymentBase"],
+    ["--importer", "importer"], ["--specifier", "specifier"],
     ["--edge-profile", "edgeProfile"],
   ]);
   for (let index = 0; index < argv.length; index += 1) {
